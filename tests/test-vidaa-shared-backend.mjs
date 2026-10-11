@@ -6,8 +6,16 @@ import { readEnvProperties, normalizeEnvProperties } from "../scripts/envPropert
 
 const nativeFetch = globalThis.fetch;
 const rootDir = fileURLToPath(new URL("..", import.meta.url));
-const { env } = await readEnvProperties({ rootDir });
 const live = process.argv.includes("--live");
+const { env } = live
+  ? await readEnvProperties({ rootDir })
+  : {
+      env: normalizeEnvProperties({
+        NUVIO_ACCOUNT_BACKEND_MODE: "shared",
+        NUVIO_SUPABASE_URL: "https://shared.example",
+        NUVIO_SUPABASE_ANON_KEY: "sb_publishable_test_public_key"
+      })
+    };
 const key = env.NUVIO_SUPABASE_ANON_KEY;
 const url = env.NUVIO_SUPABASE_URL;
 function storage() {

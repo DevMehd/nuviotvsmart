@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
+// Background metadata work must not invoke Node's network timers while this
+// suite owns a fake clock. Its catalog responses are supplied by fixtures below.
+globalThis.fetch = async () => new Response("{}", { status: 503 });
 const { Platform } = await import("../js/platform/index.js");
 const { getTvRuntimePerformanceProfile, resetTvRuntimePerformanceProfile } =
   await import("../js/platform/tvRuntimePerformance.js");

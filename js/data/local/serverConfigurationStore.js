@@ -17,7 +17,8 @@ export const SERVER_CONFIGURATION_KEY = "nuvioServerConfigurationV1";
 let activeConfiguration = null;
 
 function defaultConfiguration() {
-  if (ACCOUNT_BACKEND_MODE === "shared") return officialConfiguration();
+  if (ACCOUNT_BACKEND_MODE === "shared" || ACCOUNT_BACKEND_MODE === "official")
+    return officialConfiguration();
   return Platform.isVidaa() ? createLocalServerConfiguration() : officialConfiguration();
 }
 
@@ -62,7 +63,7 @@ function officialConfiguration() {
   return createServerConfiguration({
     backendUrl: SUPABASE_URL,
     publishableKey: SUPABASE_ANON_KEY,
-    capabilities: { emailPasswordAuth: false, tvLogin: true },
+    capabilities: { emailPasswordAuth: ACCOUNT_BACKEND_MODE === "official", tvLogin: true },
     isCustom: false,
     fallbackBackendUrl: SUPABASE_FALLBACK_URL,
     tvLoginWebBaseUrl: TV_LOGIN_WEB_BASE_URL,

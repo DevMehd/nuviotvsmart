@@ -3032,6 +3032,7 @@
     <string name="auth_email_have_account">I already have an account</string>
     <string name="auth_email_confirmation_sent">Check your email to confirm the account, then sign in here.</string>
     <string name="auth_email_signin_title">Sign in to your account</string>
+    <string name="auth_email_official_hint">Use your existing Nuvio account to sync your Android profiles, addons, library and watch progress.</string>
     <string name="auth_email_signin_subtitle">Use your email and password to sync across devices</string>
     <string name="addon_shared_manage_hint">Install or remove add-ons here. Changes are saved to your account.</string>
     <string name="addon_shared_saving">Saving…</string>

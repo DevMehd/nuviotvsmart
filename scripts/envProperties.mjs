@@ -27,7 +27,7 @@ export const ENV_PROPERTY_KEYS = [
 ];
 
 const DEFAULT_ENV_VALUES = {
-  NUVIO_ACCOUNT_BACKEND_MODE: "",
+  NUVIO_ACCOUNT_BACKEND_MODE: "official",
   NUVIO_SUPABASE_URL: "https://api.nuvio.tv",
   NUVIO_SUPABASE_ANON_KEY:
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI",
@@ -148,7 +148,6 @@ export async function resolveLocalPropertiesSource({ rootDir, sourcePath = "" } 
     candidates.push(path.resolve(process.env.NUVIO_LOCAL_PROPERTIES));
   } else {
     candidates.push(path.join(rootDir, "local.properties"));
-    candidates.push(path.join(rootDir, "supabase", "shared.properties"));
     candidates.push(path.join(rootDir, "local.example.properties"));
   }
 

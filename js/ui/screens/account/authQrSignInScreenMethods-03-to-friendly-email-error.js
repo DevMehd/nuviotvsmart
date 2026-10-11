@@ -179,6 +179,7 @@ export function createAuthQrSignInScreenMethods03() {
       if (this.useLocalMode) return I18n.t("auth_local_description");
       if (this.isSignedIn) return I18n.t("auth.qr.leftDescriptionSignedIn");
       if (this.serverConfiguration?.isShared) return I18n.t("auth_email_shared_hint");
+      if (this.useEmailLogin && !this.serverConfiguration?.isCustom) return I18n.t("auth_email_official_hint");
       if (this.useEmailLogin) return I18n.t("auth.email.hint");
       return I18n.t("auth.qr.leftDescriptionSignedOut");
     },

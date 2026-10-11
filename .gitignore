@@ -44,3 +44,4 @@ scripts/commit-build-poller.mjs
 # Python cache
 __pycache__/
 *.pyc
+.vercel

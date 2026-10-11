@@ -52,6 +52,25 @@ On Tizen 5+ and LG webOS, torrent/P2P uses only the bundled local companion serv
 
 ## Hisense VIDAA OS
 
+### Personal fork: use the existing Android account
+
+This fork builds against the official `https://api.nuvio.tv` account backend by
+default. Sign in with the same email and password used in Nuvio Android. Profiles,
+addons, the saved library and watch progress use the existing Nuvio sync services.
+The local guest mode remains available from the account screen's server menu.
+
+`scripts/envProperties.mjs` reads `local.properties` when present, otherwise
+`local.example.properties`. The bundled `supabase/shared.properties` is an
+optional separate-account configuration and is never selected automatically.
+Selecting a self-hosted server creates a separate account/data boundary; it does
+not sign in to the Android account on the official service.
+
+Vercel already uses `npm run package:vidaa` and serves `dist/vidaa`. Launch the
+hosted application at `/vidaa.html`, then point the existing Sidee TV tile to that
+URL after checking sign-in and playback. Personal secrets and TMDB credentials
+must not be added to the public build. TMDB can be configured in the catalogue
+services (AIOStreams, Xperience or Posters+) or per device in Settings → Integrations.
+
 ### Install Nuvio on a Hisense VIDAA TV
 
 **Recommended for newer VIDAA firmware: [Sidee](https://github.com/Empi9245/Sidee).** Sidee uses PIN-authorized pairing over your local network to add a Nuvio web-app tile to the TV launcher, without changing the TV's DNS settings. The Windows launcher is the simplest setup:

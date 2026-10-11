@@ -89,7 +89,7 @@ export function createAuthQrSignInScreenMethods01() {
               </div>
 
               <div class="qr-copy-block">
-                <h1 class="qr-title">${I18n.t(configuration.isShared ? (this.isRegistering ? "auth_email_create_account" : "auth_email_signin_title") : "auth.qr.title")}</h1>
+                <h1 class="qr-title">${I18n.t(this.useEmailLogin ? (this.isRegistering ? "auth_email_create_account" : "auth_email_signin_title") : "auth.qr.title")}</h1>
                 <p id="qr-description" class="qr-description">${this.getLeftDescription()}</p>
                 ${this.renderConnectedAccountIdentity()}
               </div>
