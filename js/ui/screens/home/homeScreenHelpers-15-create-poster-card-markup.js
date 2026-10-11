@@ -192,7 +192,8 @@ import { isCollectionFolderItem, normalizeCollectionPosterShape } from "./homeSc
 import { buildPosterSubtitle } from "./homeScreenHelpers-12-build-hero-indicators.js";
 import { buildLazyImageAttributes } from "./homeScreenHelpers-14-get-home-grid-column-count.js";
 import { normalizeCatalogItem } from "./homeScreenHelpers-08-partition-continue-watching-rows.js";
-import { normalizeTmdbBackdropUrl, normalizeTmdbPosterUrl } from "../../../core/tmdb/tmdbImageUrl.js";
+import { normalizeTmdbBackdropUrl, normalizeTmdbCardBackdropUrl, normalizeTmdbPosterUrl } from "../../../core/tmdb/tmdbImageUrl.js";
+import { getVidaaArtworkUrl, buildVidaaArtworkFallbackAttributes, VIDAA_ARTWORK_FALLBACK_HANDLER } from "./vidaaArtworkOptimization.js";
 
 export function createPosterCardMarkup(
   item,
@@ -301,8 +302,8 @@ export function createPosterCardMarkup(
   const rawPosterSrc = useLandscapePoster
     ? landscapeVisualSrc
     : firstNonEmpty(normalized.poster, normalized.thumbnail, preferredLandscapePosterSrc, normalized.backdrop, normalized.backdropUrl);
-  const backdropSrc = normalizeTmdbBackdropUrl(rawBackdropSrc);
-  const posterSrc = useLandscapePoster ? backdropSrc : normalizeTmdbPosterUrl(rawPosterSrc);
+  const backdropSrc = getVidaaArtworkUrl((Platform.isVidaa() ? normalizeTmdbCardBackdropUrl : normalizeTmdbBackdropUrl)(rawBackdropSrc));
+  const posterSrc = useLandscapePoster ? backdropSrc : getVidaaArtworkUrl(normalizeTmdbPosterUrl(rawPosterSrc));
   const expandedVisualSrc = firstNonEmpty(backdropSrc, posterSrc);
   const expandedClass = isExpanded ? " is-expanded" : "";
   const landscapeClass = useLandscapePoster ? " is-landscape" : "";
@@ -351,7 +352,7 @@ export function createPosterCardMarkup(
         }
         ${
           !isLoading && expandedVisualSrc
-            ? `<img class="home-poster-expanded-backdrop" data-src="${escapeAttribute(expandedVisualSrc)}" decoding="async" loading="lazy" alt="" aria-hidden="true" />`
+            ? `<img class="home-poster-expanded-backdrop" data-src="${escapeAttribute(expandedVisualSrc)}"${buildVidaaArtworkFallbackAttributes(expandedVisualSrc)} onerror="${VIDAA_ARTWORK_FALLBACK_HANDLER}" decoding="async" loading="lazy" alt="" aria-hidden="true" />`
             : '<div class="home-poster-expanded-backdrop placeholder" aria-hidden="true"></div>'
         }
         <div class="home-poster-trailer-layer"></div>

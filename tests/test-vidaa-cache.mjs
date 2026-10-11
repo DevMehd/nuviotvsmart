@@ -90,6 +90,8 @@ network = async () => new Response("server unavailable", { status: 503 });
 assert.equal(await (await handle(request("/app.bundle.js?v=new"))).text(), "new build");
 const beforeBypass = fetched;
 for (const req of [
+  request("/_vercel/image?url=one&w=640&q=80", { destination: "image" }),
+  request("/_vercel/image?url=two&w=1280&q=80", { destination: "image" }),
   request("/movie.mkv"),
   request("/playlist.m3u8"),
   request("/stream", { headers: new Headers({ range: "bytes=0-" }) }),

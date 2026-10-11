@@ -3,6 +3,7 @@ import * as internals from "./homeScreenContext.js";
 export function createHomeScreenMethods22() {
   const {
     Router,
+    Platform,
     catalogRepository,
     filterReleasedItems,
     HomeCatalogStore,
@@ -51,6 +52,14 @@ export function createHomeScreenMethods22() {
       }
       return { ...result, data: { ...result.data, items: filtered } };
     },
+    async waitForCatalogBatch({ shouldContinue = () => true, isBusy = () => false, delayMs = -1 } = {}) {
+      if (!shouldContinue()) return false;
+      if (delayMs >= 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      while (shouldContinue() && isBusy()) {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+      return shouldContinue();
+    },
     async fetchCatalogRows(descriptors = [], options = {}) {
       const allowLoading = Boolean(options?.allowLoading);
       const timeoutMs = Number(options?.timeoutMs || HOME_ROW_TIMEOUT_MS);
@@ -58,10 +67,14 @@ export function createHomeScreenMethods22() {
       const batchSize = Math.max(0, Number(options?.batchSize || 0));
       const onBatch = typeof options?.onBatch === "function" ? options.onBatch : null;
       const onRow = typeof options?.onRow === "function" ? options.onRow : null;
+      const shouldContinue = typeof options?.shouldContinue === "function" ? options.shouldContinue : () => true;
+      const isBusy = typeof options?.isBusy === "function" ? options.isBusy : () => false;
+      const batchYieldMs = Math.max(0, Number(options?.batchYieldMs || 0));
       const fetchedRows = [];
       const normalizedDescriptors = Array.isArray(descriptors) ? descriptors : [];
 
       const fetchBatch = async (batchDescriptors = []) => {
+        if (!shouldContinue()) return;
         const rowResults = await Promise.all(
           batchDescriptors.map(async (catalog) => {
             const result = this.filterUnreleasedResult(
@@ -81,6 +94,7 @@ export function createHomeScreenMethods22() {
                 { status: "error", message: "timeout" }
               )
             );
+            if (!shouldContinue()) return null;
             const rowKey = buildModernRowKey(catalog);
             const row = {
               ...catalog,
@@ -95,19 +109,18 @@ export function createHomeScreenMethods22() {
             return row;
           })
         );
-        const mappedRows = rowResults.filter((row) => row.result?.status === "success" || allowLoading);
+        const mappedRows = rowResults.filter((row) => row && (row.result?.status === "success" || allowLoading));
         fetchedRows.push(...mappedRows);
         if (onBatch && mappedRows.length) {
           onBatch(mappedRows);
         }
       };
 
+      if (!(await this.waitForCatalogBatch({ shouldContinue, isBusy }))) return fetchedRows;
       if (batchSize > 0 && normalizedDescriptors.length > batchSize) {
         for (let index = 0; index < normalizedDescriptors.length; index += batchSize) {
+          if (index > 0 && !(await this.waitForCatalogBatch({ shouldContinue, isBusy, delayMs: batchYieldMs }))) break;
           await fetchBatch(normalizedDescriptors.slice(index, index + batchSize));
-          if (index + batchSize < normalizedDescriptors.length) {
-            await new Promise((resolve) => setTimeout(resolve, 0));
-          }
         }
         return fetchedRows;
       }
@@ -154,6 +167,14 @@ export function createHomeScreenMethods22() {
       const retryBatchSize = Math.max(1, Number(this.getDeferredCatalogBatchSize() || pendingRows.length || 1));
       (async () => {
         for (let index = 0; index < pendingRows.length; index += retryBatchSize) {
+          if (
+            !(await this.waitForCatalogBatch({
+              shouldContinue: () => token === this.homeLoadToken && Router.getCurrent() === "home",
+              isBusy: () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.()),
+              delayMs: index > 0 && Platform.isVidaa() ? 120 : 0
+            }))
+          )
+            return;
           const batch = pendingRows.slice(index, index + retryBatchSize);
           const settled = await Promise.allSettled(
             batch.map(async (row) => {

@@ -260,7 +260,7 @@ export function createHomeScreenMethods03() {
     },
     getDeferredCatalogBatchSize() {
       if (this.isPerformanceConstrained()) {
-        return this.isLegacyTvRuntime() ? 2 : 4;
+        return this.isLegacyTvRuntime() || Platform.isVidaa() ? 2 : 4;
       }
       if (Platform.isWebOS() && this.hasCollectionHomeRows()) {
         return 4;

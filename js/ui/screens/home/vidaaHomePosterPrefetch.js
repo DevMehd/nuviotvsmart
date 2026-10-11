@@ -1,5 +1,6 @@
 // Network warming must not retain decoded offscreen posters or obsolete runs.
-const MAX_INFLIGHT = 18;
+const MAX_INFLIGHT = 8;
+const FULL_MODE_MAX_INFLIGHT = 18;
 const WARM_URL_LIMIT = 96;
 const observations = new WeakMap();
 
@@ -72,7 +73,10 @@ export function prefetchVidaaPosterSource(screen, src) {
   const inflight =
     screen.homeVidaaPosterPrefetchInflight || (screen.homeVidaaPosterPrefetchInflight = new Map());
   if (inflight.has(source)) return true;
-  if (inflight.size >= MAX_INFLIGHT) {
+  if (
+    inflight.size >=
+    (screen.isPerformanceConstrained?.() === false ? FULL_MODE_MAX_INFLIGHT : MAX_INFLIGHT)
+  ) {
     // Reclaim only the slot needed now, preferring an obsolete request with the
     // least progress. The selected run still gets immediate capacity.
     const obsolete = [...inflight].filter(

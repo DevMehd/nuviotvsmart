@@ -1,3 +1,8 @@
+import {
+  getVidaaArtworkUrl,
+  getVidaaArtworkOriginal,
+  VIDAA_ARTWORK_FALLBACK_HANDLER
+} from "./vidaaArtworkOptimization.js";
 import { uniqueNonEmptyValues } from "./homeUtils.js";
 import { normalizeTmdbBackdropUrl } from "../../../core/tmdb/tmdbImageUrl.js";
 
@@ -7,15 +12,21 @@ import { normalizeTmdbBackdropUrl } from "../../../core/tmdb/tmdbImageUrl.js";
  * @returns {string[]}
  */
 export function buildHeroBackdropSources(item = null) {
-  return uniqueNonEmptyValues([
-    normalizeTmdbBackdropUrl(item?.background),
-    normalizeTmdbBackdropUrl(item?.backdrop),
-    normalizeTmdbBackdropUrl(item?.backdropUrl),
-    normalizeTmdbBackdropUrl(item?.landscapePoster),
-    item?.poster,
-    item?.thumbnail,
-    item?.episodeThumbnail
-  ]);
+  return uniqueNonEmptyValues(
+    [
+      normalizeTmdbBackdropUrl(item?.background),
+      normalizeTmdbBackdropUrl(item?.backdrop),
+      normalizeTmdbBackdropUrl(item?.backdropUrl),
+      normalizeTmdbBackdropUrl(item?.landscapePoster),
+      item?.poster,
+      item?.thumbnail,
+      item?.episodeThumbnail
+    ].flatMap((source) => {
+      const original = getVidaaArtworkOriginal(source) || source;
+      const optimized = getVidaaArtworkUrl(original, 1280);
+      return optimized !== original ? [optimized, original] : [original];
+    })
+  );
 }
 
 export function encodeHeroBackdropFallbacks(sources = []) {
@@ -23,5 +34,8 @@ export function encodeHeroBackdropFallbacks(sources = []) {
 }
 
 export function buildImageFallbackErrorHandler() {
-  return "var q=(this.dataset.fallbackSrcs||'').split('|').filter(Boolean);var next=q.shift();if(next){this.dataset.fallbackSrcs=q.join('|');this.src=decodeURIComponent(next);return;}this.removeAttribute('src');this.classList.add('placeholder');";
+  return (
+    VIDAA_ARTWORK_FALLBACK_HANDLER +
+    "var q=(this.dataset.fallbackSrcs||'').split('|').filter(Boolean);var next=q.shift();if(next){this.dataset.fallbackSrcs=q.join('|');this.src=decodeURIComponent(next);return;}this.removeAttribute('src');this.classList.add('placeholder');"
+  );
 }

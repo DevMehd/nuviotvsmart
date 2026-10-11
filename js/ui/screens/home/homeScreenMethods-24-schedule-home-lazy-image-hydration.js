@@ -137,10 +137,15 @@ function getVidaaPrefetchPlan(screen, anchor, direction, throttle = {}) {
   const posterReadyMs = clampNumber(Number(screen.homeVidaaPosterReadyEwmaMs || VIDAA_DEFAULT_POSTER_READY_MS), 280, 1200);
   const readyWindowMs = clampNumber(posterReadyMs + VIDAA_PREFETCH_SAFETY_MS, 480, 1250);
   const horizontal = direction === "left" || direction === "right";
+  const constrained = screen.isPerformanceConstrained?.() !== false;
 
   if (horizontal) {
     return {
-      horizontalAhead: clampNumber(Math.ceil(readyWindowMs / intervalMs), VIDAA_HORIZONTAL_MIN_AHEAD, VIDAA_HORIZONTAL_MAX_AHEAD),
+      horizontalAhead: clampNumber(
+        Math.ceil(readyWindowMs / intervalMs),
+        VIDAA_HORIZONTAL_MIN_AHEAD,
+        constrained ? 8 : VIDAA_HORIZONTAL_MAX_AHEAD
+      ),
       verticalRowsAhead: 0,
       verticalVisibleCount: 0,
       verticalBudget: 0
@@ -150,9 +155,13 @@ function getVidaaPrefetchPlan(screen, anchor, direction, throttle = {}) {
   const landscape = Boolean(anchor?.classList?.contains?.("is-landscape"));
   return {
     horizontalAhead: 0,
-    verticalRowsAhead: clampNumber(Math.ceil(readyWindowMs / intervalMs), VIDAA_VERTICAL_MIN_ROWS_AHEAD, VIDAA_VERTICAL_MAX_ROWS_AHEAD),
+    verticalRowsAhead: clampNumber(
+      Math.ceil(readyWindowMs / intervalMs),
+      VIDAA_VERTICAL_MIN_ROWS_AHEAD,
+      constrained ? 4 : VIDAA_VERTICAL_MAX_ROWS_AHEAD
+    ),
     verticalVisibleCount: landscape ? 5 : 7,
-    verticalBudget: VIDAA_VERTICAL_PREFETCH_BUDGET
+    verticalBudget: constrained ? 10 : VIDAA_VERTICAL_PREFETCH_BUDGET
   };
 }
 

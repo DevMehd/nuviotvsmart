@@ -72,6 +72,20 @@ URL after checking sign-in and playback. Personal secrets and TMDB credentials
 must not be added to the public build. TMDB can be configured in the catalogue
 services (AIOStreams, Xperience or Posters+) or per device in Settings → Integrations.
 
+### Balanced performance on the personal Vercel deployment
+
+VIDAA keeps the existing Home animations while using smaller TMDB card artwork,
+bounded poster prefetching and two-row background catalogue batches. Secondary
+batches yield during remote navigation and stop when the Home load is obsolete.
+Player and plugin libraries are cached on first use rather than prefetched at startup.
+
+Vercel builds enable its native `/_vercel/image` service for raster artwork from
+`ImKaptain/nuvio-art` only. Cards use 640 px, hero artwork uses 1280 px, and failed
+optimizations fall back to the public source. Unknown hosts, signed URLs, private
+addon paths and animated artwork stay direct. Local/offline VIDAA archives disable
+this service. Image Optimization uses the existing Hobby plan's included quotas:
+https://vercel.com/docs/image-optimization/limits-and-pricing
+
 ### Install Nuvio on a Hisense VIDAA TV
 
 **Recommended for newer VIDAA firmware: [Sidee](https://github.com/Empi9245/Sidee).** Sidee uses PIN-authorized pairing over your local network to add a Nuvio web-app tile to the TV launcher, without changing the TV's DNS settings. The Windows launcher is the simplest setup:

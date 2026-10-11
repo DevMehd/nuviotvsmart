@@ -99,7 +99,7 @@ async function packageVidaa() {
   }
   const vidaaEntry = versionedIndex.replace(
     "<head>",
-    `<head>\n    <meta name="nuvio-build" content="${buildId}" />\n    <script>window.__NUVIO_PLATFORM__ = "vidaa";</script>`
+    `<head>\n    <meta name="nuvio-build" content="${buildId}" />\n    <script>window.__NUVIO_PLATFORM__ = "vidaa";window.__NUVIO_IMAGE_OPTIMIZATION__ = ${process.env.VERCEL === "1"};</script>`
   );
   await Promise.all([
     writeFile(indexPath, versionedIndex),

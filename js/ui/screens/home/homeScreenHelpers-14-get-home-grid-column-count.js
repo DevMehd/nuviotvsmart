@@ -1,4 +1,5 @@
 /* eslint-disable no-unused-vars */
+import { getVidaaArtworkUrl, buildVidaaArtworkFallbackAttributes, VIDAA_ARTWORK_FALLBACK_HANDLER } from "./vidaaArtworkOptimization.js";
 import { Router } from "../../navigation/routerState.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
@@ -271,8 +272,11 @@ export function shouldDeferHomeRowImages(rowIndex = 0, rowKey = "", focusedRowKe
   return safeRowIndex >= eagerRows;
 }
 
-export function buildLazyImageAttributes(src = "", { defer = false, highPriority = false } = {}) {
-  const safeSrc = escapeAttribute(src);
+export function buildLazyImageAttributes(src = "", { defer = false, highPriority = false, fallbackHandler = true } = {}) {
+  const optimizedSrc = getVidaaArtworkUrl(src);
+  const fallbackAttrs = buildVidaaArtworkFallbackAttributes(optimizedSrc);
+  const fallback = fallbackAttrs ? `${fallbackAttrs}${fallbackHandler ? ` onerror="${VIDAA_ARTWORK_FALLBACK_HANDLER}"` : ""}` : "";
+  const safeSrc = escapeAttribute(optimizedSrc);
   const priority = highPriority ? ' fetchpriority="high"' : "";
   // Tizen fast path: the old branch forced loading="eager" on constrained
   // runtimes, firing a decode storm for every mounted poster mid-transition.
@@ -280,7 +284,7 @@ export function buildLazyImageAttributes(src = "", { defer = false, highPriority
   // still resolve immediately via the hydration pass.
   const loadingMode = highPriority ? "eager" : "lazy";
   if (defer) {
-    return `data-src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}`;
+    return `data-src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}${fallback}`;
   }
-  return `src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}`;
+  return `src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}${fallback}`;
 }

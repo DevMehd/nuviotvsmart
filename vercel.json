@@ -4,19 +4,57 @@
   "headers": [
     {
       "source": "/",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     },
     {
       "source": "/index.html",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     },
     {
       "source": "/vidaa.html",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     },
     {
       "source": "/sw.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     }
-  ]
+  ],
+  "images": {
+    "sizes": [640, 1280],
+    "domains": [],
+    "localPatterns": [],
+    "remotePatterns": [
+      {
+        "protocol": "https",
+        "hostname": "raw.githubusercontent.com",
+        "port": "",
+        "pathname": "^/ImKaptain/nuvio-art/main/.*\\.(png|jpg|jpeg|webp)$",
+        "search": ""
+      }
+    ],
+    "qualities": [80],
+    "minimumCacheTTL": 86400,
+    "formats": ["image/webp"],
+    "dangerouslyAllowSVG": false
+  }
 }

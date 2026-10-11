@@ -155,6 +155,7 @@ export function createHomeScreenMethods21() {
       const progressiveInitialRows = new Map();
       const initialRows = await this.fetchCatalogRows(initialDescriptors, {
         allowLoading: true,
+        shouldContinue: () => token === this.homeLoadToken && Router.getCurrent() === "home",
         onRow: (row) => {
           if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
             return;
@@ -271,6 +272,9 @@ export function createHomeScreenMethods21() {
         this.fetchCatalogRows(deferredDescriptors, {
           allowLoading: true,
           batchSize: this.getDeferredCatalogBatchSize(),
+          shouldContinue: () => token === this.homeLoadToken && Router.getCurrent() === "home",
+          isBusy: () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.()),
+          batchYieldMs: Platform.isVidaa() ? 120 : 0,
           // Publish completed rows independently; requestBackgroundRender keeps
           // the legacy-TV render delay and navigation deferral in effect.
           onRow: (row) => {

@@ -12,6 +12,13 @@ export function normalizeTmdbBackdropUrl(value) {
   return normalized.replace(/(\/t\/p\/)(?:original|w780)\//i, "$1w1280/");
 }
 
+/** Use a card-sized backdrop without enlarging already smaller artwork. */
+export function normalizeTmdbCardBackdropUrl(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized || !TMDB_IMAGE_HOST_PATTERN.test(normalized)) return normalized;
+  return normalized.replace(/(\/t\/p\/)(?:original|w1280)\//i, "$1w780/");
+}
+
 export function normalizeTmdbPosterUrl(value) {
   const normalized = String(value || "").trim();
   if (!normalized || !TMDB_IMAGE_HOST_PATTERN.test(normalized)) {

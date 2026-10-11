@@ -73,13 +73,13 @@ function move(r, c, direction) {
 }
 
 move(0, 10, "down");
-assert.equal(owner.homeVidaaPosterPrefetchInflight.size, 18);
+assert.equal(owner.homeVidaaPosterPrefetchInflight.size, 8);
 const obsolete = [...owner.homeVidaaPosterPrefetchInflight.values()];
 const staleLoad = obsolete[0].image.onload;
 move(30, 40, "up");
 assert.equal(
   owner.homeVidaaPosterPrefetchInflight.size,
-  18,
+  8,
   "Latest row must acquire slots immediately"
 );
 for (const record of obsolete) {
@@ -93,8 +93,8 @@ assert.equal(owner.homeVidaaPosterWarmUrls.size, 0, "Late events cannot revive r
 // Thousands of reversals must never queue work proportional to visited cards.
 for (let step = 0; step < 2000; step++) {
   move(5 + (step % 28), 8 + (step % 30), ["up", "right", "down", "left"][step % 4]);
-  assert.ok(owner.homeVidaaPosterPrefetchInflight.size <= 18);
-  assert.ok(timers.size <= 19, "At most 18 requests plus one settle timer");
+  assert.ok(owner.homeVidaaPosterPrefetchInflight.size <= 8);
+  assert.ok(timers.size <= 9, "At most 8 requests plus one settle timer");
   if (step % 5 === 0)
     [...owner.homeVidaaPosterPrefetchInflight.values()].forEach((record) =>
       record.image.onload?.()
@@ -107,9 +107,17 @@ assert.equal(
   "Invisible requests never force decode, even if decode would never settle"
 );
 assert.ok(
-  images.filter((image) => image.src).length <= 18,
+  images.filter((image) => image.src).length <= 8,
   "Completed and obsolete images release sources"
 );
+
+// Full mode retains the larger buffer for devices where the user prefers it.
+{
+  const full = { isPerformanceConstrained: () => false };
+  for (let index = 0; index < 30; index++) prefetchVidaaPosterSource(full, `full-${index}`);
+  assert.equal(full.homeVidaaPosterPrefetchInflight.size, 18);
+  cancelVidaaHomePosterPrefetches(full);
+}
 
 // Missing responses must release actual requests at timeout, not just Map slots.
 const pending = [...owner.homeVidaaPosterPrefetchInflight.values()];

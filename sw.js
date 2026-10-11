@@ -1,4 +1,5 @@
 var CACHE_NAME = "nuvio-vidaa-v4";
+// Player/plugin libraries enter the runtime cache on first use, keeping startup light.
 var ASSETS = [
   "./",
   "./index.html",
@@ -9,12 +10,7 @@ var ASSETS = [
   "./nuvio.env.js",
   "./app.bundle.js",
   "./assets/runtime/legacy-features.js",
-  "./assets/runtime/plugin-worker.js",
   "./assets/libs/qrcode-generator.js",
-  "./assets/libs/quickjs-emscripten.global.js",
-  "./assets/libs/ass.min.js",
-  "./assets/libs/hls.min.js",
-  "./assets/libs/dash.all.min.js",
   "./css/bundle.css"
 ];
 
@@ -63,6 +59,9 @@ self.addEventListener("fetch", function (e) {
   var req = e.request;
   if (req.method !== "GET") return;
   if (req.url.indexOf(self.location.origin) !== 0) return;
+
+  // Let Vercel cache complete image variant URLs without offline-cache rewriting.
+  if (new URL(req.url).pathname === "/_vercel/image") return;
 
   // Never touch media range requests or video stream files
   if (req.headers && req.headers.get("range")) return;

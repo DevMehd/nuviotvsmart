@@ -173,6 +173,7 @@ import { getContinueWatchingRenderItems, shouldAppendContinueWatchingItems } fro
 
 import { shouldProtectContinueWatchingDisplay } from "./continueWatchingLoadPolicy.js";
 
+import { getVidaaArtworkUrl } from "./vidaaArtworkOptimization.js";
 import { buildHeroBackdropSources, buildImageFallbackErrorHandler, encodeHeroBackdropFallbacks } from "./homeImageHelpers.js";
 
 import {
@@ -194,7 +195,7 @@ import { normalizeCatalogItem } from "./homeScreenHelpers-08-partition-continue-
 import { normalizeContinueWatchingItem } from "./homeScreenHelpers-09-normalize-continue-watching-item.js";
 import { isSeriesTypeForContinueWatching } from "./homeScreenHelpers-06-resolve-trailer-source.js";
 import { buildLazyImageAttributes } from "./homeScreenHelpers-14-get-home-grid-column-count.js";
-import { normalizeTmdbBackdropUrl, normalizeTmdbPosterUrl } from "../../../core/tmdb/tmdbImageUrl.js";
+import { normalizeTmdbBackdropUrl, normalizeTmdbCardBackdropUrl, normalizeTmdbPosterUrl } from "../../../core/tmdb/tmdbImageUrl.js";
 
 export function buildHeroIndicators(items = [], activeItem) {
   if (!Array.isArray(items) || items.length <= 1) {
@@ -304,12 +305,13 @@ export function renderContinueWatchingCard(item, index, options = {}) {
       hasAired
     }
   );
-  const normalizeCardImageUrl = cardStyle === "card" ? normalizeTmdbBackdropUrl : normalizeTmdbPosterUrl;
-  const uniqueCardImageSources = uniqueNonEmptyValues(cardImageSources.map((source) => normalizeCardImageUrl(source)));
+  const normalizeCardImageUrl =
+    cardStyle === "card" ? (Platform.isVidaa() ? normalizeTmdbCardBackdropUrl : normalizeTmdbBackdropUrl) : normalizeTmdbPosterUrl;
+  const uniqueCardImageSources = uniqueNonEmptyValues(cardImageSources.map((source) => getVidaaArtworkUrl(normalizeCardImageUrl(source))));
   const cardImage = uniqueCardImageSources[0] || "";
   const fallbackQueue = encodeHeroBackdropFallbacks(uniqueCardImageSources.slice(1));
   const deferContinueImage = getTvRuntimePerformanceProfile().isPerformanceConstrained;
-  const continueImageAttrs = cardImage ? buildLazyImageAttributes(cardImage, { defer: deferContinueImage }) : "";
+  const continueImageAttrs = cardImage ? buildLazyImageAttributes(cardImage, { defer: deferContinueImage, fallbackHandler: false }) : "";
   return `
     <article class="home-content-card home-continue-card${blurNextUp ? " home-continue-card-blur-next-up" : ""} focusable"
              tabindex="0"
