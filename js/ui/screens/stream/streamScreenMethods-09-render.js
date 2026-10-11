@@ -23,6 +23,7 @@ export function createStreamScreenMethods09() {
   return {
     render() {
       this.cancelScheduledRender();
+      this.syncAutoPlayUiState();
       if (this.autoPlayUiActive) {
         const markup = renderPlayerLoadingOverlay(
           {

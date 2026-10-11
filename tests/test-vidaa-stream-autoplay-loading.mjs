@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 
-globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+const storage = new Map();
+globalThis.localStorage = {
+  getItem: (key) => storage.get(key) ?? null,
+  setItem: (key, value) => storage.set(key, String(value)),
+  removeItem: (key) => storage.delete(key)
+};
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.location = { search: "" };
 globalThis.document = { documentElement: { classList: { contains: () => false } } };
@@ -26,8 +31,6 @@ Router.getCurrent = () => "stream";
 Router.navigate = (route, params) => navigations.push({ route, params });
 streamRepository.setLocalPluginSearchPaused = () => {};
 addonRepository.getCachedInstalledAddons = () => [{ name: "Source A" }, { name: "Source B" }];
-let settings;
-PlayerSettingsStore.get = () => settings;
 const sources = [
   {
     id: "b",
@@ -58,20 +61,35 @@ async function settle() {
 }
 async function mount(
   mode,
-  { params = {}, navigation = {}, wait = 0, pattern = "2160p", scope = {} } = {}
+  {
+    params = {},
+    navigation = {},
+    wait = 0,
+    pattern = "2160p",
+    scope = {},
+    previousMarkup = ""
+  } = {}
 ) {
-  settings = {
-    streamAutoPlayMode: mode,
-    streamAutoPlayRegex: pattern,
-    streamAutoPlayTimeoutSeconds: wait,
-    streamAutoPlaySource: "ALL_SOURCES",
-    streamReuseLastLinkEnabled: false,
-    streamAutoPlayPreferBingeGroupForNextEpisode: false,
-    ...scope
-  };
+  PlayerSettingsStore.set(
+    {
+      streamAutoPlayMode: mode,
+      streamAutoPlayRegex: pattern,
+      streamAutoPlayTimeoutSeconds: wait,
+      streamAutoPlaySource: "ALL_SOURCES",
+      streamReuseLastLinkEnabled: false,
+      streamAutoPlayPreferBingeGroupForNextEpisode: false,
+      streamAutoPlayReuseBingeGroup: false,
+      streamAutoPlaySelectedAddons: [],
+      streamAutoPlaySelectedPlugins: [],
+      ...scope
+    },
+    { silentSync: true }
+  );
   const paints = [];
+  const exposures = [];
   const container = {
     style: {},
+    markup: previousMarkup,
     querySelector: () => null,
     querySelectorAll: () => [],
     set innerHTML(value) {
@@ -79,6 +97,14 @@ async function mount(
       paints.push(value);
     }
   };
+  let display = "none";
+  Object.defineProperty(container.style, "display", {
+    get: () => display,
+    set(value) {
+      display = value;
+      if (value === "block") exposures.push(container.markup);
+    }
+  });
   document.getElementById = () => container;
   let manualRenders = 0;
   const ui = {
@@ -93,8 +119,8 @@ async function mount(
       this.render();
     },
     render() {
-      if (this.autoPlayUiActive) StreamScreen.render.call(this);
-      else manualRenders++;
+      StreamScreen.render.call(this);
+      if (!this.autoPlayUiActive) manualRenders++;
     }
   };
   await ui.mount(
@@ -111,6 +137,7 @@ async function mount(
     ui,
     container,
     paints,
+    exposures,
     get manualRenders() {
       return manualRenders;
     }
@@ -211,7 +238,8 @@ test("manual mode, explicit manual choice and return from player keep their norm
   ]) {
     const result = await mount(mode, options);
     assert.equal(result.ui.autoPlayUiActive, false);
-    assert.equal(result.paints.length, 0);
+    assert.equal(result.paints.length, 1);
+    assert.ok(result.paints[0].includes("stream-route-content"));
     assert.equal(result.manualRenders, 1);
   }
 });
@@ -254,6 +282,82 @@ test("back/cleanup cancels a pending resume so playback cannot open later", asyn
   resolve(null);
   await settle();
   assert.equal(navigations.length, 0);
+});
+
+test("settings hydration enables FIRST_STREAM loading before publishing results", async () => {
+  const result = await mount("MANUAL");
+  const previousPaints = result.paints.length;
+  PlayerSettingsStore.set({ streamAutoPlayMode: "FIRST_STREAM" }, { silentSync: true });
+  complete(result.ui);
+  await settle();
+  assert.equal(result.ui.autoPlayUiActive, true);
+  assert.equal(result.manualRenders, 1, "No second picker render follows the settings update");
+  assertNoPicker(result.paints.slice(previousPaints));
+  assert.equal(navigations.at(-1).params.preferredStreamId, "a");
+});
+
+test("a hydrated valid regex replaces its disabled picker with loading", async () => {
+  const result = await mount("REGEX_MATCH", { pattern: "[" });
+  assert.equal(result.ui.autoPlayUiActive, false);
+  const previousPaints = result.paints.length;
+  PlayerSettingsStore.set({ streamAutoPlayRegex: "2160p" }, { silentSync: true });
+  complete(result.ui);
+  await settle();
+  assert.equal(result.ui.autoPlayUiActive, true);
+  assert.equal(result.manualRenders, 1);
+  assertNoPicker(result.paints.slice(previousPaints));
+  assert.equal(navigations.at(-1).params.preferredStreamId, "4k");
+});
+
+test("a settings update to MANUAL before selection restores the normal picker", async () => {
+  const result = await mount("FIRST_STREAM");
+  assertNoPicker(result.paints);
+  PlayerSettingsStore.set({ streamAutoPlayMode: "MANUAL" }, { silentSync: true });
+  complete(result.ui);
+  await settle();
+  assert.equal(result.ui.autoPlayUiActive, false);
+  assert.equal(result.ui.autoPlayUiError, "");
+  assert.equal(result.manualRenders, 1);
+  assert.ok(result.paints.at(-1).includes("stream-route-content"));
+  assert.equal(navigations.length, 0);
+});
+
+test("automatic mount replaces preexisting picker DOM before showing its container", async () => {
+  const result = await mount("FIRST_STREAM", {
+    previousMarkup:
+      '<div class="stream-route-content"><div class="stream-route-card">Old source</div></div>'
+  });
+  assertNoPicker(result.exposures);
+  assertNoPicker(result.paints);
+  assert.equal(result.manualRenders, 0);
+});
+
+test("selector settings hydration paints loading before waiting for resume data", async () => {
+  const previousResume = watchProgressRepository.getResumeByContentId;
+  let resolve;
+  watchProgressRepository.getResumeByContentId = () =>
+    new Promise((done) => {
+      resolve = done;
+    });
+  try {
+    const result = await mount("MANUAL", { params: { startFromBeginning: false } });
+    const previousPaints = result.paints.length;
+    PlayerSettingsStore.set({ streamAutoPlayMode: "FIRST_STREAM" }, { silentSync: true });
+    result.ui.streams = sources.slice();
+    result.ui.loading = false;
+    result.ui.streamSearchCompleted = true;
+    result.ui.maybeAutoPlayStream({ allLoaded: true });
+    assert.equal(result.ui.autoPlayUiActive, true);
+    assert.equal(result.manualRenders, 1);
+    assertNoPicker(result.paints.slice(previousPaints));
+    assert.equal(typeof resolve, "function");
+    assert.equal(navigations.length, 0);
+    resolve(null);
+    await settle();
+    assert.equal(navigations.at(-1).params.preferredStreamId, "a");
+  } finally {
+    watchProgressRepository.getResumeByContentId = previousResume;
+  }
 });
 
 let failures = 0;

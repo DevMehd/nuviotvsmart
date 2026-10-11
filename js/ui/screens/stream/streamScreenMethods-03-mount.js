@@ -7,7 +7,6 @@ export function createStreamScreenMethods03() {
     ScreenUtils,
     streamRepository,
     PlayerSettingsStore,
-    isAutoPlayEffectivelyEnabled,
     StreamPreferencesStore,
     StreamBadgeSettingsStore,
     ensureWebOsImageProxyReady,
@@ -23,7 +22,6 @@ export function createStreamScreenMethods03() {
     async mount(params = {}, navigationContext = {}) {
       streamRepository.setLocalPluginSearchPaused(false);
       this.container = document.getElementById("stream");
-      ScreenUtils.show(this.container);
       this.params = params || {};
       this.streamBackNavigationInProgress = false;
       this.stopStreamVirtualization();
@@ -52,15 +50,12 @@ export function createStreamScreenMethods03() {
       // title again from Detail is a new stream search.
       const returningFromPlayer = Boolean(navigationContext?.isBackNavigation && navigationContext?.previousRoute === "player");
       this.autoResumeAttempted = returningFromPlayer;
+      this.autoPlayAttempted = returningFromPlayer;
       const playerSettings = PlayerSettingsStore.get();
-      const autoPlayMode = String(playerSettings.streamAutoPlayMode || "MANUAL").toUpperCase();
-      this.autoPlayUiActive = Boolean(
-        !returningFromPlayer &&
-        !this.params.manualSelection &&
-        ["FIRST_STREAM", "REGEX_MATCH"].includes(autoPlayMode) &&
-        isAutoPlayEffectivelyEnabled(playerSettings)
-      );
+      this.autoPlayUiActive = false;
       this.autoPlayUiError = "";
+      this.renderedMarkup = null;
+      this.syncAutoPlayUiState(playerSettings);
       const reusableStream = playerSettings.streamReuseLastLinkEnabled
         ? StreamPreferencesStore.getValid(
             this.params?.itemId,
@@ -75,7 +70,6 @@ export function createStreamScreenMethods03() {
         reusableStream?.streamId &&
         (String(this.params?.resumeStreamIdentity || "").trim() || String(this.params?.preferredStreamId || "").trim())
       );
-      this.autoPlayAttempted = returningFromPlayer;
       this.cancelAutoPlayCountdown();
       this.cancelAutoPlaySelectionWait();
       const autoPlayWaitSeconds = Math.max(0, Math.trunc(Number(playerSettings.streamAutoPlayTimeoutSeconds || 0)));
@@ -147,7 +141,15 @@ export function createStreamScreenMethods03() {
         this.loading = false;
       }
 
-      this.render();
+      // Prepare automatic loading before revealing the route to the compositor.
+      // The manual picker needs to be visible before its focus is restored.
+      if (this.autoPlayUiActive) {
+        this.render();
+        ScreenUtils.show(this.container);
+      } else {
+        ScreenUtils.show(this.container);
+        this.render();
+      }
 
       if (restoringFromBack) {
         // Android keeps the stream collector alive while the player is on top of

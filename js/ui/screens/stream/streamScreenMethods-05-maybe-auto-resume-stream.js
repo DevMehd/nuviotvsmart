@@ -20,6 +20,18 @@ export function createStreamScreenMethods05() {
   } = internals;
 
   return {
+    syncAutoPlayUiState(settings = PlayerSettingsStore.get()) {
+      // Profile sync can finish while providers are loading. Use the same current
+      // settings for presentation and selection until an attempt has started.
+      if (this.autoPlayAttempted) return settings;
+      const mode = String(settings.streamAutoPlayMode || "MANUAL")
+        .trim()
+        .toUpperCase();
+      this.autoPlayUiActive = Boolean(
+        !this.params?.manualSelection && ["FIRST_STREAM", "REGEX_MATCH"].includes(mode) && isAutoPlayEffectivelyEnabled(settings)
+      );
+      return settings;
+    },
     maybeAutoResumeStream({ allLoaded = false } = {}) {
       if (this.autoResumeAttempted) {
         return;
@@ -84,11 +96,13 @@ export function createStreamScreenMethods05() {
       if (Router.getCurrent() !== "stream") {
         return;
       }
+      const previousAutoPlayUiActive = this.autoPlayUiActive;
+      const settings = this.syncAutoPlayUiState();
+      if (previousAutoPlayUiActive !== this.autoPlayUiActive) this.render();
       if (!this.streams.length) {
         if (allLoaded && this.autoPlayUiActive) this.showAutoPlaySelectionError();
         return;
       }
-      const settings = PlayerSettingsStore.get();
       if (this.params?.manualSelection) {
         return;
       }
