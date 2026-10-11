@@ -122,7 +122,9 @@ export function selectBestLocalizedLogoPath(logos = [], language = "") {
   const { languageCode, regionCode } = normalizeTmdbArtworkLanguage(language);
   const ranked = (Array.isArray(logos) ? logos : [])
     .map((logo, index) => {
-      const logoLanguage = String(logo?.iso_639_1 || "").toLowerCase();
+      const logoLanguage = String(logo?.iso_639_1 || "")
+        .trim()
+        .toLowerCase();
       const logoRegion = String(logo?.iso_3166_1 || "").toUpperCase();
       let priority = -1;
       if (logoLanguage === languageCode && regionCode && logoRegion === regionCode) {
@@ -131,10 +133,6 @@ export function selectBestLocalizedLogoPath(logos = [], language = "") {
         priority = 4;
       } else if (logoLanguage === languageCode) {
         priority = 3;
-      } else if (logoLanguage === "en") {
-        priority = 2;
-      } else if (!logoLanguage) {
-        priority = 1;
       }
       return {
         logo,
@@ -143,7 +141,8 @@ export function selectBestLocalizedLogoPath(logos = [], language = "") {
         voteAverage: Number(logo?.vote_average || 0)
       };
     })
-    // Never select artwork explicitly tagged with an unrelated language.
+    // Logos contain the title: an English/unclassified fallback can undo the
+    // selected language. Use the translated text title when no matching logo exists.
     .filter((entry) => entry.priority >= 0 && entry.logo?.file_path)
     .sort((left, right) => right.priority - left.priority || right.voteAverage - left.voteAverage || left.index - right.index);
   return ranked[0]?.logo?.file_path || null;

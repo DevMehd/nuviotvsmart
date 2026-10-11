@@ -195,13 +195,22 @@ export function createHomeScreenMethods26() {
       if (!settings.enabled || !settings.enrichContinueWatching || !isTmdbConfigured(settings) || !meta) {
         return meta;
       }
+      const hasCurrentLocalizedArtwork =
+        item.continueWatchingTmdbEnriched === true && item.continueWatchingEnrichmentSignature === homeMetadataSettingsSignature();
+      const fallbackMeta =
+        settings.useArtwork &&
+        !String(settings.language || "en")
+          .toLowerCase()
+          .startsWith("en")
+          ? { ...meta, logo: hasCurrentLocalizedArtwork ? item.logo || null : null }
+          : meta;
       const contentType = item.contentType || meta.type || "movie";
       try {
         const tmdbLookupId = resolveHomeTmdbLookupId(item, meta);
-        if (!tmdbLookupId) return meta;
+        if (!tmdbLookupId) return fallbackMeta;
         const tmdbId = await TmdbService.ensureTmdbId(tmdbLookupId, contentType);
         if (!tmdbId) {
-          return meta;
+          return fallbackMeta;
         }
         const isSeries = isSeriesTypeForContinueWatching(contentType);
         const enrichmentPromise = TmdbMetadataService.fetchEnrichment({
@@ -219,7 +228,7 @@ export function createHomeScreenMethods26() {
             : Promise.resolve(new Map());
         const [enrichment, episodeMap] = await Promise.all([enrichmentPromise, episodeMapPromise]);
         if (!enrichment && !episodeMap.size) {
-          return meta;
+          return fallbackMeta;
         }
         const showEnrichment = enrichment || {};
         const videos =
@@ -255,7 +264,7 @@ export function createHomeScreenMethods26() {
           backdrop: settings.useArtwork ? showEnrichment.backdrop || meta.backdrop : meta.backdrop,
           poster: settings.useArtwork ? showEnrichment.poster || meta.poster : meta.poster,
           thumbnail: settings.useArtwork ? showEnrichment.poster || meta.thumbnail : meta.thumbnail,
-          logo: settings.useArtwork ? showEnrichment.logo || meta.logo : meta.logo,
+          logo: settings.useArtwork ? (enrichment ? showEnrichment.logo || null : fallbackMeta.logo || null) : meta.logo,
           genres: settings.useBasicInfo && showEnrichment.genres?.length ? showEnrichment.genres : meta.genres,
           releaseInfo: settings.useReleaseDates ? showEnrichment.releaseInfo || meta.releaseInfo : meta.releaseInfo,
           released: settings.useReleaseDates ? showEnrichment.released || meta.released : meta.released,
@@ -274,7 +283,7 @@ export function createHomeScreenMethods26() {
         };
       } catch (error) {
         console.warn("Continue watching TMDB enrichment failed", error);
-        return meta;
+        return fallbackMeta;
       }
     }
   };

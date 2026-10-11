@@ -193,9 +193,42 @@ for (const layout of ["classic", "grid", "modern"]) {
   const fallback = display(state.heroItem, "modern");
   assert.equal(fallback.title, english.name);
   assert.equal(fallback.description, addonEnglish.data.description);
-  assert.equal(fallback.logo, addonEnglish.data.logo);
+  assert.equal(
+    fallback.logo,
+    "",
+    "Unknown addon logos cannot bypass the selected Italian language"
+  );
   mdb.resolve(null);
   await pending;
+}
+
+// A missing Italian logo must explicitly replace the catalog/addon's English
+// logo. A failed refresh cannot bring that rejected logo back later.
+for (const layout of ["classic", "grid", "modern"]) {
+  const { tmdb, addon, mdb } = providers();
+  const state = heroState(layout);
+  const pending = state.enrichCurrentHeroAsync(state.heroItem);
+  await flush();
+  tmdb.resolve({ ...italian, logo: null });
+  addon.resolve(addonEnglish);
+  mdb.resolve(8.5);
+  await pending;
+  assert.equal(display(state.heroItem, layout).title, italian.localizedTitle);
+  assert.equal(display(state.heroItem, layout).logo, "");
+  assert.ok(state.commits.every((commit) => !commit.display.logo));
+  const refresh = providers();
+  state.heroFocusToken += 1;
+  const retry = state.enrichCurrentHeroAsync(state.heroItem);
+  await flush();
+  refresh.addon.resolve(addonEnglish);
+  refresh.tmdb.reject(new Error("TMDB refresh failed"));
+  refresh.mdb.resolve(8.6);
+  await retry;
+  assert.equal(
+    display(state.heroItem, layout).logo,
+    "",
+    "A cached title fallback survives a later provider error"
+  );
 }
 
 // No localized request is expected when Home TMDB is disabled, the selected

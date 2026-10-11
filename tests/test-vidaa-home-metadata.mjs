@@ -367,6 +367,64 @@ profile = "profile-a";
   assert.equal(result.logo, italian.logo);
   assert.equal(result.continueWatchingTmdbEnriched, true);
 }
+// Continue Watching must honor an explicit missing localized logo, rather
+// than putting the unknown-language addon artwork back on the Italian title.
+{
+  TmdbService.ensureTmdbId = async () => 99;
+  TmdbMetadataService.fetchEnrichment = async () => ({ ...italian, logo: null });
+  const state = createHomeScreenMethods26();
+  const meta = { id: "tt0099", name: "English", logo: "https://example.test/en-logo.png" };
+  const item = { contentId: meta.id, contentType: "movie" };
+  const result = await state.enrichContinueWatchingMetaWithTmdb(meta, item);
+  assert.equal(result.name, italian.localizedTitle);
+  assert.equal(result.logo, null);
+  const previousSettings = settings;
+  settings = { ...settings, useArtwork: false };
+  assert.equal((await state.enrichContinueWatchingMetaWithTmdb(meta, item)).logo, meta.logo);
+  settings = previousSettings;
+  TmdbMetadataService.fetchEnrichment = async () => null;
+  assert.equal((await state.enrichContinueWatchingMetaWithTmdb(meta, item)).logo, null);
+  const cached = {
+    ...item,
+    logo: italian.logo,
+    continueWatchingTmdbEnriched: true,
+    continueWatchingEnrichmentSignature: homeMetadataSettingsSignature()
+  };
+  assert.equal(
+    (await state.enrichContinueWatchingMetaWithTmdb(meta, cached)).logo,
+    italian.logo,
+    "A valid Italian cached logo survives a temporary failure"
+  );
+  assert.equal(
+    (
+      await state.enrichContinueWatchingMetaWithTmdb(meta, {
+        ...cached,
+        continueWatchingEnrichmentSignature: "old-language"
+      })
+    ).logo,
+    null
+  );
+}
+
+// The end-of-playback recommendation uses the same localized-title fallback.
+{
+  const { PostPlayRecommendationController } =
+    await import("../js/ui/screens/player/postPlayRecommendationController.js");
+  metaRepository.getMetaFromAllAddons = async () => ({
+    status: "success",
+    data: { id: "tt0099", type: "movie", name: "English", logo: "https://example.test/en-logo.png" }
+  });
+  TmdbMetadataService.fetchEnrichment = async () => ({ ...italian, logo: null });
+  const controller = new PostPlayRecommendationController();
+  const result = await controller.resolveCandidate({
+    id: "tt0099",
+    type: "movie",
+    name: "English"
+  });
+  assert.equal(result.name, italian.localizedTitle);
+  assert.equal(result.logo, "");
+}
+
 console.log(
   "Home metadata checks passed: localization ordering, provider independence, carousel layouts, profile/language cache isolation and stale responses."
 );

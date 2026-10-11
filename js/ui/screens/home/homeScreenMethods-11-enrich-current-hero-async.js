@@ -146,7 +146,7 @@ export function createHomeScreenMethods11() {
                 : {}),
               ...(settings.useArtwork && tmdbEnrichment.backdrop ? { background: tmdbEnrichment.backdrop } : {}),
               ...(settings.useArtwork && tmdbEnrichment.poster ? { poster: tmdbEnrichment.poster } : {}),
-              ...(settings.useArtwork && tmdbEnrichment.logo ? { logo: tmdbEnrichment.logo } : {}),
+              ...(settings.useArtwork ? { logo: tmdbEnrichment.logo || null } : {}),
               ...(settings.useDetails && tmdbRuntime > 0 ? { runtimeMinutes: tmdbRuntime } : {}),
               ...(settings.useDetails && tmdbEnrichment.ageRating ? { ageRating: tmdbEnrichment.ageRating } : {}),
               ...(settings.useDetails && tmdbEnrichment.status ? { status: tmdbEnrichment.status } : {}),
@@ -170,9 +170,12 @@ export function createHomeScreenMethods11() {
             ? { genres: meta.genres }
             : {}),
           ...(meta?.description && !(preserveLocalizedBasicInfo && sourceHero.description) ? { description: meta.description } : {}),
-          ...(meta?.logo && !(preserveLocalizedArtwork && sourceHero.logo) ? { logo: meta.logo } : {}),
+          ...(meta?.logo && !preserveLocalizedArtwork ? { logo: meta.logo } : {}),
           ...(meta?.background && !(preserveLocalizedArtwork && sourceHero.background) ? { background: meta.background } : {}),
-          ...tmdbPatch
+          ...tmdbPatch,
+          ...(settings.useArtwork && waitForLocalizedTmdb && tmdbSettled && !tmdbEnrichment
+            ? { logo: hasCurrentLocalizedPreview ? sourceHero.logo || null : null }
+            : {})
         };
         return commitHero(mergedHero, revision);
       };

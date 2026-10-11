@@ -651,7 +651,16 @@ function projectRecommendation({
   const title = useBasicInfo ? firstNonBlank(enrichment?.localizedTitle, baseTitle) : baseTitle;
   const poster = basePoster;
   const backdrop = useArtwork ? firstNonBlank(enrichment?.backdrop, baseBackdrop) : baseBackdrop;
-  const logo = useArtwork ? firstNonBlank(enrichment?.logo, baseLogo) : baseLogo;
+  const logo = useArtwork
+    ? firstNonBlank(
+        enrichment?.logo,
+        String(tmdbSettings.language || "en")
+          .toLowerCase()
+          .startsWith("en")
+          ? baseLogo
+          : ""
+      )
+    : baseLogo;
   const description = useBasicInfo
     ? firstNonBlank(enrichment?.description, meta.description, candidate.description)
     : firstNonBlank(meta.description, candidate.description);

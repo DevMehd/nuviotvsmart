@@ -95,6 +95,17 @@ try {
   ];
   assert.equal(selectBestLocalizedLogoPath(regionalLogos, "it"), "/italy.png");
   assert.equal(
+    selectBestLocalizedLogoPath(
+      [
+        { file_path: "/english.png", iso_639_1: "en" },
+        { file_path: "/unclassified.png", iso_639_1: null }
+      ],
+      "it-IT"
+    ),
+    null,
+    "Italian must not silently select an English or unclassified logo"
+  );
+  assert.equal(
     selectBestLocalizedLogoPath([{ file_path: "/german.png", iso_639_1: "de" }], "it"),
     null
   );
@@ -173,6 +184,41 @@ try {
       );
     }
   }
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      ...italianDetails,
+      images: {
+        ...italianDetails.images,
+        logos: [
+          { file_path: "/english-logo.png", iso_639_1: "en" },
+          { file_path: "/unclassified-logo.png", iso_639_1: null }
+        ]
+      }
+    })
+  });
+  for (const includeExtras of [false, true]) {
+    const result = await TmdbMetadataService.fetchEnrichment({
+      tmdbId: 99,
+      contentType: "movie",
+      language: "it-IT",
+      includeExtras
+    });
+    assert.equal(
+      result.logo,
+      null,
+      "Home and Detail use the translated title when no Italian logo exists"
+    );
+    assert.equal(result.localizedTitle, italianDetails.title);
+  }
+  const englishLogo = await TmdbMetadataService.fetchEnrichment({
+    tmdbId: 99,
+    contentType: "movie",
+    language: "en-US",
+    includeExtras: false
+  });
+  assert.ok(englishLogo.logo.endsWith("/english-logo.png"));
 
   globalThis.fetch = async (rawUrl) => ({
     ok: true,
