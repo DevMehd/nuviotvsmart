@@ -57,6 +57,7 @@ export function createAuthQrSignInScreenMethods03() {
       });
     },
     setStatus(text) {
+      this.qrStatusText = text;
       const statusNode = this.container?.querySelector("#qr-status");
       if (statusNode) statusNode.innerText = text;
     },
@@ -235,6 +236,8 @@ export function createAuthQrSignInScreenMethods03() {
         this.openServerConnection(action === "use-official" ? "officialReview" : "input");
       } else if (action === "use-local") {
         this.openServerConnection("localReview");
+      } else if (action === "login-qr" || action === "login-email") {
+        this.toggleLoginMode(action === "login-email");
       } else if (action === "refresh") {
         this.handleRefreshAction();
       } else if (action === "signout") {
@@ -277,10 +280,13 @@ export function createAuthQrSignInScreenMethods03() {
       }
     },
     cleanup() {
+      this.authMountToken = Number(this.authMountToken || 0) + 1;
       this.isMounted = false;
       this.isLeaving = true;
       this.showSignOutConfirmation = false;
       this.stopIntervals();
+      this.qrResult = null;
+      this.qrStatusText = "";
       if (this.container) ScreenUtils.hide(this.container);
       this.container = null;
     }

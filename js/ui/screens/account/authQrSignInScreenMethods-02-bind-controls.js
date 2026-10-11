@@ -39,6 +39,8 @@ export function createAuthQrSignInScreenMethods02() {
         .querySelectorAll("[data-action='connect-custom']")
         .forEach((node) => node.addEventListener("click", () => this.openServerConnection("input")));
       this.container.querySelector("[data-action='use-local']")?.addEventListener("click", () => this.openServerConnection("localReview"));
+      this.container.querySelector("[data-action='login-qr']")?.addEventListener("click", () => this.toggleLoginMode(false));
+      this.container.querySelector("[data-action='login-email']")?.addEventListener("click", () => this.toggleLoginMode(true));
       this.container.querySelector("[data-action='email-submit']")?.addEventListener("click", () => void this.submitEmailLogin());
       this.container.querySelector("[data-action='email-mode']")?.addEventListener("click", () => this.toggleEmailMode());
       this.container.querySelector("[data-action='cancel-signout']")?.addEventListener("click", () => this.dismissSignOutConfirmation());
@@ -75,6 +77,31 @@ export function createAuthQrSignInScreenMethods02() {
       this.isServerMenuOpen = !this.isServerMenuOpen;
       this.render();
     },
+    toggleLoginMode(useEmail) {
+      // Auth requests already in flight cannot safely be cancelled.
+      if (!this.isMounted || this.isLeaving || this.isSignedIn || this.isStartingQr || this.isPolling || this.isEmailSubmitting) return;
+      if (!this.supportsEmailAuth || !this.supportsQrAuth) return;
+      if (this.useEmailLogin === useEmail) {
+        this.isServerMenuOpen = false;
+        this.render();
+        return;
+      }
+      this.useEmailLogin = useEmail;
+      this.useQrLogin = !useEmail;
+      this.isServerMenuOpen = false;
+      this.stopIntervals();
+      this.clearQr();
+      this.qrStatusText = "";
+      this.render();
+      if (this.useQrLogin) {
+        const mountToken = this.authMountToken;
+        void this.startQr().catch((error) => {
+          if (this.isMounted && !this.isLeaving && mountToken === this.authMountToken) {
+            this.setStatus(this.toFriendlyQrError(error?.message || error));
+          }
+        });
+      }
+    },
     openSignOutConfirmation() {
       if (this.isLeaving || !this.isSignedIn) return;
       this.isServerMenuOpen = false;
@@ -99,6 +126,7 @@ export function createAuthQrSignInScreenMethods02() {
       if (!this.isMounted || this.isLeaving || this.isStartingQr || !this.useQrLogin || this.isSignedIn) {
         return;
       }
+      const mountToken = this.authMountToken;
       this.isStartingQr = true;
       this.updateActionButtons();
       this.stopIntervals();
@@ -107,7 +135,7 @@ export function createAuthQrSignInScreenMethods02() {
 
       try {
         const result = await QrLoginService.start();
-        if (!this.isMounted || this.isLeaving) return;
+        if (!this.isMounted || this.isLeaving || mountToken !== this.authMountToken) return;
         if (!result || !result.code) {
           this.setStatus(this.toFriendlyQrError(QrLoginService.getLastError()));
           return;
@@ -116,13 +144,15 @@ export function createAuthQrSignInScreenMethods02() {
         this.setStatus(I18n.t("auth.qr.scanAndSignIn"));
         this.startPolling(result.code, result.deviceNonce, result.pollIntervalSeconds || 3);
       } finally {
-        if (this.isMounted) {
+        if (this.isMounted && mountToken === this.authMountToken) {
           this.isStartingQr = false;
           this.updateActionButtons();
         }
       }
     },
-    renderQr({ loginUrl, verificationUri, displayCode, code, expiresAt }) {
+    renderQr(result) {
+      this.qrResult = result;
+      const { loginUrl, verificationUri, displayCode, code, expiresAt } = result;
       const qrContainer = this.container?.querySelector("#qr-container");
       const codeText = this.container?.querySelector("#qr-code-text");
       const manualText = this.container?.querySelector("#qr-manual-text");
@@ -153,6 +183,7 @@ export function createAuthQrSignInScreenMethods02() {
       this.startCountdown(expiresAt);
     },
     clearQr() {
+      this.qrResult = null;
       const qrContainer = this.container?.querySelector("#qr-container");
       const manualText = this.container?.querySelector("#qr-manual-text");
       const codeText = this.container?.querySelector("#qr-code-text");
@@ -189,12 +220,15 @@ export function createAuthQrSignInScreenMethods02() {
     },
     startPolling(code, deviceNonce, pollIntervalSeconds = 3) {
       this.stopPollingOnly();
+      const mountToken = this.authMountToken;
+      const isCurrent = () => this.isMounted && !this.isLeaving && this.useQrLogin && mountToken === this.authMountToken;
       this.qrPollIntervalSeconds = Math.max(2, Number(pollIntervalSeconds || 3));
       const pollOnce = async () => {
-        if (!this.isMounted || this.isLeaving || this.isPolling) return;
+        if (!isCurrent() || this.isPolling) return;
         this.isPolling = true;
         try {
           const pollResult = await QrLoginService.poll(code, deviceNonce);
+          if (!isCurrent()) return;
           const status = typeof pollResult === "string" ? pollResult : pollResult?.status || null;
           if (pollResult && typeof pollResult === "object") {
             const nextInterval = Number(pollResult.pollIntervalSeconds);
@@ -206,12 +240,11 @@ export function createAuthQrSignInScreenMethods02() {
               this.startCountdown(nextExpiration);
             }
           }
-          if (!this.isMounted || this.isLeaving) return;
           if (status === "approved") {
             this.setStatus(I18n.t("auth.qr.approved"));
             this.stopPollingOnly();
             const exchange = await QrLoginService.exchange(code, deviceNonce);
-            if (!this.isMounted || this.isLeaving) return;
+            if (!isCurrent()) return;
             if (exchange) {
               LocalStore.remove(GUEST_QR_BYPASS_KEY);
               LocalStore.set("hasSeenAuthQrOnFirstLaunch", true);
@@ -238,9 +271,11 @@ export function createAuthQrSignInScreenMethods02() {
             return;
           }
         } finally {
-          this.isPolling = false;
-          if (this.isMounted && !this.isLeaving && this.pollTimer !== null) {
-            this.pollTimer = setTimeout(pollOnce, Math.max(2, Number(this.qrPollIntervalSeconds || 3)) * 1000);
+          if (mountToken === this.authMountToken) {
+            this.isPolling = false;
+            if (isCurrent() && this.pollTimer !== null) {
+              this.pollTimer = setTimeout(pollOnce, Math.max(2, Number(this.qrPollIntervalSeconds || 3)) * 1000);
+            }
           }
         }
       };

@@ -88,6 +88,73 @@ for (const platform of ["vidaa", "tizen", "webos", "browser"]) {
   assert.equal(clears, platform === "vidaa" ? 1 : 0);
   assert.equal(active, platform !== "vidaa");
 }
+// Trakt must supply artwork with the list itself, including later pages and
+// series lists; otherwise cards arrive without usable posters or backgrounds.
+const { fetchTraktSourceItems } =
+  await import("../js/ui/screens/collection/folderDetailScreenHelpers-04-map-trakt-entity.js");
+const { TraktClientSettingsStore } = await import("../js/data/local/traktClientSettingsStore.js");
+const originalFetch = globalThis.fetch;
+const originalCredentials = TraktClientSettingsStore.get;
+TraktClientSettingsStore.get = () => ({
+  clientId: "fixture-client",
+  clientSecret: "fixture-secret"
+});
+globalThis.__NUVIO_PLATFORM__ = "vidaa";
+Platform.current = null;
+try {
+  for (const [mediaType, entityType, type] of [
+    ["MOVIE", "movie", "movie"],
+    ["TV", "show", "series"]
+  ]) {
+    const requests = [];
+    globalThis.fetch = async (rawUrl) => {
+      const url = new URL(rawUrl);
+      requests.push(url);
+      const hasArtwork = url.searchParams.get("extended")?.split(",").includes("images");
+      return new Response(
+        JSON.stringify([
+          {
+            [entityType]: {
+              title: "Fixture title",
+              year: 2026,
+              ids: { imdb: "tt1000001" },
+              ...(hasArtwork
+                ? {
+                    images: {
+                      poster: ["https://fixture.invalid/poster.jpg"],
+                      fanart: ["https://fixture.invalid/backdrop.jpg"],
+                      logo: ["https://fixture.invalid/logo.png"]
+                    }
+                  }
+                : {})
+            }
+          }
+        ]),
+        { status: 200, headers: { "X-Pagination-Page-Count": "3" } }
+      );
+    };
+    const result = await fetchTraktSourceItems(
+      { mediaType, traktListId: "fixture-list", sortBy: "added", sortHow: "desc" },
+      2
+    );
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].pathname, `/lists/fixture-list/items/${entityType}`);
+    assert.equal(requests[0].searchParams.get("extended"), "full,images");
+    assert.equal(requests[0].searchParams.get("page"), "2");
+    assert.equal(requests[0].searchParams.get("sort_by"), "added");
+    assert.equal(requests[0].searchParams.get("sort_how"), "desc");
+    assert.equal(result.page, 2);
+    assert.equal(result.hasMore, true);
+    assert.equal(result.items[0].type, type);
+    assert.equal(result.items[0].id, "tt1000001");
+    assert.equal(result.items[0].poster, "https://fixture.invalid/poster.jpg");
+    assert.equal(result.items[0].background, "https://fixture.invalid/backdrop.jpg");
+    assert.equal(result.items[0].logo, "https://fixture.invalid/logo.png");
+  }
+} finally {
+  globalThis.fetch = originalFetch;
+  TraktClientSettingsStore.get = originalCredentials;
+}
 console.log(
-  "VIDAA collection checks passed: static artwork, no hover video/GIF, stale playback stopped, other platforms preserved."
+  "VIDAA collection checks passed: static media, other platforms preserved, Trakt movie/series artwork and pagination."
 );

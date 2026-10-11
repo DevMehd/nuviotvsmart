@@ -2869,6 +2869,8 @@
 <string name="server_options_connect_custom">Connetti a un server personalizzato</string>
 <string name="server_options_change_custom">Connetti a un altro server</string>
 <string name="server_options_use_official">Usa il server ufficiale</string>
+<string name="server_options_login_with_qr">Accedi con QR</string>
+<string name="server_options_login_with_email">Accedi con email</string>
 <string name="custom_server_title">Connetti a un server personalizzato</string>
 <string name="custom_server_description">Inserisci l\'URL del backend fornito dall\'amministratore del tuo server.</string>
 <string name="custom_server_url_placeholder">https://backend.example.com</string>

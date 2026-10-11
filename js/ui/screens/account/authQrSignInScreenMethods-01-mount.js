@@ -22,6 +22,7 @@ export function createAuthQrSignInScreenMethods01() {
 
   return {
     async mount({ onboardingMode = false } = {}) {
+      const mountToken = (this.authMountToken = Number(this.authMountToken || 0) + 1);
       this.container = document.getElementById("account");
       this.onboardingMode = Boolean(onboardingMode);
       this.hasBackDestination = Router.stack.length > 0;
@@ -35,6 +36,8 @@ export function createAuthQrSignInScreenMethods01() {
       this.emailError = "";
       this.emailNotice = "";
       this.isRegistering = false;
+      this.qrResult = null;
+      this.qrStatusText = "";
       this.isServerMenuOpen = false;
       this.focusAfterRender = null;
       this.showSignOutConfirmation = false;
@@ -43,14 +46,18 @@ export function createAuthQrSignInScreenMethods01() {
       this.isConnectedStatsLoading = this.isSignedIn;
       this.serverConfiguration = ServerConfigurationStore.getActive();
       this.useLocalMode = this.serverConfiguration.isLocal === true;
-      this.useEmailLogin = supportsEmailPasswordAuth(this.serverConfiguration);
-      this.useQrLogin = supportsTvLogin(this.serverConfiguration) && !this.useEmailLogin;
+      this.supportsEmailAuth = supportsEmailPasswordAuth(this.serverConfiguration);
+      this.supportsQrAuth = supportsTvLogin(this.serverConfiguration);
+      // Preserve Android TV's email default for custom servers; expose QR
+      // explicitly when the server supports both authentication methods.
+      this.useEmailLogin = this.supportsEmailAuth;
+      this.useQrLogin = this.supportsQrAuth && !this.useEmailLogin;
       ScreenUtils.show(this.container);
       this.render();
 
       if (this.useQrLogin && !this.isSignedIn) {
         void this.startQr().catch((error) => {
-          if (!this.isMounted || this.isLeaving) {
+          if (!this.isMounted || this.isLeaving || mountToken !== this.authMountToken) {
             return;
           }
           console.warn("QR login background start failed", error);
@@ -67,8 +74,18 @@ export function createAuthQrSignInScreenMethods01() {
       }
 
       const configuration = this.serverConfiguration || ServerConfigurationStore.getActive();
+      const loginModeItem =
+        !this.isSignedIn && this.supportsEmailAuth && this.supportsQrAuth
+          ? [
+              {
+                action: this.useEmailLogin ? "login-qr" : "login-email",
+                label: I18n.t(this.useEmailLogin ? "server_options_login_with_qr" : "server_options_login_with_email")
+              }
+            ]
+          : [];
       const menuItems = [
-        { action: "connect-custom", label: I18n.t("server_options_connect_custom") },
+        ...loginModeItem,
+        { action: "connect-custom", label: I18n.t(configuration?.isCustom ? "server_options_change_custom" : "server_options_connect_custom") },
         ...(!configuration?.isLocal ? [{ action: "use-local", label: I18n.t("server_options_use_local") }] : []),
         ...(configuration?.isCustom || configuration?.isLocal
           ? [{ action: "use-official", label: I18n.t("server_options_use_official") }]
@@ -124,6 +141,10 @@ export function createAuthQrSignInScreenMethods01() {
           </div>
         `;
 
+      if (this.useQrLogin && !this.isSignedIn) {
+        this.setStatus(this.qrStatusText);
+        if (this.qrResult) this.renderQr(this.qrResult);
+      }
       this.bindControls();
       ScreenUtils.indexFocusables(this.container);
       const initialSelector = this.showSignOutConfirmation
@@ -226,10 +247,11 @@ export function createAuthQrSignInScreenMethods01() {
     },
     async loadConnectedStats() {
       if (!this.isMounted || !this.isSignedIn) return;
+      const mountToken = this.authMountToken;
       const profileId = ProfileManager.getActiveProfileId();
       try {
         const library = await savedLibraryRepository.getAll(1000, profileId);
-        if (!this.isMounted || !this.isSignedIn) return;
+        if (!this.isMounted || !this.isSignedIn || mountToken !== this.authMountToken) return;
         this.connectedStats = {
           addons: addonRepository.getInstalledAddonUrls().length,
           plugins: PluginManager.listRepositories().length,
@@ -238,11 +260,11 @@ export function createAuthQrSignInScreenMethods01() {
         };
       } catch (error) {
         console.warn("Unable to load connected account stats", error);
-        if (this.isMounted && this.isSignedIn) {
+        if (this.isMounted && this.isSignedIn && mountToken === this.authMountToken) {
           this.connectedStats = { addons: 0, plugins: 0, library: 0, watchProgress: 0 };
         }
       } finally {
-        if (this.isMounted && this.isSignedIn) {
+        if (this.isMounted && this.isSignedIn && mountToken === this.authMountToken) {
           this.isConnectedStatsLoading = false;
           this.updateConnectedStats();
         }
