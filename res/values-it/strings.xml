@@ -1011,6 +1011,8 @@
     <string name="sources_close">Chiudi</string>
     <string name="sources_playing">Riproducendo</string>
     <string name="sources_no_streams">Nessuno stream trovato</string>
+    <string name="stream_autoplay_no_match">Nessuna sorgente corrisponde alle impostazioni di selezione automatica.</string>
+    <string name="stream_choose_manually">Scegli una sorgente manualmente</string>
     <string name="episodes_panel_close">Chiudi</string>
     <string name="episodes_panel_back">Indietro</string>
     <string name="episodes_panel_reload">Ricarica</string>

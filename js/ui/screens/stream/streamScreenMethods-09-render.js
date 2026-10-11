@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 import { bindCachedBadgeImages } from "../../../core/media/cachedBadgeImages.js";
+import { renderPlayerLoadingOverlay } from "../../components/playerLoadingOverlay.js";
 
 export function createStreamScreenMethods09() {
   const {
@@ -22,6 +23,36 @@ export function createStreamScreenMethods09() {
   return {
     render() {
       this.cancelScheduledRender();
+      if (this.autoPlayUiActive) {
+        const markup = renderPlayerLoadingOverlay(
+          {
+            title: this.params?.itemTitle || this.params?.playerTitle || this.params?.itemId || "Nuvio",
+            subtitle: this.params?.episodeTitle || this.params?.playerSubtitle || "",
+            logoUrl: this.params?.logo || "",
+            backdropUrl: this.getBackdropUrl() || ""
+          },
+          {
+            id: "streamAutoPlayLoadingOverlay",
+            status: this.autoPlayUiError || "",
+            manualSelectionLabel: this.autoPlayUiError ? t("stream_choose_manually", {}, "Choose a source manually") : ""
+          }
+        );
+        if (this.renderedMarkup !== markup) {
+          this.container.innerHTML = markup;
+          this.renderedMarkup = markup;
+          this.container.querySelector(".player-loading-logo-base")?.addEventListener(
+            "error",
+            (event) => {
+              event.target.closest(".player-loading-identity")?.classList.add("logo-failed");
+            },
+            { once: true }
+          );
+          ScreenUtils.indexFocusables(this.container, ".focusable");
+          this.container.querySelector("[data-action='chooseManualStream']")?.focus();
+        }
+        this.hasRenderedStreamRouteShell = true;
+        return;
+      }
       const previousVirtualModel = this.streamVirtualized ? this.streamVirtualModel : null;
       const previousFocusedIndex = Number(this.focusState?.row);
       const previousFocusedKey =

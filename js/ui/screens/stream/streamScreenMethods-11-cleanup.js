@@ -29,6 +29,8 @@ export function createStreamScreenMethods11() {
         this.releaseImageProxyReadyListener = null;
       }
       this.renderedMarkup = null;
+      this.autoPlayUiActive = false;
+      this.autoPlayUiError = "";
       this.renderedStreamListStable = false;
       this.renderedStreamListStreams = null;
       this.renderedStreamListSourceChips = null;

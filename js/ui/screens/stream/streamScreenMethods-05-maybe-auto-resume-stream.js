@@ -81,7 +81,11 @@ export function createStreamScreenMethods05() {
         return;
       }
       // Resume already navigated away, or there is nothing to play.
-      if (Router.getCurrent() !== "stream" || !this.streams.length) {
+      if (Router.getCurrent() !== "stream") {
+        return;
+      }
+      if (!this.streams.length) {
+        if (allLoaded && this.autoPlayUiActive) this.showAutoPlaySelectionError();
         return;
       }
       const settings = PlayerSettingsStore.get();
@@ -122,12 +126,31 @@ export function createStreamScreenMethods05() {
       if (!selected?.id) {
         if (allLoaded) {
           this.autoPlayAttempted = true;
+          if (this.autoPlayUiActive) this.showAutoPlaySelectionError();
         }
         return;
       }
       this.autoPlayAttempted = true;
       this.cancelAutoPlaySelectionWait();
       void this.playStream(selected.id);
+    },
+    showAutoPlaySelectionError(message = "") {
+      this.autoPlayAttempted = true;
+      this.cancelAutoPlaySelectionWait();
+      this.autoPlayUiError = message || t("stream_autoplay_no_match", {}, "No source matches your automatic selection settings.");
+      this.requestRender({ delayMs: 0 });
+    },
+    chooseManualStream() {
+      this.cancelAutoPlayCountdown();
+      this.cancelAutoPlaySelectionWait();
+      this.autoPlayAttempted = true;
+      this.autoResumeAttempted = true;
+      this.autoResumeUiActive = false;
+      this.autoPlayUiActive = false;
+      this.autoPlayUiError = "";
+      this.params = { ...this.params, manualSelection: true };
+      this.renderedMarkup = null;
+      this.render();
     },
     cancelAutoPlaySelectionWait() {
       if (this.autoPlaySelectionWaitTimer) {

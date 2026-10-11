@@ -294,6 +294,7 @@ export function createStreamScreenMethods04() {
         this.loading = false;
         this.autoResumeUiActive = false;
         this.error = error?.message || "Failed to load streams.";
+        if (this.autoPlayUiActive) this.showAutoPlaySelectionError(this.error);
         this.sourceChips = this.sourceChips.map((chip) => (chip.status === "loading" ? { ...chip, status: "error" } : chip));
         this.requestRender();
         this.scheduleErrorChipCleanup();

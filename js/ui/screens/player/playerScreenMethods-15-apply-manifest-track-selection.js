@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { renderPlayerLoadingOverlay } from "../../components/playerLoadingOverlay.js";
 
 export function createPlayerScreenMethods15() {
   const { PlayerController, PlayerSettingsStore, renderLoadingIndicator, t, escapeHtml, escapeAttribute } = internals;
@@ -97,29 +98,7 @@ export function createPlayerScreenMethods15() {
         const loadingMeta = this.getLoadingOverlayMeta();
         const osdClockEnabled = Boolean(PlayerSettingsStore.get().osdClockEnabled);
         root.innerHTML = `
-            <div id="playerLoadingOverlay" class="player-loading-overlay">
-              <div class="player-loading-backdrop"${loadingMeta.backdropUrl ? ` style="background-image:url('${loadingMeta.backdropUrl}')"` : ""}></div>
-              <div class="player-loading-gradient"></div>
-              <div class="player-loading-center">
-                <div class="player-loading-identity${loadingMeta.logoUrl ? " has-logo" : ""}">
-                  ${
-                    loadingMeta.logoUrl
-                      ? `
-                    <div class="player-loading-logo-stack">
-                      <img class="player-loading-logo player-loading-logo-base" src="${escapeAttribute(loadingMeta.logoUrl)}" alt="${escapeAttribute(loadingMeta.title || "logo")}" />
-                      <div class="player-loading-logo-fill-clip hidden">
-                        <img class="player-loading-logo player-loading-logo-fill" src="${escapeAttribute(loadingMeta.logoUrl)}" alt="" aria-hidden="true" />
-                      </div>
-                    </div>
-                  `
-                      : ""
-                  }
-                  <div class="player-loading-title">${escapeHtml(loadingMeta.title || this.params.playerTitle || this.params.itemId || "Nuvio")}</div>
-                </div>
-                <div class="player-loading-subtitle${loadingMeta.subtitle ? "" : " hidden"}">${escapeHtml(loadingMeta.subtitle || "")}</div>
-                <div class="player-loading-status hidden"></div>
-              </div>
-            </div>
+            ${renderPlayerLoadingOverlay(loadingMeta)}
 
             <div id="playerBufferingSpinner" class="player-loading-spinner hidden" aria-hidden="true">
               ${renderLoadingIndicator({ className: "player-loading-spinner-ring" })}

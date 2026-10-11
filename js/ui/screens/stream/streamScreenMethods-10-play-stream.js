@@ -16,6 +16,7 @@ export function createStreamScreenMethods10() {
 
   return {
     async playStream(streamId) {
+      const loadToken = this.loadToken;
       this.cancelAutoPlayCountdown();
       this.cancelAutoPlaySelectionWait();
       const filtered = this.getFilteredStreams();
@@ -55,6 +56,7 @@ export function createStreamScreenMethods10() {
         resumeDurationMs = Number(resumeProgress?.durationMs || 0) || resumeDurationMs;
       }
 
+      if (loadToken !== this.loadToken) return;
       Router.navigate("player", {
         streamUrl: selected.url || selected.externalUrl || null,
         itemId: this.params?.itemId || null,
@@ -132,8 +134,12 @@ export function createStreamScreenMethods10() {
         return false;
       }
       const actionTarget = target.closest?.("[data-action]") || target;
-      this.onPointerFocus(actionTarget);
       const action = String(actionTarget.dataset.action || "");
+      if (action === "chooseManualStream") {
+        this.chooseManualStream();
+        return true;
+      }
+      this.onPointerFocus(actionTarget);
       if (action === "setFilter") {
         const addon = String(actionTarget.dataset.addon || "all");
         const { chips } = this.getFocusLists();
@@ -166,6 +172,14 @@ export function createStreamScreenMethods10() {
         event?.preventDefault?.();
         if (!this.navigateBackFromStream()) {
           Router.back();
+        }
+        return;
+      }
+
+      if (this.autoPlayUiActive) {
+        if (this.autoPlayUiError && (Number(event?.keyCode) === 13 || ["Enter", " "].includes(event?.key))) {
+          event?.preventDefault?.();
+          this.chooseManualStream();
         }
         return;
       }

@@ -1505,6 +1505,8 @@
     <string name="sources_close">Close</string>
     <string name="sources_playing">Playing</string>
     <string name="sources_no_streams">No streams found</string>
+    <string name="stream_autoplay_no_match">No source matches your automatic selection settings.</string>
+    <string name="stream_choose_manually">Choose a source manually</string>
     <string name="episodes_panel_close">Close</string>
     <string name="episodes_panel_back">Back</string>
     <string name="episodes_panel_reload">Reload</string>

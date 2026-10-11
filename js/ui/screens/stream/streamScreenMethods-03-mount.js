@@ -7,6 +7,7 @@ export function createStreamScreenMethods03() {
     ScreenUtils,
     streamRepository,
     PlayerSettingsStore,
+    isAutoPlayEffectivelyEnabled,
     StreamPreferencesStore,
     StreamBadgeSettingsStore,
     ensureWebOsImageProxyReady,
@@ -52,6 +53,14 @@ export function createStreamScreenMethods03() {
       const returningFromPlayer = Boolean(navigationContext?.isBackNavigation && navigationContext?.previousRoute === "player");
       this.autoResumeAttempted = returningFromPlayer;
       const playerSettings = PlayerSettingsStore.get();
+      const autoPlayMode = String(playerSettings.streamAutoPlayMode || "MANUAL").toUpperCase();
+      this.autoPlayUiActive = Boolean(
+        !returningFromPlayer &&
+        !this.params.manualSelection &&
+        ["FIRST_STREAM", "REGEX_MATCH"].includes(autoPlayMode) &&
+        isAutoPlayEffectivelyEnabled(playerSettings)
+      );
+      this.autoPlayUiError = "";
       const reusableStream = playerSettings.streamReuseLastLinkEnabled
         ? StreamPreferencesStore.getValid(
             this.params?.itemId,
