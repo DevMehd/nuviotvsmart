@@ -47,11 +47,38 @@ export function nativeTrackListToArray(trackList) {
 export function nativeAudioTrackSelectionMatches(tracks, targetIndex) {
   try {
     return (
-      Boolean(tracks[targetIndex]) && tracks.every((track, index) => Boolean(track.enabled || track.selected) === (index === targetIndex))
+      Boolean(tracks[targetIndex]) &&
+      tracks.every(
+        (track, index) => (typeof track.enabled === "boolean" ? track.enabled : Boolean(track.selected)) === (index === targetIndex)
+      )
     );
   } catch (_) {
     return false;
   }
+}
+
+export function applyNativeAudioTrackFlags(tracks, targetIndex, { preferEnabled = false, force = false, isCurrent = () => true } = {}) {
+  const setSelected = (track, selected) => {
+    if (!isCurrent()) return;
+    let useEnabled = false;
+    try {
+      useEnabled = preferEnabled && typeof track.enabled === "boolean";
+    } catch (_) {
+      /* Try writable flags below. */
+    }
+    const flags = useEnabled ? ["enabled"] : ["enabled", "selected"];
+    flags.forEach((flag) => {
+      try {
+        if (isCurrent() && flag in track && (force || Boolean(track[flag]) !== selected)) track[flag] = selected;
+      } catch (_) {
+        // Some firmware exposes a readonly selection snapshot.
+      }
+    });
+  };
+  tracks.forEach((track, index) => {
+    if (index !== targetIndex) setSelected(track, false);
+  });
+  if (tracks[targetIndex]) setSelected(tracks[targetIndex], true);
 }
 
 export function nativeTextTrackSelectionMatches(tracks, targetIndex) {

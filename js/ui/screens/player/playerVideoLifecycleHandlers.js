@@ -313,7 +313,7 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
   };
 
   const onTrackListChanged = () => {
-    this.applyAspectMode({ showToast: false });
+    if (!Environment.isVidaa()) this.applyAspectMode({ showToast: false });
     this.refreshTrackDialogs();
     if (this.refreshSubtitleCueStyles()) {
       this.refreshWebOsEmbeddedSubtitleAfterCueMutation();

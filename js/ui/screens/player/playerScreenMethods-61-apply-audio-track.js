@@ -2,8 +2,10 @@
 import * as internals from "./playerScreenContext.js";
 import {
   nativeAudioTrackSelectionMatches,
+  applyNativeAudioTrackFlags,
   confirmNativeTrackSelection
 } from "../../../core/player/playerControllerMethods-02-is-likely-direct-file-url.js";
+import { beginVidaaTrackSwitch } from "./vidaaTrackSwitchGuard.js";
 
 export function createPlayerScreenMethods61() {
   const {
@@ -31,6 +33,7 @@ export function createPlayerScreenMethods61() {
       const selectionToken = Number(this.audioSelectionToken || 0) + 1;
       this.audioSelectionToken = selectionToken;
       const video = PlayerController.video;
+      const videoSource = video?.src;
       const playRequestToken = PlayerController.playRequestToken;
       const mountToken = this.playerMountToken;
       const playbackUrl = this.activePlaybackUrl;
@@ -39,6 +42,7 @@ export function createPlayerScreenMethods61() {
         this.playerMountToken === mountToken &&
         this.activePlaybackUrl === playbackUrl &&
         PlayerController.video === video &&
+        video?.src === videoSource &&
         PlayerController.playRequestToken === playRequestToken;
       if (!automaticFallback) {
         this.failedAutomaticAudioFallbackEntryId = "";
@@ -207,6 +211,7 @@ export function createPlayerScreenMethods61() {
           trackPreference: this.getAudioTrackPreference(selectedEntry)
         };
       }
+      beginVidaaTrackSwitch(this);
       const controllerResult =
         typeof PlayerController.setNativeAudioTrack === "function" ? PlayerController.setNativeAudioTrack(nativeTrackIndex) : false;
       const appliedByController = await Promise.resolve(controllerResult).catch(() => false);
@@ -234,6 +239,18 @@ export function createPlayerScreenMethods61() {
         return;
       }
 
+      if (
+        resolveVidaaIdentity &&
+        controllerResult &&
+        typeof controllerResult.then === "function" &&
+        this.getAudioTracks().includes(nativeTrack)
+      ) {
+        this.syncTrackState();
+        this.renderControlButtons();
+        this.renderAudioDialog();
+        return false;
+      }
+
       const fallbackTracks = resolveVidaaIdentity ? this.getAudioTracks() : audioTracks;
       const fallbackTrackIndex = resolveNativeTrackIndex();
       if (fallbackTrackIndex < 0) {
@@ -242,22 +259,9 @@ export function createPlayerScreenMethods61() {
         this.renderAudioDialog();
         return false;
       }
-      fallbackTracks.forEach((track, trackIndex) => {
-        const selected = trackIndex === fallbackTrackIndex;
-        try {
-          if ("enabled" in track) {
-            track.enabled = selected;
-          }
-        } catch (_) {
-          // Best effort.
-        }
-        try {
-          if ("selected" in track) {
-            track.selected = selected;
-          }
-        } catch (_) {
-          // Best effort.
-        }
+      applyNativeAudioTrackFlags(fallbackTracks, fallbackTrackIndex, {
+        preferEnabled: resolveVidaaIdentity,
+        isCurrent: isCurrentSelection
       });
       const applied = await confirmNativeTrackSelection(selectionMatches, isCurrentSelection);
       if (!isCurrentSelection()) return false;

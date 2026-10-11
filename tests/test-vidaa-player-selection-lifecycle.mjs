@@ -212,6 +212,24 @@ test("mounted external activation checks actual mode", async () => {
   const ui = screen();
   assert.equal(ui.activateMountedExternalSubtitleTrack(new TrackNode(target)), false);
 });
+
+test("OFF cancels a mounted subtitle enable still queued by the decoder", async () => {
+  const target = flags("mode", "disabled", 180);
+  useVideo(video([], [target]));
+  const ui = screen();
+  ui.selectedSubtitleTrackIndex = -1;
+  assert.equal(ui.activateMountedExternalSubtitleTrack(new TrackNode(target)), false);
+  await advance(50);
+  const off = ui.applySubtitleEntry({ trackIndex: -1 });
+  await advance(700);
+  assert.equal(await off, true);
+  assert.equal(
+    target.mode,
+    "disabled",
+    "An older queued enable cannot reactivate subtitles after OFF"
+  );
+  assert.equal(ui.selectedSubtitleTrackIndex, -1);
+});
 test("ASS activation retires native text and OFF destroys the adapter", async () => {
   useVideo(video([], [{ mode: "showing" }]));
   const ui = screen();

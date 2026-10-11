@@ -6,6 +6,10 @@ export function createPlayerScreenMethods28() {
 
   return {
     unbindVideoEvents() {
+      if (this.nativeTrackListChangeTimer != null) {
+        clearTimeout(this.nativeTrackListChangeTimer);
+        this.nativeTrackListChangeTimer = null;
+      }
       this.videoListeners.forEach(({ target, eventName, handler }) => {
         target?.removeEventListener?.(eventName, handler);
       });

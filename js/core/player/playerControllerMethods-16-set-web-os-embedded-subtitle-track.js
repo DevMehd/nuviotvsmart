@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
+import { isTransientVidaaTrackSwitchError } from "../../platform/vidaa/vidaaTrackSwitchGuard.js";
 
 export function createPlayerControllerMethods16() {
   const { Platform, loadStreamingLibs, WATCH_PROGRESS_SAVE_INTERVAL_MS } = internals;
@@ -201,13 +202,25 @@ export function createPlayerControllerMethods16() {
       });
 
       this.video.addEventListener("error", (e) => {
+        const customErrorCode = Number(e?.detail?.mediaErrorCode || 0);
+        const nativeErrorCode = Number(this.video?.error?.code || 0);
+        const mediaErrorCode = customErrorCode || nativeErrorCode || this.getLastPlaybackErrorCode();
+        if (
+          Platform.isVidaa() &&
+          isTransientVidaaTrackSwitchError({
+            video: e?.currentTarget || this.video,
+            currentVideo: this.video,
+            playRequestToken: this.playRequestToken,
+            mediaErrorCode,
+            eventDetail: e?.detail && typeof e.detail === "object" ? e.detail : {}
+          })
+        ) {
+          return;
+        }
         this.isPlaying = false;
         this.stopProgressSaving();
         this.cancelProgressSyncAfterSeek();
         this.syncWebOsPlaybackKeepAwake();
-        const customErrorCode = Number(e?.detail?.mediaErrorCode || 0);
-        const nativeErrorCode = Number(this.video?.error?.code || 0);
-        const mediaErrorCode = customErrorCode || nativeErrorCode || this.getLastPlaybackErrorCode();
         console.error("Video error:", {
           event: e?.type || "error",
           mediaErrorCode,

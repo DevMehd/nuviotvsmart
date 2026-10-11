@@ -143,6 +143,13 @@ export function createPlayerScreenMethods26() {
       return subtitleTextChanged;
     },
     refreshSubtitleTrackRendering() {
+      if (Environment.isVidaa()) {
+        // Updating cue fields/CSS is sufficient. Cycling showing/hidden asks
+        // the TV decoder to switch tracks and emits selection events merely
+        // to repaint text; presentation changes must not alter native output.
+        this.renderHtmlSubtitleOverlayAtCurrentTime();
+        return;
+      }
       if (this.isTizenEmbeddedTextSubtitleActive()) {
         this.renderWebOsEmbeddedTextSubtitleAtCurrentTime();
         return;

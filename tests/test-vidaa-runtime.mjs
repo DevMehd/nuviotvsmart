@@ -229,7 +229,8 @@ platform("vidaa");
 // A native choice must not load the MSE libraries just to play the stream.
 await createPlayerControllerMethods16().ensureAdaptiveLibrariesForSource(hls, "native-hls");
 
-// Subtitle selection must disable every track before enabling an earlier one.
+// Disable competing outputs before enabling an earlier track, without
+// restarting tracks that are already disabled.
 const writes = [];
 const textTracks = [0, 1].map((index) => {
   let mode = index === 1 ? "showing" : "disabled";
@@ -247,7 +248,6 @@ const textTracks = [0, 1].map((index) => {
 const trackController = { video: { textTracks } };
 assert.equal(PlayerController.setNativeTextTrack.call(trackController, 0), true);
 assert.deepEqual(writes, [
-  [0, "disabled"],
   [1, "disabled"],
   [0, "showing"]
 ]);

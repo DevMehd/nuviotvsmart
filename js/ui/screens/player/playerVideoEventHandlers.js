@@ -1,8 +1,9 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { isTransientVidaaTrackSwitchError } from "../../../platform/vidaa/vidaaTrackSwitchGuard.js";
 
 export function createPlayerVideoEventHandlers(video, isTizenAvPlayPlayback) {
-  const { PlayerController, isExpiredStreamUrl, isTerminalHlsHttpStatus, logEngineFsDebug, claimEngineFsPlayback } = internals;
+  const { PlayerController, Environment, isExpiredStreamUrl, isTerminalHlsHttpStatus, logEngineFsDebug, claimEngineFsPlayback } = internals;
   const onWebOsAudioTrackSelectionChanged = (event) => {
     const detail = event?.detail || {};
     const status = String(detail?.status || "");
@@ -83,6 +84,25 @@ export function createPlayerVideoEventHandlers(video, isTizenAvPlayPlayback) {
     if (this.sourcePlaybackStarting || this.sourceFallbackPending || !this.isActiveMountToken(mountToken) || this.isStartupErrorVisible()) {
       return;
     }
+    const detailErrorCode = Number(event?.detail?.mediaErrorCode || 0);
+    const controllerErrorCode =
+      typeof PlayerController.getLastPlaybackErrorCode === "function" ? Number(PlayerController.getLastPlaybackErrorCode() || 0) : 0;
+    const mediaErrorCode = detailErrorCode || Number(video?.error?.code || 0) || controllerErrorCode;
+    const eventDetail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+    if (
+      Environment.isVidaa() &&
+      isTransientVidaaTrackSwitchError({
+        video,
+        currentVideo: PlayerController.video,
+        playRequestToken: PlayerController.playRequestToken,
+        mountToken,
+        guard: this.nativeTrackSwitchGuard,
+        mediaErrorCode,
+        eventDetail
+      })
+    ) {
+      return;
+    }
     this.seekLoading = false;
     this.bufferingActive = false;
     this.seekLoadingBaselineSeconds = null;
@@ -93,11 +113,6 @@ export function createPlayerVideoEventHandlers(video, isTizenAvPlayPlayback) {
     }
     this.lastPlaybackErrorAt = now;
 
-    const detailErrorCode = Number(event?.detail?.mediaErrorCode || 0);
-    const controllerErrorCode =
-      typeof PlayerController.getLastPlaybackErrorCode === "function" ? Number(PlayerController.getLastPlaybackErrorCode() || 0) : 0;
-    const mediaErrorCode = detailErrorCode || Number(video?.error?.code || 0) || controllerErrorCode;
-    const eventDetail = event?.detail && typeof event.detail === "object" ? event.detail : {};
     const playbackErrorDetail = this.getPlaybackEventErrorDetail(eventDetail);
     const terminalHlsHttpFailure = isTerminalHlsHttpStatus(eventDetail.hlsResponseCode);
     const avplayError = String(eventDetail?.avplayError || "").toLowerCase();
