@@ -10,7 +10,6 @@ export function createHomeScreenMethods05() {
     setLegacySidebarExpanded,
     HOME_LEGACY_HERO_BACKDROP_CROSSFADE_MS,
     HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS,
-    escapeAttribute,
     escapeHtml,
     animateHeroBackdropSwap,
     animateHeroLogoSwap,
@@ -21,10 +20,31 @@ export function createHomeScreenMethods05() {
     renderModernHeroPrimary,
     renderModernHeroSecondary,
     renderMetaTokens,
-    buildHeroIndicators
+    buildHeroIndicators,
+    buildHeroIdentity
   } = internals;
 
   return {
+    retireHeroLogoForFocus(hero) {
+      const heroNode = this.container?.querySelector(".home-hero-card");
+      if (!heroNode || !hero?.id) return false;
+      const identity = buildHeroIdentity(hero);
+      const logo = heroNode.querySelector(".home-hero-logo:not(.home-hero-logo-transition-ghost)");
+      const previousIdentity =
+        (logo ? logo.heroLogoIdentity : heroNode.heroLogoIdentity) ||
+        buildHeroIdentity({ id: heroNode.dataset.itemId, type: heroNode.dataset.itemType });
+      if (previousIdentity === identity) return false;
+      heroNode.heroLogoIdentity = identity;
+      if (logo) animateHeroLogoSwap(logo, "");
+      heroNode.querySelectorAll(".home-hero-logo-transition-ghost").forEach((node) => node.remove());
+      const title = heroNode.querySelector(".home-hero-title-text");
+      if (title) {
+        const display = this.layoutMode === "modern" ? buildModernHeroPresentation(hero) : buildHeroDisplayModel(hero, this.layoutMode);
+        title.textContent = display?.title || "";
+        title.classList.remove("is-hidden");
+      }
+      return true;
+    },
     applyHeroToDom() {
       const heroNode = this.container?.querySelector(".home-hero-card");
       if (!heroNode) {
@@ -39,6 +59,11 @@ export function createHomeScreenMethods05() {
       if (!display) {
         return;
       }
+      const heroIdentity = buildHeroIdentity(hero);
+      const focusedHero = this.layoutMode === "modern" ? this.getNodeHeroSource?.(this.getCurrentFocusedNode?.()) : null;
+      if (focusedHero?.id && buildHeroIdentity(focusedHero) !== heroIdentity) return;
+      this.retireHeroLogoForFocus(hero);
+      heroNode.heroLogoIdentity = heroIdentity;
       heroNode.dataset.itemId = hero?.id || "";
       heroNode.dataset.itemType = hero?.type || "movie";
       heroNode.dataset.itemTitle = hero?.name || "Untitled";
@@ -70,32 +95,37 @@ export function createHomeScreenMethods05() {
         }
       }
 
-      const logoNode = heroNode.querySelector(".home-hero-logo:not(.home-hero-logo-transition-ghost)");
+      let logoNode = heroNode.querySelector(".home-hero-logo:not(.home-hero-logo-transition-ghost)");
       const brandNode = heroNode.querySelector(".home-hero-brand");
+      const titleNode = heroNode.querySelector(".home-hero-title-text");
+      if (titleNode) {
+        titleNode.textContent = display.title || "";
+        titleNode.classList.remove("is-hidden");
+      }
+      const isCurrentLogo = () =>
+        heroNode.isConnected !== false &&
+        heroNode.heroLogoIdentity === heroIdentity &&
+        buildHeroIdentity(this.heroItem || this.heroCandidates?.[0]) === heroIdentity;
       if (display.logo) {
+        if (!logoNode && brandNode) {
+          logoNode = document.createElement("img");
+          logoNode.className = "home-hero-logo";
+          logoNode.setAttribute("decoding", "async");
+          logoNode.setAttribute("fetchpriority", "high");
+          brandNode.insertBefore(logoNode, brandNode.firstChild);
+        }
         if (logoNode) {
+          logoNode.heroLogoIdentity = heroIdentity;
           animateHeroLogoSwap(logoNode, display.logo, display.title || "logo", heroCrossfadeMs, {
-            transitionMode: heroTransitionMode
-          });
-        } else if (brandNode) {
-          brandNode.insertAdjacentHTML(
-            "afterbegin",
-            `<img class="home-hero-logo home-hero-logo-transition-enter" src="${escapeAttribute(display.logo)}" alt="${escapeAttribute(display.title || "logo")}" decoding="async" fetchpriority="high" />`
-          );
-          const insertedLogo = brandNode.querySelector(".home-hero-logo");
-          requestAnimationFrame(() => {
-            insertedLogo?.classList?.add("is-visible");
-            setTimeout(() => insertedLogo?.classList?.remove("home-hero-logo-transition-enter", "is-visible"), heroCrossfadeMs);
+            transitionMode: heroTransitionMode,
+            isCurrent: isCurrentLogo,
+            onReady: (ready) => {
+              if (isCurrentLogo()) titleNode?.classList.toggle("is-hidden", ready);
+            }
           });
         }
       } else if (logoNode) {
-        logoNode.remove();
-      }
-
-      const titleNode = heroNode.querySelector(".home-hero-title-text");
-      if (titleNode) {
-        titleNode.textContent = display.title || "Untitled";
-        titleNode.classList.toggle("is-hidden", Boolean(display.logo));
+        animateHeroLogoSwap(logoNode, "");
       }
 
       if (this.layoutMode === "modern") {

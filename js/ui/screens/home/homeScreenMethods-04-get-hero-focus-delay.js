@@ -665,6 +665,9 @@ export function createHomeScreenMethods04() {
       }
     },
     cancelPendingHeroFocus() {
+      this.heroEnrichmentAbortController?.abort?.();
+      this.heroEnrichmentAbortController = null;
+      this.pendingHeroEnrichmentKey = "";
       if (this.heroFocusDelayTimer) {
         clearTimeout(this.heroFocusDelayTimer);
         this.heroFocusDelayTimer = null;

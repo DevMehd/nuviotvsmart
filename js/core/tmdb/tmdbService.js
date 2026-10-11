@@ -53,8 +53,13 @@ export const TmdbService = {
     if (imdbToTmdbCache.has(key)) {
       return imdbToTmdbCache.get(key);
     }
-    if (imdbToTmdbInFlight.has(key)) {
-      return imdbToTmdbInFlight.get(key);
+    const signal = options?.signal || null;
+    let inFlightBySignal = imdbToTmdbInFlight.get(key);
+    const pending = inFlightBySignal?.get(signal);
+    // Focus changes cancel their own lookup. A new focus must not inherit the
+    // previous focus's signal or a request whose abort has not settled yet.
+    if (pending && !signal?.aborted) {
+      return pending;
     }
 
     // Android checks its cache before any external lookup gate. Preserve a
@@ -68,7 +73,8 @@ export const TmdbService = {
 
     const url = `${TMDB_BASE_URL}/find/${encodeURIComponent(parsed.idPart)}?external_source=imdb_id&api_key=${encodeURIComponent(apiKey)}`;
     const request = (async () => {
-      const data = await fetchTmdbJson(url, { signal: options?.signal || null });
+      const data = await fetchTmdbJson(url, { signal });
+      if (signal?.aborted) throw new Error("TMDB request aborted");
       if (!data) return null;
       const list = contentType === "tv" ? data.tv_results : data.movie_results;
       const first = Array.isArray(list) ? list[0] : null;
@@ -81,11 +87,16 @@ export const TmdbService = {
       tmdbToImdbCache.set(lookupKey(resolvedId, contentType), parsed.idPart);
       return resolvedId;
     })();
-    imdbToTmdbInFlight.set(key, request);
+    if (!inFlightBySignal) {
+      inFlightBySignal = new Map();
+      imdbToTmdbInFlight.set(key, inFlightBySignal);
+    }
+    inFlightBySignal.set(signal, request);
     try {
       return await request;
     } finally {
-      if (imdbToTmdbInFlight.get(key) === request) {
+      if (inFlightBySignal.get(signal) === request) inFlightBySignal.delete(signal);
+      if (!inFlightBySignal.size && imdbToTmdbInFlight.get(key) === inFlightBySignal) {
         imdbToTmdbInFlight.delete(key);
       }
     }

@@ -194,6 +194,7 @@ import { hideHomeHeroRatings } from "./homeScreenHelpers-10-get-cached-continue-
 import { formatRuntimeText, extractReleaseDateText } from "./homeScreenHelpers-02-extract-release-date-text.js";
 import { normalizeContinueWatchingItem } from "./homeScreenHelpers-09-normalize-continue-watching-item.js";
 import { normalizeCatalogItem } from "./homeScreenHelpers-08-partition-continue-watching-rows.js";
+import { isHomeHeroLocalizationPending } from "./homeHeroLocalization.js";
 
 export function buildHeroDisplayModel(hero, layoutMode) {
   if (isCollectionFolderItem(hero)) {
@@ -210,8 +211,10 @@ export function buildHeroDisplayModel(hero, layoutMode) {
     };
   }
   const year = extractYear(hero);
+  const localizationPending = isHomeHeroLocalizationPending(hero, layoutMode);
   const imdb = hideHomeHeroRatings() ? null : resolveImdbRating(hero);
-  const genres = Array.isArray(hero?.genres) ? hero.genres.filter(Boolean).slice(0, 3).map(localizedGenreLabel) : [];
+  const genres =
+    !localizationPending && Array.isArray(hero?.genres) ? hero.genres.filter(Boolean).slice(0, 3).map(localizedGenreLabel) : [];
   const typeLabel = formatContentTypeLabel(hero?.type || hero?.apiType || "movie", "movie");
   const isContinueWatchingHero = hero?.heroSource === "continueWatching";
   const metaPrimary = [];
@@ -244,9 +247,9 @@ export function buildHeroDisplayModel(hero, layoutMode) {
   }
 
   return {
-    title: hero?.name || "Untitled",
-    description: firstNonEmpty(hero?.description) || " ",
-    logo: firstNonEmpty(hero?.logo),
+    title: localizationPending ? "" : hero?.name || "Untitled",
+    description: localizationPending ? "" : firstNonEmpty(hero?.description) || " ",
+    logo: localizationPending ? "" : firstNonEmpty(hero?.logo),
     backdrop: buildHeroBackdropSources(hero)[0] || "",
     backdropFallbacks: buildHeroBackdropSources(hero).slice(1),
     metaPrimary: metaPrimary.filter(Boolean),
@@ -284,7 +287,8 @@ export function buildModernHeroPresentation(hero) {
   }
 
   const isSeries = String(normalized.type || normalized.apiType || "").toLowerCase() === "series";
-  const genres = Array.isArray(normalized.genres) ? normalized.genres.filter(Boolean).map(localizedGenreLabel) : [];
+  const localizationPending = isHomeHeroLocalizationPending(normalized);
+  const genres = !localizationPending && Array.isArray(normalized.genres) ? normalized.genres.filter(Boolean).map(localizedGenreLabel) : [];
   const contentTypeText = formatContentTypeLabel(normalized.type || normalized.apiType || "movie", "movie");
   const runtimeText = formatRuntimeText(normalized);
   const yearText = extractReleaseDateText(normalized);
@@ -302,9 +306,11 @@ export function buildModernHeroPresentation(hero) {
   const showImdbSecondary = Boolean(imdbText) && !showImdbPrimary;
 
   return {
-    title: normalized.name || "Untitled",
-    logo: firstNonEmpty(normalized.logo),
-    description: firstNonEmpty(isContinueWatchingHero ? normalized.episodeDescription : null, normalized.description) || "",
+    title: localizationPending ? "" : normalized.name || "Untitled",
+    logo: localizationPending ? "" : firstNonEmpty(normalized.logo),
+    description: localizationPending
+      ? ""
+      : firstNonEmpty(isContinueWatchingHero ? normalized.episodeDescription : null, normalized.description) || "",
     backdrop: buildHeroBackdropSources(normalized)[0] || "",
     backdropFallbacks: buildHeroBackdropSources(normalized).slice(1),
     leadingMeta,

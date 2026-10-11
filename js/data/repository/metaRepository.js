@@ -4,6 +4,31 @@ import { MetaApi } from "../remote/api/metaApi.js";
 
 const INSTALLED_ADDONS_WAIT_MS = 750;
 
+function metaAbortError() {
+  const error = new Error("Metadata request aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfMetaAborted(signal) {
+  if (signal?.aborted) throw metaAbortError();
+}
+
+async function waitForMetaResult(request, signal) {
+  throwIfMetaAborted(signal);
+  if (!signal) return request;
+  let onAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    onAbort = () => reject(metaAbortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([request, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 function normalizeDisplayText(value) {
   return String(value ?? "")
     .replace(/\\'/g, "'")
@@ -27,7 +52,9 @@ class MetaRepository {
     this.inFlightMetaAll = new Map();
   }
 
-  async getMeta(addonBaseUrl, type, id) {
+  async getMeta(addonBaseUrl, type, id, options = {}) {
+    const signal = options?.signal || null;
+    throwIfMetaAborted(signal);
     const requestedType = String(type || "").trim();
     const normalizedId = String(id || "").trim();
     const inferredType = this.inferCanonicalType(requestedType, normalizedId);
@@ -44,23 +71,27 @@ class MetaRepository {
       }
     }
 
-    const effectiveType = await this.resolveDirectMetaType(
-      addonBaseUrl,
-      requestedType,
-      inferredType,
-      normalizedId
+    const effectiveType = await waitForMetaResult(
+      this.resolveDirectMetaType(addonBaseUrl, requestedType, inferredType, normalizedId),
+      signal
     );
+    throwIfMetaAborted(signal);
     const cacheKey = `${addonKey}:${effectiveType}:${normalizedId}`;
     if (this.metaCache.has(cacheKey)) {
       return { status: "success", data: this.metaCache.get(cacheKey) };
     }
-    if (this.inFlightMeta.has(cacheKey)) {
-      return this.inFlightMeta.get(cacheKey);
+    let inFlightBySignal = this.inFlightMeta.get(cacheKey);
+    if (inFlightBySignal?.has(signal)) {
+      return inFlightBySignal.get(signal);
     }
 
     const request = (async () => {
       const url = this.buildMetaUrl(addonBaseUrl, effectiveType, normalizedId);
-      const result = await safeApiCall(() => MetaApi.getMeta(url));
+      const result = await waitForMetaResult(
+        safeApiCall(() => MetaApi.getMeta(url, { signal })),
+        signal
+      );
+      throwIfMetaAborted(signal);
       if (result.status !== "success") {
         return result;
       }
@@ -78,15 +109,24 @@ class MetaRepository {
       return { status: "success", data: meta };
     })();
 
-    this.inFlightMeta.set(cacheKey, request);
+    if (!inFlightBySignal) {
+      inFlightBySignal = new Map();
+      this.inFlightMeta.set(cacheKey, inFlightBySignal);
+    }
+    inFlightBySignal.set(signal, request);
     try {
       return await request;
     } finally {
-      this.inFlightMeta.delete(cacheKey);
+      if (inFlightBySignal.get(signal) === request) inFlightBySignal.delete(signal);
+      if (!inFlightBySignal.size && this.inFlightMeta.get(cacheKey) === inFlightBySignal) {
+        this.inFlightMeta.delete(cacheKey);
+      }
     }
   }
 
-  async getMetaFromAllAddons(type, id, sourceAddonBaseUrl = null) {
+  async getMetaFromAllAddons(type, id, sourceAddonBaseUrl = null, options = {}) {
+    const signal = options?.signal || null;
+    throwIfMetaAborted(signal);
     const requestedType = String(type || "").trim();
     const inferredType = this.inferCanonicalType(requestedType, id);
     const cacheKey = `all:${inferredType.toLowerCase()}:${String(id || "").trim()}`;
@@ -94,12 +134,14 @@ class MetaRepository {
       return { status: "success", data: this.metaCache.get(cacheKey) };
     }
 
-    if (this.inFlightMetaAll.has(cacheKey)) {
-      return this.inFlightMetaAll.get(cacheKey);
+    let inFlightBySignal = this.inFlightMetaAll.get(cacheKey);
+    if (inFlightBySignal?.has(signal)) {
+      return inFlightBySignal.get(signal);
     }
 
     const request = (async () => {
-      const addons = await addonRepository.getInstalledAddons();
+      const addons = await waitForMetaResult(addonRepository.getInstalledAddons(), signal);
+      throwIfMetaAborted(signal);
       const normalizedSourceUrl = sourceAddonBaseUrl
         ? addonRepository.canonicalizeUrl(sourceAddonBaseUrl)
         : "";
@@ -176,6 +218,7 @@ class MetaRepository {
       }
 
       for (const { addon, type: candidateType } of candidates) {
+        throwIfMetaAborted(signal);
         // Android treats the catalog/source addon as sufficient for a
         // recommendation candidate: it uses the candidate preview metadata
         // instead of issuing a second detail request to that same addon.
@@ -188,7 +231,8 @@ class MetaRepository {
             message: "Source addon metadata is sufficient"
           };
         }
-        const result = await this.getMeta(addon.baseUrl, candidateType, id);
+        const result = await this.getMeta(addon.baseUrl, candidateType, id, { signal });
+        throwIfMetaAborted(signal);
         if (result.status === "success") {
           this.metaCache.set(cacheKey, result.data);
           return result;
@@ -198,11 +242,18 @@ class MetaRepository {
       return { status: "error", message: "Meta not found in installed addons", code: 404 };
     })();
 
-    this.inFlightMetaAll.set(cacheKey, request);
+    if (!inFlightBySignal) {
+      inFlightBySignal = new Map();
+      this.inFlightMetaAll.set(cacheKey, inFlightBySignal);
+    }
+    inFlightBySignal.set(signal, request);
     try {
       return await request;
     } finally {
-      this.inFlightMetaAll.delete(cacheKey);
+      if (inFlightBySignal.get(signal) === request) inFlightBySignal.delete(signal);
+      if (!inFlightBySignal.size && this.inFlightMetaAll.get(cacheKey) === inFlightBySignal) {
+        this.inFlightMetaAll.delete(cacheKey);
+      }
     }
   }
 

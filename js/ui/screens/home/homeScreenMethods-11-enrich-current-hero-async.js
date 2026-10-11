@@ -35,10 +35,15 @@ export function createHomeScreenMethods11() {
         return;
       }
       this.pendingHeroEnrichmentKey = pendingKey;
+      this.heroEnrichmentAbortController?.abort?.();
+      const abortController = typeof AbortController === "function" ? new AbortController() : null;
+      this.heroEnrichmentAbortController = abortController;
+      const signal = abortController?.signal || null;
       const deferCommit = Boolean(options?.deferCommit);
       const isVidaa = Platform.isVidaa();
       const token = (this.heroEnrichmentToken = Number(this.heroEnrichmentToken || 0) + 1);
       const canCommitHero = () => {
+        if (signal?.aborted) return false;
         if (Router.getCurrent() !== String(options?.routeName || "home")) {
           return false;
         }
@@ -82,7 +87,9 @@ export function createHomeScreenMethods11() {
           return false;
         }
         this.heroItem = resolvedHero;
-        const matchedIndex = (this.heroCandidates || []).findIndex((item) => String(item?.id || "") === itemId);
+        const matchedIndex = (this.heroCandidates || []).findIndex(
+          (item) => String(item?.id || "") === itemId && buildHeroIdentity(item) === heroIdentity
+        );
         if (matchedIndex >= 0) {
           this.heroIndex = matchedIndex;
         }
@@ -92,13 +99,26 @@ export function createHomeScreenMethods11() {
       };
       if (isVidaa && (!(await this.waitForVidaaHomeLoadingIdle(canCommitHero)) || !canCommitHero())) {
         if (this.pendingHeroEnrichmentKey === pendingKey) this.pendingHeroEnrichmentKey = "";
+        if (this.heroEnrichmentAbortController === abortController) this.heroEnrichmentAbortController = null;
         return;
       }
       let latestMetadataResult = null;
       let latestTmdbEnrichment = null;
+      let tmdbSettled = false;
+      const tmdbSettings = TmdbSettingsStore.get();
+      const waitForLocalizedTmdb = Boolean(
+        isHomeTmdbEnabled(this.layoutMode || "modern", tmdbSettings) &&
+        (tmdbSettings.useBasicInfo || tmdbSettings.useArtwork) &&
+        !String(tmdbSettings.language || "en")
+          .toLowerCase()
+          .startsWith("en")
+      );
       let mdbImdbRating = null;
       let sourcesSettled = false;
       const publishLatestResults = async () => {
+        // Do not reveal addon/rating metadata in English while the preferred
+        // TMDB preview is still pending. Release the fallback when TMDB settles.
+        if (waitForLocalizedTmdb && !tmdbSettled) return false;
         const revision = ++resultRevision;
         const meta = latestMetadataResult?.status === "success" ? latestMetadataResult.data : null;
         const tmdbEnrichment = latestTmdbEnrichment;
@@ -108,6 +128,9 @@ export function createHomeScreenMethods11() {
         const enrichedImdb = meta ? resolveImdbRating(meta) : null;
         const settings = TmdbSettingsStore.get();
         const sourceHero = buildHeroIdentity(this.heroItem) === heroIdentity ? this.heroItem : hero;
+        const hasCurrentLocalizedPreview = waitForLocalizedTmdb && sourceHero.heroTmdbLocalizationSignature === settingsSignature;
+        const preserveLocalizedBasicInfo = hasCurrentLocalizedPreview && settings.useBasicInfo;
+        const preserveLocalizedArtwork = hasCurrentLocalizedPreview && settings.useArtwork;
         const enrichedRuntime = parseRuntimeMinutes(meta?.runtimeMinutes ?? meta?.runtime);
         const runtimePatch = {
           ...(enrichedRuntime > 0 ? { runtimeMinutes: enrichedRuntime } : {}),
@@ -137,15 +160,18 @@ export function createHomeScreenMethods11() {
             Boolean(meta || tmdbEnrichment || mdbImdbRating != null) &&
             (!isHomeTmdbEnabled(this.layoutMode || "modern") || Boolean(tmdbEnrichment)),
           heroEnrichmentSignature: sourcesSettled ? settingsSignature : "",
+          heroTmdbLocalizationSignature: tmdbSettled ? settingsSignature : "",
           heroMetaEnriching: false,
           ...(mdbImdbRating != null ? { imdbRating: Number(mdbImdbRating) } : enrichedImdb != null ? { imdbRating: enrichedImdb } : {}),
           ...(meta ? runtimePatch : {}),
           ...(meta?.released ? { released: meta.released } : {}),
           ...(meta?.releaseInfo ? { releaseInfo: meta.releaseInfo } : {}),
-          ...(Array.isArray(meta?.genres) && meta.genres.length ? { genres: meta.genres } : {}),
-          ...(meta?.description ? { description: meta.description } : {}),
-          ...(meta?.logo ? { logo: meta.logo } : {}),
-          ...(meta?.background ? { background: meta.background } : {}),
+          ...(Array.isArray(meta?.genres) && meta.genres.length && !(preserveLocalizedBasicInfo && sourceHero.genres?.length)
+            ? { genres: meta.genres }
+            : {}),
+          ...(meta?.description && !(preserveLocalizedBasicInfo && sourceHero.description) ? { description: meta.description } : {}),
+          ...(meta?.logo && !(preserveLocalizedArtwork && sourceHero.logo) ? { logo: meta.logo } : {}),
+          ...(meta?.background && !(preserveLocalizedArtwork && sourceHero.background) ? { background: meta.background } : {}),
           ...tmdbPatch
         };
         return commitHero(mergedHero, revision);
@@ -153,7 +179,7 @@ export function createHomeScreenMethods11() {
       try {
         const metadataPromise =
           LayoutPreferences.get()?.preferExternalMetaAddonDetail !== false
-            ? metaRepository.getMetaFromAllAddons(itemType, itemId)
+            ? metaRepository.getMetaFromAllAddons(itemType, itemId, null, { signal })
             : Promise.resolve(null);
         // Each provider publishes independently. Keep successful localized data
         // when an addon fails or finishes later, and accept slow TV responses.
@@ -162,17 +188,20 @@ export function createHomeScreenMethods11() {
             mdbImdbRating = rating;
             if (rating != null) await publishLatestResults();
           }),
-          fetchModernHeroTmdbEnrichment(hero, itemType, this.layoutMode || "modern").then(async (enrichment) => {
+          fetchModernHeroTmdbEnrichment(hero, itemType, this.layoutMode || "modern", { signal }).then(async (enrichment) => {
             if (!enrichment && isHomeTmdbEnabled(this.layoutMode || "modern")) {
-              const metadataResult = await metadataPromise;
+              const metadataResult = await metadataPromise.catch(() => null);
               const meta = metadataResult?.status === "success" ? metadataResult.data : null;
               const fallbackLookupId = meta ? resolveHomeTmdbLookupId(meta, hero) : "";
               if (canCommitHero() && fallbackLookupId && fallbackLookupId !== resolveHomeTmdbLookupId(hero)) {
-                enrichment = await fetchModernHeroTmdbEnrichment({ id: fallbackLookupId }, itemType, this.layoutMode || "modern");
+                enrichment = await fetchModernHeroTmdbEnrichment({ id: fallbackLookupId }, itemType, this.layoutMode || "modern", {
+                  signal
+                });
               }
             }
             latestTmdbEnrichment = enrichment;
-            if (enrichment) await publishLatestResults();
+            tmdbSettled = true;
+            if (enrichment || waitForLocalizedTmdb) await publishLatestResults();
           }),
           metadataPromise.then(async (result) => {
             latestMetadataResult = result;
@@ -182,21 +211,24 @@ export function createHomeScreenMethods11() {
         sourcesSettled = true;
         await publishLatestResults();
       } finally {
+        if (this.heroEnrichmentAbortController === abortController) this.heroEnrichmentAbortController = null;
         if (this.pendingHeroEnrichmentKey === pendingKey) {
           this.pendingHeroEnrichmentKey = "";
         }
       }
     },
     mergeHeroIntoCatalogState(itemId, mergedHero) {
+      const identity = buildHeroIdentity(mergedHero);
+      const matches = (item) => String(item?.id || "") === itemId && buildHeroIdentity(item) === identity;
       this.heroCandidates = (this.heroCandidates || []).map((item) => {
-        return String(item?.id || "") === itemId ? { ...item, ...mergedHero } : item;
+        return matches(item) ? { ...item, ...mergedHero } : item;
       });
       this.rows = (this.rows || []).map((row) => {
         const items = row?.result?.data?.items;
-        if (!Array.isArray(items)) {
+        if (!Array.isArray(items) || !items.some(matches)) {
           return row;
         }
-        const nextItems = items.map((item) => (String(item?.id || "") === itemId ? { ...item, ...mergedHero } : item));
+        const nextItems = items.map((item) => (matches(item) ? { ...item, ...mergedHero } : item));
         return {
           ...row,
           result: {

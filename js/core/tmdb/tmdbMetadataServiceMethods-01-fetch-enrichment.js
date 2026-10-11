@@ -43,7 +43,7 @@ export function createTmdbMetadataServiceMethods01() {
   } = internals;
 
   return {
-    async fetchEnrichment({ tmdbId, contentType, language = null, signal = null } = {}) {
+    async fetchEnrichment({ tmdbId, contentType, language = null, signal = null, includeExtras = true } = {}) {
       const settings = TmdbSettingsStore.get();
       const apiKey = getTmdbApiKey(settings);
       if (!settings.enabled || !apiKey || !tmdbId) {
@@ -53,22 +53,22 @@ export function createTmdbMetadataServiceMethods01() {
       const type = resolveType(contentType);
       const lang = normalizeMoreLikeThisLanguage(language || settings.language);
       const imageLanguages = buildTmdbImageLanguageFilter(lang);
-      const params = `api_key=${encodeURIComponent(apiKey)}&language=${encodeURIComponent(lang)}&append_to_response=images,credits,release_dates,content_ratings,videos,external_ids&include_image_language=${encodeURIComponent(imageLanguages)}`;
+      const appendedResources = includeExtras
+        ? "images,credits,release_dates,content_ratings,videos,external_ids"
+        : "images,release_dates,content_ratings,external_ids";
+      const params = `api_key=${encodeURIComponent(apiKey)}&language=${encodeURIComponent(lang)}&append_to_response=${appendedResources}&include_image_language=${encodeURIComponent(imageLanguages)}`;
       const url = `${TMDB_BASE_URL}/${type}/${encodeURIComponent(String(tmdbId))}?${params}`;
 
       const data = await fetchTmdbJson(url, { signal });
       if (!data) {
         return null;
       }
-      const englishPersonNames = await fetchEnglishPersonNames({
-        type,
-        tmdbId,
-        apiKey,
-        data,
-        language: lang,
-        signal
-      });
-      const resolvedCredits = resolveCredits(data?.credits, englishPersonNames, lang);
+      // Home only needs text and artwork. Optional credit/trailer lookups must
+      // not delay that localized presentation while a fallback request resolves.
+      const englishPersonNames = includeExtras
+        ? await fetchEnglishPersonNames({ type, tmdbId, apiKey, data, language: lang, signal })
+        : new Map();
+      const resolvedCredits = includeExtras ? resolveCredits(data?.credits, englishPersonNames, lang) : null;
       const logoPath = selectBestLocalizedLogoPath(data?.images?.logos, lang);
       const releaseInfoValue =
         type === "tv"
@@ -87,17 +87,9 @@ export function createTmdbMetadataServiceMethods01() {
       const countryValue = productionCountryValue || originCountryValue;
       const rawLocalizedTitle = String(data?.title || data?.name || "").trim();
       const originalTitle = String(data?.original_title || data?.original_name || "").trim();
-      const originalLanguage = String(data?.original_language || "")
-        .trim()
-        .toLowerCase();
-      const droppedUntranslatedTitle =
-        rawLocalizedTitle &&
-        originalTitle &&
-        rawLocalizedTitle === originalTitle &&
-        !lang.startsWith("en") &&
-        originalLanguage &&
-        !lang.startsWith(originalLanguage);
-      let localizedTitle = droppedUntranslatedTitle ? "" : rawLocalizedTitle;
+      // A localized title can legitimately match the original (e.g. Titanic).
+      // Trust the title returned for the requested language instead of dropping it.
+      let localizedTitle = rawLocalizedTitle;
       const isCjkLanguage = ["ja", "ko", "zh"].includes(languageBase(lang));
       if (lang !== "en" && !isCjkLanguage && containsCjkOrHangul(localizedTitle || originalTitle)) {
         const englishTitle = await fetchEnglishTitle({ type, tmdbId, apiKey, signal });
@@ -111,14 +103,16 @@ export function createTmdbMetadataServiceMethods01() {
       }
       const runtimeValue =
         type === "tv" ? Number((Array.isArray(data?.episode_run_time) ? data.episode_run_time[0] : 0) || 0) : Number(data?.runtime || 0);
-      const trailerCandidates = await resolveTrailerCandidates({
-        type,
-        tmdbId,
-        apiKey,
-        language: lang,
-        initialResults: Array.isArray(data?.videos?.results) ? data.videos.results : [],
-        signal
-      });
+      const trailerCandidates = includeExtras
+        ? await resolveTrailerCandidates({
+            type,
+            tmdbId,
+            apiKey,
+            language: lang,
+            initialResults: Array.isArray(data?.videos?.results) ? data.videos.results : [],
+            signal
+          })
+        : [];
       const trailers = mapTrailerCandidates(trailerCandidates);
 
       return {

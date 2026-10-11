@@ -61,7 +61,7 @@ globalThis.Image = class {
     this.naturalWidth = 100;
   }
   set src(value) {
-    imageLoads.push(value);
+    if (value) imageLoads.push(value);
   }
 };
 Router.getCurrent = () => "home";

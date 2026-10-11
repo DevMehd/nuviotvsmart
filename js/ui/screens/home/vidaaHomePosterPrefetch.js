@@ -2,6 +2,7 @@
 const MAX_INFLIGHT = 18;
 const WARM_URL_LIMIT = 96;
 const observations = new WeakMap();
+const recoveryAttempts = new WeakMap();
 
 function recordLatency(screen, elapsedMs) {
   if (!Number.isFinite(elapsedMs) || elapsedMs < 40 || elapsedMs > 4000) return;
@@ -18,18 +19,61 @@ export function observeVidaaPosterReady(screen, image) {
   if (!image?.addEventListener) return;
   cancelVidaaPosterObservation(image);
   const startedAt = Date.now();
+  const source = String(image.dataset?.src || image.getAttribute?.("src") || "").trim();
+  const originalFallbacks = image.dataset?.fallbackSrcs || "";
+  const fallbackSources = new Set(
+    originalFallbacks
+      .split("|")
+      .filter(Boolean)
+      .map((value) => {
+        try {
+          return decodeURIComponent(value);
+        } catch (_) {
+          return value;
+        }
+      })
+  );
+  let observedSource = source;
   const cleanup = () => {
     image.removeEventListener("load", loaded);
-    image.removeEventListener("error", cleanup);
+    image.removeEventListener("error", failed);
     observations.delete(image);
   };
   const loaded = () => {
     cleanup();
+    recoveryAttempts.delete(image);
+    image.classList?.remove("placeholder");
     recordLatency(screen, Date.now() - startedAt);
+  };
+  const failed = () => {
+    // Inline/custom error handlers get their normal fallback turn first.
+    Promise.resolve().then(() => {
+      if (observations.get(image) !== cleanup) return;
+      const currentSource = String(image.getAttribute?.("src") || "").trim();
+      if (currentSource && currentSource !== observedSource) {
+        if (fallbackSources.has(currentSource)) {
+          observedSource = currentSource;
+          return;
+        }
+        cleanup();
+        return;
+      }
+      cleanup();
+      if (!source || image.isConnected === false || !image.dataset || image.dataset.src) return;
+      const previous = recoveryAttempts.get(image);
+      if (previous?.source === source) return;
+      recoveryAttempts.set(image, { source });
+      // One subsequent hydration can retry a transient failure; no timer or
+      // repeated navigation can create an unlimited failing request loop.
+      image.dataset.src = source;
+      if (originalFallbacks) image.dataset.fallbackSrcs = originalFallbacks;
+      image.removeAttribute("src");
+      image.classList?.add("placeholder");
+    });
   };
   observations.set(image, cleanup);
   image.addEventListener("load", loaded);
-  image.addEventListener("error", cleanup);
+  image.addEventListener("error", failed);
 }
 
 function releasePreload(record) {

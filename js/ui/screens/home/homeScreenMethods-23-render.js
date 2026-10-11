@@ -4,6 +4,7 @@ import { hasMountedHomeDom, updateHomeDom } from "./homeDomUpdate.js";
 import { discardVidaaHomeCards, restoreVidaaHomeCard, pruneVidaaHomeCards } from "./vidaaHomeCardWindow.js";
 import { createHomeRowRenderPass } from "./homeRowRenderCache.js";
 import { reconcileHomeFocusMediaTracking } from "./homeFocusMediaTracking.js";
+import { isHomeHeroLocalizationPending } from "./homeHeroLocalization.js";
 
 export function createHomeScreenMethods23() {
   const {
@@ -83,7 +84,7 @@ export function createHomeScreenMethods23() {
         }
       }
       if (this.layoutMode === "modern" && shouldEnrichModernHero(heroItem)) {
-        heroItem = { ...heroItem, heroMetaEnriching: true };
+        heroItem = { ...heroItem, heroMetaEnriching: isHomeHeroLocalizationPending(heroItem, this.layoutMode) };
         this.heroItem = heroItem;
       }
       const showHeroSection = Boolean(this.layoutPrefs?.heroSectionEnabled) && Boolean(heroItem);

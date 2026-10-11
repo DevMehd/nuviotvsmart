@@ -257,6 +257,7 @@ export function preloadImageSource(src) {
     const image = new Image();
     let settled = false;
     const settleLoadedImage = () => {
+      if (settled) return;
       if (Number(image.naturalWidth || 0) <= 0) {
         finish(false);
         return;
@@ -283,6 +284,12 @@ export function preloadImageSource(src) {
       }
       settled = true;
       clearTimeout(timeoutId);
+      // Resolving the Promise alone leaves a stalled native request running,
+      // even after its cache entry is evicted. Release the detached image too.
+      image.onload = null;
+      image.onerror = null;
+      if (image.removeAttribute) image.removeAttribute("src");
+      else image.src = "";
       resolve(Boolean(loaded));
     };
     // Older TV engines can leave image requests pending without load/error.
