@@ -55,7 +55,8 @@ On Tizen 5+ and LG webOS, torrent/P2P uses only the bundled local companion serv
 ### Personal fork: use the existing Android account
 
 This fork builds against the official `https://api.nuvio.tv` account backend by
-default. Sign in with the same email and password used in Nuvio Android. Profiles,
+default. Scan the official Nuvio QR code with your phone to sign in, or select the
+email/password option and use the same credentials as Nuvio Android. Profiles,
 addons, the saved library and watch progress use the existing Nuvio sync services.
 The local guest mode remains available from the account screen's server menu.
 

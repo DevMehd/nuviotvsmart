@@ -41,6 +41,7 @@ export function createAuthQrSignInScreenMethods02() {
       this.container.querySelector("[data-action='use-local']")?.addEventListener("click", () => this.openServerConnection("localReview"));
       this.container.querySelector("[data-action='email-submit']")?.addEventListener("click", () => void this.submitEmailLogin());
       this.container.querySelector("[data-action='email-mode']")?.addEventListener("click", () => this.toggleEmailMode());
+      this.container.querySelector("[data-action='login-method']")?.addEventListener("click", () => this.toggleLoginMethod());
       this.container.querySelector("[data-action='cancel-signout']")?.addEventListener("click", () => this.dismissSignOutConfirmation());
       this.container.querySelector("[data-action='confirm-signout']")?.addEventListener("click", () => void this.handleSignOut());
       this.container.querySelector("[data-action='terms']")?.addEventListener("click", () => {
@@ -100,6 +101,7 @@ export function createAuthQrSignInScreenMethods02() {
         return;
       }
       this.isStartingQr = true;
+      const generation = this.loginMethodGeneration;
       this.updateActionButtons();
       this.stopIntervals();
       this.clearQr();
@@ -107,7 +109,7 @@ export function createAuthQrSignInScreenMethods02() {
 
       try {
         const result = await QrLoginService.start();
-        if (!this.isMounted || this.isLeaving) return;
+        if (!this.isMounted || this.isLeaving || !this.useQrLogin || generation !== this.loginMethodGeneration) return;
         if (!result || !result.code) {
           this.setStatus(this.toFriendlyQrError(QrLoginService.getLastError()));
           return;
@@ -116,7 +118,7 @@ export function createAuthQrSignInScreenMethods02() {
         this.setStatus(I18n.t("auth.qr.scanAndSignIn"));
         this.startPolling(result.code, result.deviceNonce, result.pollIntervalSeconds || 3);
       } finally {
-        if (this.isMounted) {
+        if (this.isMounted && generation === this.loginMethodGeneration) {
           this.isStartingQr = false;
           this.updateActionButtons();
         }
@@ -189,12 +191,14 @@ export function createAuthQrSignInScreenMethods02() {
     },
     startPolling(code, deviceNonce, pollIntervalSeconds = 3) {
       this.stopPollingOnly();
+      const generation = this.loginMethodGeneration;
       this.qrPollIntervalSeconds = Math.max(2, Number(pollIntervalSeconds || 3));
       const pollOnce = async () => {
-        if (!this.isMounted || this.isLeaving || this.isPolling) return;
+        if (!this.isMounted || this.isLeaving || !this.useQrLogin || generation !== this.loginMethodGeneration || this.isPolling) return;
         this.isPolling = true;
         try {
           const pollResult = await QrLoginService.poll(code, deviceNonce);
+          if (!this.isMounted || this.isLeaving || !this.useQrLogin || generation !== this.loginMethodGeneration) return;
           const status = typeof pollResult === "string" ? pollResult : pollResult?.status || null;
           if (pollResult && typeof pollResult === "object") {
             const nextInterval = Number(pollResult.pollIntervalSeconds);
@@ -206,12 +210,14 @@ export function createAuthQrSignInScreenMethods02() {
               this.startCountdown(nextExpiration);
             }
           }
-          if (!this.isMounted || this.isLeaving) return;
+          if (!this.isMounted || this.isLeaving || !this.useQrLogin || generation !== this.loginMethodGeneration) return;
           if (status === "approved") {
+            this.isExchangingQr = true;
+            this.updateActionButtons();
             this.setStatus(I18n.t("auth.qr.approved"));
             this.stopPollingOnly();
             const exchange = await QrLoginService.exchange(code, deviceNonce);
-            if (!this.isMounted || this.isLeaving) return;
+            if (!this.isMounted || this.isLeaving || generation !== this.loginMethodGeneration) return;
             if (exchange) {
               LocalStore.remove(GUEST_QR_BYPASS_KEY);
               LocalStore.set("hasSeenAuthQrOnFirstLaunch", true);
@@ -238,9 +244,13 @@ export function createAuthQrSignInScreenMethods02() {
             return;
           }
         } finally {
-          this.isPolling = false;
-          if (this.isMounted && !this.isLeaving && this.pollTimer !== null) {
-            this.pollTimer = setTimeout(pollOnce, Math.max(2, Number(this.qrPollIntervalSeconds || 3)) * 1000);
+          if (generation === this.loginMethodGeneration) {
+            this.isPolling = false;
+            this.isExchangingQr = false;
+            this.updateActionButtons();
+            if (this.isMounted && !this.isLeaving && this.useQrLogin && this.pollTimer !== null) {
+              this.pollTimer = setTimeout(pollOnce, Math.max(2, Number(this.qrPollIntervalSeconds || 3)) * 1000);
+            }
           }
         }
       };

@@ -2,7 +2,18 @@
 import * as internals from "./authQrSignInScreen.js";
 
 export function createAuthQrSignInScreenMethods03() {
-  const { Router, LocalStore, ScreenUtils, AuthManager, I18n, Platform, GUEST_QR_BYPASS_KEY, focusNode } = internals;
+  const {
+    Router,
+    LocalStore,
+    ScreenUtils,
+    AuthManager,
+    I18n,
+    Platform,
+    GUEST_QR_BYPASS_KEY,
+    focusNode,
+    supportsEmailPasswordAuth,
+    supportsTvLogin
+  } = internals;
 
   return {
     toFriendlyEmailError(rawError) {
@@ -66,6 +77,10 @@ export function createAuthQrSignInScreenMethods03() {
         const disabled = Boolean(this.isLeaving || this.isStartingQr || this.isEmailSubmitting);
         refreshButton.disabled = disabled;
         refreshButton.setAttribute("aria-busy", this.isStartingQr ? "true" : "false");
+      }
+      const methodButton = this.container?.querySelector("#auth-login-method");
+      if (methodButton instanceof HTMLButtonElement) {
+        methodButton.disabled = Boolean(this.isLeaving || this.isEmailSubmitting || this.isExchangingQr);
       }
     },
     handleRefreshAction() {
@@ -175,6 +190,23 @@ export function createAuthQrSignInScreenMethods03() {
       this.password = "";
       this.render();
     },
+    toggleLoginMethod() {
+      if (!this.isMounted || this.isLeaving || this.isSignedIn || this.isEmailSubmitting || this.isExchangingQr) return;
+      if (!supportsEmailPasswordAuth(this.serverConfiguration) || !supportsTvLogin(this.serverConfiguration)) return;
+      this.loginMethodGeneration = Number(this.loginMethodGeneration || 0) + 1;
+      this.stopIntervals();
+      this.useEmailLogin = !this.useEmailLogin;
+      this.useQrLogin = !this.useEmailLogin;
+      this.isStartingQr = false;
+      this.isPolling = false;
+      this.isRegistering = false;
+      this.password = "";
+      this.emailError = "";
+      this.emailNotice = "";
+      this.focusAfterRender = this.useEmailLogin ? "#auth-email-input" : "#qr-refresh-btn";
+      this.render();
+      if (this.useQrLogin) void this.startQr();
+    },
     getLeftDescription() {
       if (this.useLocalMode) return I18n.t("auth_local_description");
       if (this.isSignedIn) return I18n.t("auth.qr.leftDescriptionSignedIn");
@@ -246,6 +278,8 @@ export function createAuthQrSignInScreenMethods03() {
         await this.submitEmailLogin();
       } else if (action === "email-mode") {
         this.toggleEmailMode();
+      } else if (action === "login-method") {
+        this.toggleLoginMethod();
       } else if (action === "email-input") {
         focusNode(this.container.querySelector("#auth-password-input"));
       }
@@ -278,6 +312,7 @@ export function createAuthQrSignInScreenMethods03() {
       }
     },
     cleanup() {
+      this.loginMethodGeneration = Number(this.loginMethodGeneration || 0) + 1;
       this.isMounted = false;
       this.isLeaving = true;
       this.showSignOutConfirmation = false;

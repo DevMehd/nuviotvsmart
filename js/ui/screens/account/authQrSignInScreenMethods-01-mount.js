@@ -30,6 +30,8 @@ export function createAuthQrSignInScreenMethods01() {
       this.isStartingQr = false;
       this.isPolling = false;
       this.isEmailSubmitting = false;
+      this.isExchangingQr = false;
+      this.loginMethodGeneration = Number(this.loginMethodGeneration || 0) + 1;
       this.email = "";
       this.password = "";
       this.emailError = "";
@@ -43,7 +45,8 @@ export function createAuthQrSignInScreenMethods01() {
       this.isConnectedStatsLoading = this.isSignedIn;
       this.serverConfiguration = ServerConfigurationStore.getActive();
       this.useLocalMode = this.serverConfiguration.isLocal === true;
-      this.useEmailLogin = supportsEmailPasswordAuth(this.serverConfiguration);
+      const preferQr = supportsTvLogin(this.serverConfiguration) && !this.serverConfiguration.isCustom;
+      this.useEmailLogin = supportsEmailPasswordAuth(this.serverConfiguration) && !preferQr;
       this.useQrLogin = supportsTvLogin(this.serverConfiguration) && !this.useEmailLogin;
       ScreenUtils.show(this.container);
       this.render();
@@ -272,7 +275,16 @@ export function createAuthQrSignInScreenMethods01() {
       const continueLabel = `<button type="button" id="qr-back-btn" class="qr-action-btn qr-action-btn-secondary focusable" data-action="back">
           ${escapeHtml(backLabel)}
         </button>`;
-      return `${refreshAction}${continueLabel}`;
+      const methodAction =
+        !this.isSignedIn &&
+        !this.useLocalMode &&
+        supportsEmailPasswordAuth(this.serverConfiguration) &&
+        supportsTvLogin(this.serverConfiguration)
+          ? `<button type="button" id="auth-login-method" class="qr-action-btn qr-action-btn-secondary focusable" data-action="login-method" ${this.isEmailSubmitting || this.isExchangingQr ? "disabled" : ""}>
+            ${escapeHtml(I18n.t(this.useEmailLogin ? "auth_switch_to_qr" : "auth_switch_to_email"))}
+          </button>`
+          : "";
+      return `${refreshAction}${methodAction}${continueLabel}`;
     },
     renderServerMenu(items) {
       return `

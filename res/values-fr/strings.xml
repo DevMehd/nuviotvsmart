@@ -2717,6 +2717,8 @@
 <string name="auth_email_sign_in_failed">Échec de la connexion : %1$s</string>
 <string name="auth_email_signin_title">Connectez-vous à votre compte</string>
 <string name="auth_email_official_hint">Utilisez votre compte Nuvio existant pour synchroniser vos profils Android, extensions, bibliothèque et progression de lecture.</string>
+<string name="auth_switch_to_qr">Connexion par QR code</string>
+<string name="auth_switch_to_email">Connexion par e-mail et mot de passe</string>
 <string name="auth_qr_configure_server">Configure a server to generate a QR code</string>
 <string name="auth_qr_not_configured">Choose Server options to connect this TV before generating a QR code.</string>
     <string name="custom_server_capability_email">Email and password</string>
