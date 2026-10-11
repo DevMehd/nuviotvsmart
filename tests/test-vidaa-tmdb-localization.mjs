@@ -102,8 +102,12 @@ try {
       ],
       "it-IT"
     ),
-    null,
-    "Italian must not silently select an English or unclassified logo"
+    "/english.png",
+    "A missing Italian logo falls back to explicitly English artwork"
+  );
+  assert.equal(
+    selectBestLocalizedLogoPath([{ file_path: "/unclassified.png", iso_639_1: null }], "it-IT"),
+    null
   );
   assert.equal(
     selectBestLocalizedLogoPath([{ file_path: "/german.png", iso_639_1: "de" }], "it"),
@@ -205,10 +209,9 @@ try {
       language: "it-IT",
       includeExtras
     });
-    assert.equal(
-      result.logo,
-      null,
-      "Home and Detail use the translated title when no Italian logo exists"
+    assert.ok(
+      result.logo.endsWith("/english-logo.png"),
+      "Home and Detail fall back to the English logo when Italian is unavailable"
     );
     assert.equal(result.localizedTitle, italianDetails.title);
   }

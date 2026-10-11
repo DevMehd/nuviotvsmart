@@ -133,6 +133,8 @@ export function selectBestLocalizedLogoPath(logos = [], language = "") {
         priority = 4;
       } else if (logoLanguage === languageCode) {
         priority = 3;
+      } else if (logoLanguage === "en") {
+        priority = 2;
       }
       return {
         logo,
@@ -141,8 +143,8 @@ export function selectBestLocalizedLogoPath(logos = [], language = "") {
         voteAverage: Number(logo?.vote_average || 0)
       };
     })
-    // Logos contain the title: an English/unclassified fallback can undo the
-    // selected language. Use the translated text title when no matching logo exists.
+    // Prefer the selected language, then English. Unclassified artwork must
+    // not outrank either explicitly tagged language.
     .filter((entry) => entry.priority >= 0 && entry.logo?.file_path)
     .sort((left, right) => right.priority - left.priority || right.voteAverage - left.voteAverage || left.index - right.index);
   return ranked[0]?.logo?.file_path || null;
