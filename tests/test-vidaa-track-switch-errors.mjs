@@ -77,6 +77,17 @@ function fixture() {
   };
   for (const method of [
     "clearPlaybackStallGuard",
+    "resetSourceTrackState",
+    "clearLoadingCompletionTimer",
+    "clearBufferingSpinnerTimer",
+    "clearSubtitleDelayOverlayTimer",
+    "closeSourcesPanel",
+    "renderSubtitleDialog",
+    "renderSubtitleDelayOverlay",
+    "renderSubtitleTimingDialog",
+    "renderAudioDialog",
+    "renderSpeedDialog",
+    "renderEpisodePanel",
     "releaseStartupAudioGate",
     "clearStartupError",
     "dismissPauseOverlay",

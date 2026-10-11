@@ -37,6 +37,13 @@ export function createPlayerScreenMethods40() {
       }
 
       const requestToken = (this.embeddedSubtitleLoadToken || 0) + 1;
+      const sourceAttemptToken = this.sourcePlaybackAttemptToken;
+      const mountToken = this.playerMountToken;
+      const isCurrentRequest = () =>
+        requestToken === this.embeddedSubtitleLoadToken &&
+        sourceAttemptToken === this.sourcePlaybackAttemptToken &&
+        mountToken === this.playerMountToken &&
+        this.getTrackProbeUrl() === probeUrl;
       const preserveExistingTracks = Boolean(
         probeUrl &&
         probeUrl === this.lastEmbeddedTrackProbeUrl &&
@@ -71,7 +78,7 @@ export function createPlayerScreenMethods40() {
             probeTimeSeconds: Environment.isVidaa() ? Number(this.getPlaybackCurrentSeconds?.()) || 0 : 0
           })
         ]);
-        if (requestToken !== this.embeddedSubtitleLoadToken) {
+        if (!isCurrentRequest()) {
           return;
         }
 
@@ -100,7 +107,7 @@ export function createPlayerScreenMethods40() {
       })()
         .catch((error) => {
           console.warn("Embedded subtitle discovery failed", error);
-          if (requestToken !== this.embeddedSubtitleLoadToken) {
+          if (!isCurrentRequest()) {
             return;
           }
           if (!preserveExistingTracks) {
@@ -112,7 +119,7 @@ export function createPlayerScreenMethods40() {
           this.refreshTrackDialogs();
         })
         .finally(() => {
-          if (requestToken === this.embeddedSubtitleLoadToken) {
+          if (isCurrentRequest()) {
             this.embeddedSubtitleLoading = false;
             this.embeddedAudioLoading = false;
             this.refreshTrackDialogs();

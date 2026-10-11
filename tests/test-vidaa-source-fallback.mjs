@@ -97,6 +97,8 @@ function screen({
   const ui = {
     ...PlayerScreen,
     videoListeners: [],
+    externalTrackNodes: [],
+    externalSubtitleObjectUrls: [],
     uiRefs: {},
     params: {},
     streamCandidates: sources,
@@ -272,6 +274,56 @@ test("next-source status appears only after failure and clears immediately on a 
   assert.equal(loadingStatus.classList.contains("hidden"), true);
   await drain();
   assert.deepEqual(calls, [], "The obsolete automatic fallback cannot reopen its message");
+});
+
+test("automatic recovery hides the source picker and shows loading before the next resolver finishes", async () => {
+  const next = candidate("b", "");
+  const { ui, calls } = screen({ sources: [candidate("a"), next], seconds: 125, healthy: true });
+  const classes = new Set(["hidden"]);
+  ui.uiRefs.loadingOverlay = {
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+      toggle(name, enabled) {
+        if (enabled) classes.add(name);
+        else classes.delete(name);
+      }
+    }
+  };
+  ui.sourcesPanelVisible = true;
+  ui.subtitleDialogVisible = false;
+  ui.audioDialogVisible = false;
+  ui.updateLoadingVisibility = PlayerScreen.updateLoadingVisibility;
+  const resolving = deferred();
+  DirectDebridResolver.canResolveStream = () => true;
+  DirectDebridResolver.resolve = () => resolving.promise;
+  ui.showStartupError("Fixture source failed", { streamCandidate: ui.getCurrentStreamCandidate() });
+  assert.equal(
+    ui.sourcesPanelVisible,
+    false,
+    "No picker can remain over the automatic loading screen"
+  );
+  assert.equal(
+    classes.has("hidden"),
+    false,
+    "The loading overlay appears synchronously after failure"
+  );
+  assert.equal(
+    ui.pendingPlaybackRestore.timeSeconds,
+    125,
+    "Save the position before clearing the old frame"
+  );
+  await drain();
+  assert.deepEqual(calls, [], "Keep loading while the next source resolves");
+  assert.equal(classes.has("hidden"), false);
+  resolving.resolve({ status: "success", stream: { url: "https://fixture.invalid/b.mp4" } });
+  await drain();
+  assert.deepEqual(
+    calls.map((call) => call.id),
+    ["b"]
+  );
+  assert.equal(ui.sourcesPanelVisible, false);
+  ui.clearSourceFallbackDeadline();
 });
 
 test("a real first frame cancels the deadline beyond both startup limits", async () => {
