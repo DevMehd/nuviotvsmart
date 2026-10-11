@@ -28,6 +28,7 @@ export function createTmdbMetadataServiceMethods01() {
     toImageUrl,
     buildTmdbImageLanguageFilter,
     selectBestLocalizedImagePath,
+    selectBestBackdropPath,
     selectBestLocalizedLogoPath,
     resolveTrailerCandidates,
     mapTrailerCandidates,
@@ -118,7 +119,7 @@ export function createTmdbMetadataServiceMethods01() {
       return {
         localizedTitle: localizedTitle || null,
         description: data.overview || null,
-        backdrop: toImageUrl(selectBestLocalizedImagePath(data?.images?.backdrops, lang) || data.backdrop_path, "backdrop"),
+        backdrop: toImageUrl(selectBestBackdropPath(data?.images?.backdrops, data.backdrop_path), "backdrop"),
         poster: toImageUrl(selectBestLocalizedImagePath(data?.images?.posters, lang) || data.poster_path, "poster"),
         logo: toImageUrl(logoPath, "logo"),
         genres: Array.isArray(data.genres) ? data.genres.map((genre) => genre.name).filter(Boolean) : [],

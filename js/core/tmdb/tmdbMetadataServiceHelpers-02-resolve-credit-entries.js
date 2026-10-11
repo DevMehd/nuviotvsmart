@@ -111,6 +111,13 @@ export function selectBestLocalizedImagePath(images = [], normalizedLanguage = "
   );
 }
 
+export function selectBestBackdropPath(backdrops = [], fallbackPath = null) {
+  // TMDB uses no language for artwork without text. Keep language matching
+  // for posters/logos, and use the standard TMDB backdrop as the fallback.
+  const textless = (Array.isArray(backdrops) ? backdrops : []).filter((image) => image?.file_path && !String(image.iso_639_1 || "").trim());
+  return textless.find((image) => image.file_path === fallbackPath)?.file_path || textless[0]?.file_path || fallbackPath || null;
+}
+
 export function selectBestLocalizedLogoPath(logos = [], language = "") {
   const { languageCode, regionCode } = normalizeTmdbArtworkLanguage(language);
   const ranked = (Array.isArray(logos) ? logos : [])

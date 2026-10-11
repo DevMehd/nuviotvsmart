@@ -28,6 +28,8 @@ export function homeMetadataSettingsSignature() {
   const tmdbPreferences = { ...settings };
   delete tmdbPreferences.apiKey;
   return JSON.stringify([
+    // Refresh artwork previously cached with language-first backdrop selection.
+    "tmdb-textless-backdrops-v1",
     ProfileManager.getActiveProfileId(),
     tmdbPreferences,
     credentialFingerprint(getTmdbApiKey(settings)),

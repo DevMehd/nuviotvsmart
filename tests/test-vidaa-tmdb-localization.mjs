@@ -10,8 +10,12 @@ globalThis.__NUVIO_ENV__ = { TMDB_API_KEY: "test-tmdb-key" };
 
 const { TmdbSettingsStore, normalizeTmdbLanguageCode } =
   await import("../js/data/local/tmdbSettingsStore.js");
-const { TmdbMetadataService, selectBestLocalizedLogoPath, selectBestLocalizedImagePath } =
-  await import("../js/core/tmdb/tmdbMetadataService.js");
+const {
+  TmdbMetadataService,
+  selectBestLocalizedLogoPath,
+  selectBestLocalizedImagePath,
+  selectBestBackdropPath
+} = await import("../js/core/tmdb/tmdbMetadataService.js");
 const { fetchTmdbJson } = await import("../js/core/tmdb/tmdbTransport.js");
 const { TmdbService } = await import("../js/core/tmdb/tmdbService.js");
 const { PluginServiceClient } = await import("../js/platform/pluginServiceClient.js");
@@ -39,8 +43,9 @@ const italianDetails = {
       { file_path: "/italian-poster.jpg", iso_639_1: "it" }
     ],
     backdrops: [
-      { file_path: "/english-backdrop.jpg", iso_639_1: "en" },
-      { file_path: "/italian-backdrop.jpg", iso_639_1: "it" }
+      { file_path: "/english-backdrop.jpg", iso_639_1: "en", vote_average: 10 },
+      { file_path: "/italian-backdrop.jpg", iso_639_1: "it", vote_average: 10 },
+      { file_path: "/textless-backdrop.jpg", iso_639_1: null, vote_average: 1 }
     ]
   },
   videos: {
@@ -51,7 +56,7 @@ const italianDetails = {
 try {
   TmdbSettingsStore.replaceForProfile(
     "1",
-    { enabled: true, language: "IT_it" },
+    { enabled: true, language: "IT_it", useMoreLikeThis: true },
     { silentSync: true }
   );
   assert.equal(TmdbSettingsStore.get().language, "it-IT");
@@ -76,7 +81,10 @@ try {
     assert.equal(result.description, italianDetails.overview);
     assert.ok(result.logo.endsWith("/italian-logo.png"));
     assert.ok(result.poster.endsWith("/italian-poster.jpg"));
-    assert.ok(result.backdrop.endsWith("/italian-backdrop.jpg"));
+    assert.ok(
+      result.backdrop.endsWith("/textless-backdrop.jpg"),
+      "Backdrops prefer no text while logos and posters stay Italian"
+    );
     assert.equal(requests.length, 1);
   }
 
@@ -94,6 +102,30 @@ try {
     selectBestLocalizedImagePath([{ file_path: "/german.jpg", iso_639_1: "de" }], "it"),
     null
   );
+  assert.equal(
+    selectBestBackdropPath(italianDetails.images.backdrops, "/english-backdrop.jpg"),
+    "/textless-backdrop.jpg"
+  );
+  assert.equal(
+    selectBestBackdropPath(
+      [
+        { file_path: "/first-textless.jpg", iso_639_1: null },
+        { file_path: "/standard-textless.jpg", iso_639_1: null }
+      ],
+      "/standard-textless.jpg"
+    ),
+    "/standard-textless.jpg",
+    "Preserve TMDB's standard selection when it is textless"
+  );
+  assert.equal(
+    selectBestBackdropPath([{ file_path: "", iso_639_1: null }], "/standard.jpg"),
+    "/standard.jpg"
+  );
+  assert.equal(
+    selectBestBackdropPath([{ file_path: "/italian.jpg", iso_639_1: "it" }], "/standard.jpg"),
+    "/standard.jpg"
+  );
+  assert.equal(selectBestBackdropPath([{ file_path: "/italian.jpg", iso_639_1: "it" }]), null);
 
   Platform.current = { name: "vidaa" };
   PluginServiceClient.fetch = async () => {
@@ -110,7 +142,66 @@ try {
     contentType: "movie"
   });
   assert.equal(withoutTrailer.description, italianDetails.overview);
+  assert.ok(withoutTrailer.backdrop.endsWith("/textless-backdrop.jpg"));
   assert.deepEqual(withoutTrailer.trailers, []);
+
+  // The lightweight Home request and full Detail/stream request share clean
+  // backdrops regardless of the text language or film/series type.
+  globalThis.fetch = async () => ({ ok: true, json: async () => italianDetails });
+  for (const language of ["it-IT", "en-US"]) {
+    for (const contentType of ["movie", "series"]) {
+      const home = await TmdbMetadataService.fetchEnrichment({
+        tmdbId: 99,
+        contentType,
+        language,
+        includeExtras: false
+      });
+      const detail = await TmdbMetadataService.fetchEnrichment({
+        tmdbId: 99,
+        contentType,
+        language
+      });
+      assert.ok(home.backdrop.endsWith("/textless-backdrop.jpg"));
+      assert.equal(home.backdrop, detail.backdrop);
+      assert.ok(
+        home.logo.endsWith(language.startsWith("it") ? "/italian-logo.png" : "/english-logo.png")
+      );
+      assert.ok(
+        home.poster.endsWith(
+          language.startsWith("it") ? "/italian-poster.jpg" : "/english-poster.jpg"
+        )
+      );
+    }
+  }
+
+  globalThis.fetch = async (rawUrl) => ({
+    ok: true,
+    json: async () =>
+      new URL(rawUrl).pathname.endsWith("/images")
+        ? italianDetails.images
+        : {
+            results: [
+              {
+                id: 199,
+                title: "Similar film",
+                original_language: "en",
+                backdrop_path: "/english-backdrop.jpg",
+                vote_average: 8,
+                release_date: "2025-01-01"
+              }
+            ]
+          }
+  });
+  for (const language of ["it-IT", "en-US"]) {
+    const similar = await TmdbMetadataService.fetchMoreLikeThis({
+      tmdbId: 99,
+      contentType: "movie",
+      language
+    });
+    assert.equal(similar.length, 1);
+    assert.ok(similar[0].background.endsWith("/textless-backdrop.jpg"));
+    assert.equal(similar[0].backdrop, similar[0].background);
+  }
 
   // Standalone lookups must request the preferred language, including English.
   for (const language of ["it-IT", "en-US"]) {
@@ -193,5 +284,5 @@ try {
 }
 
 console.log(
-  "TMDB checks passed: Italian text/artwork, TV transport, optional trailer failure, fallback, timeout and cancellation."
+  "TMDB checks passed: textless Home/Detail backdrops in Italian/English, localized logos/posters, TV transport, fallback and cancellation."
 );
