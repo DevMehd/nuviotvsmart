@@ -213,7 +213,7 @@ export function mergeStreamBadges(existing = [], matched = []) {
   return Array.from(merged.values());
 }
 
-function badgeMatchCandidates(stream = {}) {
+export function badgeMatchCandidates(stream = {}) {
   const resolve = stream.clientResolve || stream.raw?.clientResolve || {};
   const raw = resolve.stream?.raw || stream.raw || {};
   const parsed = raw.parsed || {};
@@ -393,11 +393,20 @@ export function prepareStreamBadgeRules(rules = {}) {
 }
 
 export function matchStreamBadges(stream = {}, rules = {}) {
+  return matchStreamBadgeCandidates(badgeMatchCandidates(stream), rules);
+}
+
+export function rememberStreamBadgeMatches(candidates, rules, result) {
+  const { matches } = compileStreamBadgeFilters(rules);
+  matches.set(JSON.stringify(candidates), result);
+  if (matches.size > MAX_MATCHES_PER_RULES) matches.delete(matches.keys().next().value);
+}
+
+export function matchStreamBadgeCandidates(candidates, rules = {}) {
   const { filters, matches } = compileStreamBadgeFilters(rules);
   if (!filters.length) {
     return [];
   }
-  const candidates = badgeMatchCandidates(stream);
   if (!candidates.length) {
     return [];
   }

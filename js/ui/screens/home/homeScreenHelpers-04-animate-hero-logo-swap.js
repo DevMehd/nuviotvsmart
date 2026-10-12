@@ -198,6 +198,12 @@ export function animateHeroLogoSwap(logoNode, nextSrc, nextAlt = "", durationMs 
   const normalizedAlt = String(nextAlt || "logo").trim() || "logo";
   const currentSrc = String(logoNode.getAttribute("src") || "").trim();
   const transitionMode = options?.transitionMode || "crossfade";
+  // Enrichment of the same title must not restart its in-flight image fade.
+  if (normalizedSrc && logoNode.heroLogoPendingSource === normalizedSrc) {
+    logoNode.setAttribute("alt", normalizedAlt);
+    return;
+  }
+  logoNode.heroLogoPendingSource = normalizedSrc;
   const token = Number(logoNode.heroLogoTransitionToken || 0) + 1;
   logoNode.heroLogoTransitionToken = token;
 
@@ -209,6 +215,7 @@ export function animateHeroLogoSwap(logoNode, nextSrc, nextAlt = "", durationMs 
     if (Number(logoNode.heroLogoTransitionToken || 0) !== token) {
       return;
     }
+    logoNode.heroLogoPendingSource = "";
     logoNode.classList.remove("home-hero-logo-transition-enter", "is-visible");
     clearGhosts();
   };

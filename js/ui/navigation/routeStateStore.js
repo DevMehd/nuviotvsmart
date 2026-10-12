@@ -1,4 +1,5 @@
-const stateMap = new Map();
+import { BoundedMap } from "../../core/storage/boundedMap.js";
+const stateMap = new BoundedMap(24);
 
 export const RouteStateStore = {
   get(key) {

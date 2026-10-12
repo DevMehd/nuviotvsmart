@@ -2,10 +2,16 @@ import { safeApiCall } from "../../core/network/safeApiCall.js";
 import { selectCatalogEntries } from "../../core/util/catalogEntryMapper.js";
 import { CatalogApi } from "../remote/api/catalogApi.js";
 import { addonRepository } from "./addonRepository.js";
+import { BoundedMap } from "../../core/storage/boundedMap.js";
+import { ProfileManager } from "../../core/profile/profileManager.js";
+import { CatalogSnapshotStore } from "../local/catalogSnapshotStore.js";
+import { Platform } from "../../platform/index.js";
 
 class CatalogRepository {
   constructor() {
-    this.catalogCache = new Map();
+    this.catalogCache = new BoundedMap(80);
+    this.catalogPending = new Map();
+    this.catalogTimes = new BoundedMap(80);
     this.cacheGeneration = 0;
   }
 
@@ -35,12 +41,16 @@ class CatalogRepository {
     });
 
     const cached = this.catalogCache.get(cacheKey);
-    if (cached) {
+    if (cached && Date.now() - (this.catalogTimes.get(cacheKey) || 0) < 120000) {
       return {
         status: "success",
         data: cached
       };
     }
+
+    // Abortable searches retain their own request; one caller must never
+    // cancel another screen's shared request.
+    if (!signal && this.catalogPending.has(cacheKey)) return this.catalogPending.get(cacheKey);
 
     const url = this.buildCatalogUrl({
       baseUrl: addonBaseUrl,
@@ -51,7 +61,7 @@ class CatalogRepository {
     });
 
     const cacheGeneration = this.cacheGeneration;
-    return safeApiCall(() =>
+    const request = safeApiCall(() =>
       CatalogApi.getCatalog(url, signal ? { signal } : {}).then((dto) => {
         const { metas, rawItemCount } = selectCatalogEntries(dto?.metas);
         const items = metas.map((meta) => ({
@@ -79,15 +89,41 @@ class CatalogRepository {
           nextSkip: hasMore ? skip + rawItemCount : skip
         };
 
-        if (cacheGeneration === this.cacheGeneration) this.catalogCache.set(cacheKey, row);
+        if (cacheGeneration === this.cacheGeneration) {
+          this.catalogCache.set(cacheKey, row);
+          this.catalogTimes.set(cacheKey, Date.now());
+          if (Platform.isVidaa() && skip === 0 && !Object.keys(extraArgs).length)
+            CatalogSnapshotStore.put(cacheKey, row);
+        }
         return row;
       })
     );
+    if (!signal) this.catalogPending.set(cacheKey, request);
+    try {
+      return await request;
+    } finally {
+      if (this.catalogPending.get(cacheKey) === request) this.catalogPending.delete(cacheKey);
+    }
   }
 
   clearCache() {
     this.cacheGeneration += 1;
     this.catalogCache.clear();
+    this.catalogTimes.clear();
+    this.catalogPending.clear();
+  }
+
+  getSavedCatalog(descriptor) {
+    if (!Platform.isVidaa()) return null;
+    return CatalogSnapshotStore.get(
+      this.buildCacheKey({
+        ...descriptor,
+        skip: 0,
+        skipStep: this.normalizeSkipStep(descriptor.skipStep),
+        extraArgs: {},
+        supportsSkip: descriptor.supportsSkip !== false
+      })
+    );
   }
 
   buildCatalogUrl({ baseUrl, type, catalogId, skip = 0, extraArgs = {} }) {
@@ -131,6 +167,7 @@ class CatalogRepository {
       .join("&");
 
     return JSON.stringify([
+      String(ProfileManager.getActiveProfileId() || "1"),
       addonRepository.canonicalizeUrl(addonBaseUrl),
       addonId,
       type,

@@ -254,6 +254,8 @@ export function createStreamScreenMethods09() {
       const badgeSettings = StreamBadgeSettingsStore.snapshot();
       const focusedRow = this.focusState?.zone === "card" ? Number(this.focusState?.row || 0) : -1;
       let changed = false;
+      let hydratedCount = 0;
+      let pendingHydration = false;
 
       // Android's LazyColumn only composes badge images near the viewport. The
       // long-list path now also bounds the card DOM; short lists retain the
@@ -269,6 +271,11 @@ export function createStreamScreenMethods09() {
         const shouldHydrate = rowIndex === focusedRow || (rowIndex >= windowStart && rowIndex <= windowEnd);
         const hydrated = placeholder.dataset.badgesHydrated === "true";
         if (shouldHydrate && !hydrated) {
+          if (Environment.isVidaa() && hydratedCount >= 2) {
+            pendingHydration = true;
+            return;
+          }
+          hydratedCount++;
           placeholder.innerHTML = renderStreamBadgeContents(filtered[rowIndex], streamBadgesEnabled, badgeSettings);
           bindCachedBadgeImages(placeholder);
           // webOS already uses the fixed-height lazy badge row. Tizen must drop
@@ -291,6 +298,7 @@ export function createStreamScreenMethods09() {
       if (changed) {
         this.requestStreamVirtualMeasure();
       }
+      if (pendingHydration) this.requestStreamBadgeHydration();
     },
     bindAddonLogoFallbacks() {
       bindCachedBadgeImages(this.container);

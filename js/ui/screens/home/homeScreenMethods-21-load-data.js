@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { startHomeContinueWatchingLoad } from "./homeContinueWatchingLoad.js";
+import { buildCatalogDisableKey } from "../../../core/addons/homeCatalogs.js";
 
 export function createHomeScreenMethods21() {
   const {
@@ -167,6 +168,30 @@ export function createHomeScreenMethods21() {
       );
       const routeInputSignature = this.buildHomeRouteInputSignature(addons);
 
+      let restoredCatalogSnapshot = false;
+      if (Platform.isVidaa() && !background && !(this.rows || []).some((row) => row?.result?.status === "success")) {
+        const savedRows = uniqueCatalogDescriptors
+          .map((catalog) => {
+            const data = catalogRepository.getSavedCatalog?.(catalog);
+            if (!data) return null;
+            return {
+              ...catalog,
+              result: this.filterUnreleasedResult({ status: "success", data }),
+              homeCatalogKey: buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId),
+              homeCatalogDisableKey: buildCatalogDisableKey(catalog.addonBaseUrl, catalog.type, catalog.catalogId, catalog.catalogName)
+            };
+          })
+          .filter(Boolean);
+        if (savedRows.length) {
+          restoredCatalogSnapshot = true;
+          this.rows = this.sortAndFilterRows(savedRows, this.collections);
+          this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
+          this.heroItem ||= this.pickInitialHero();
+          this.releaseInitialHomeLoading();
+          this.render();
+        }
+      }
+
       const initialCatalogLoad = this.getInitialCatalogLoadCount();
       const initialDescriptors = uniqueCatalogDescriptors.slice(0, initialCatalogLoad);
       const deferredDescriptors = uniqueCatalogDescriptors.slice(initialCatalogLoad);
@@ -186,7 +211,10 @@ export function createHomeScreenMethods21() {
             return;
           }
           progressiveInitialRows.set(row.homeCatalogKey, row);
-          this.rows = this.sortAndFilterRows(Array.from(progressiveInitialRows.values()), this.collections);
+          this.rows = this.sortAndFilterRows(
+            mergeRefreshedHomeRows(this.rows, Array.from(progressiveInitialRows.values()), null, { background: restoredCatalogSnapshot }),
+            this.collections
+          );
           this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
           if (!this.heroItem) {
             this.heroItem = this.pickInitialHero();
@@ -239,7 +267,7 @@ export function createHomeScreenMethods21() {
         uniqueCatalogDescriptors.map((catalog) => buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId))
       );
       const nextInitialRows = mergeRefreshedHomeRows(this.rows, initialRows, configuredCatalogKeys, {
-        background
+        background: background || restoredCatalogSnapshot
       });
       this.rows = this.sortAndFilterRows(nextInitialRows, this.collections);
       if (preserveContinueWatching) {

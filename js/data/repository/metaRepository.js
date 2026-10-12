@@ -1,6 +1,7 @@
 import { safeApiCall } from "../../core/network/safeApiCall.js";
 import { addonRepository } from "./addonRepository.js";
 import { MetaApi } from "../remote/api/metaApi.js";
+import { BoundedMap } from "../../core/storage/boundedMap.js";
 
 const INSTALLED_ADDONS_WAIT_MS = 750;
 
@@ -22,7 +23,7 @@ function firstNonBlank(...values) {
 
 class MetaRepository {
   constructor() {
-    this.metaCache = new Map();
+    this.metaCache = new BoundedMap(160);
     this.inFlightMeta = new Map();
     this.inFlightMetaAll = new Map();
   }

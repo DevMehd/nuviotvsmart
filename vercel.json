@@ -1,7 +1,13 @@
 {
   "buildCommand": "npm run package:vidaa",
   "outputDirectory": "dist/vidaa",
+  "regions": ["cdg1"],
+  "functions": { "api/addon-data.js": { "maxDuration": 10 } },
   "headers": [
+    {
+      "source": "/:path*.:hash([a-f0-9]{16}).:ext(js|css)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
     {
       "source": "/",
       "headers": [

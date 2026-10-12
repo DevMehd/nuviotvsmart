@@ -595,6 +595,15 @@ async function buildBundle() {
   const { version } = await readAppMetadata();
   const personalChangelog = await readPersonalChangelog(rootDir, version);
 
+  await build({
+    entryPoints: [path.join(rootDir, "js/core/streams/streamBadgeWorker.js")],
+    outfile: path.join(distDir, "assets/runtime/stream-badges-worker.js"),
+    bundle: true,
+    minify: true,
+    format: "iife",
+    target: [`chrome${compatibilityPolicy.chromiumVersion}`]
+  });
+
   console.log("starting bundle build...");
   const result = await build({
     entryPoints: [path.join(rootDir, "js/app.js")],

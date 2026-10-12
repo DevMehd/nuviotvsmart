@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
+import { showVidaaDetailPreview } from "./vidaaDetailPreview.js";
 
 export function createMetaDetailsScreenMethods03() {
   const {
@@ -101,6 +102,12 @@ export function createMetaDetailsScreenMethods03() {
         message: "timeout"
       });
       const isSavedPromise = savedLibraryRepository.isSaved(itemId);
+      void metaPromise
+        .then((result) => {
+          if (token === this.detailLoadToken && this.isLoadingDetail && result?.status === "success")
+            showVidaaDetailPreview(this.container, this.params, result.data);
+        })
+        .catch(() => {});
       const progressPromise = watchProgressRepository.getResumeByContentId(itemId);
       const watchedItemPromise = watchedItemsRepository.isWatched(itemId);
       const allProgressPromise = getDetailAllProgressPromise();

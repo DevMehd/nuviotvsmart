@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
+import { prepareStreamBadgeMatches } from "../../../core/streams/streamBadgeWarmup.js";
 
 export function createStreamScreenMethods04() {
   const {
@@ -163,6 +164,8 @@ export function createStreamScreenMethods04() {
         if (!chunkStreams.length) {
           return;
         }
+        await prepareStreamBadgeMatches(chunkStreams, badgeSettings);
+        if (token !== this.loadToken) return;
         // Android publishes the completed source group before badge/logo work.
         // Keep those image warmups off the critical path so a slow image or
         // proxy cannot delay the first usable stream card on Tizen.
@@ -251,6 +254,8 @@ export function createStreamScreenMethods04() {
           return key && !existingKeys.has(key);
         });
         if (missingStreams.length) {
+          await prepareStreamBadgeMatches(missingStreams, badgeSettings);
+          if (token !== this.loadToken) return;
           void Promise.all([
             preloadMatchedStreamBadgeImages(missingStreams, badgeSettings),
             ...(showAddonLogo ? [preloadAddonLogoImages(missingStreams, this.addonLogoLookup)] : [])

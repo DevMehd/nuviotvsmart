@@ -2,6 +2,11 @@
 
 ## 2026-10-12 — 1.2.4
 
+- Accueil plus rapide : les derniers catalogues du profil réapparaissent immédiatement, puis s’actualisent en arrière-plan.
+- Catalogues et fiches Xperience/AIOStreams préparés côté Vercel avec un cache court, des données allégées et un retour automatique à la source directe si nécessaire.
+- Démarrage accéléré grâce à la réutilisation locale des fichiers de la version installée ; les mises à jour restent vérifiées au lancement.
+- Analyse des badges Nard et Elite déplacée dans un traitement séparé sur les télés compatibles pour laisser l’interface répondre.
+- Aperçu du film affiché dès l’ouverture d’une fiche, transitions du fond et du logo plus stables et mémoire des catalogues limitée pendant les longues sessions.
 - Ajout des vrais badges graphiques Xperience Nard et Elite, avec un choix indépendant pour chaque profil dans Paramètres → Style Fusion → Pack de badges.
 - Badges Xperience servis en petite taille sur Vercel pour préserver la fluidité ; le pack Nard est proposé par défaut.
 - Mise à jour du fork vers Nuvio 1.2.4, avec conservation de la connexion au compte Android et du QR code.

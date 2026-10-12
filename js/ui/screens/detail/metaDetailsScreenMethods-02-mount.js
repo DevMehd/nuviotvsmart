@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
+import { showVidaaDetailPreview } from "./vidaaDetailPreview.js";
 
 export function createMetaDetailsScreenMethods02() {
   const { Router, ScreenUtils, hasMdbListRatings } = internals;
@@ -148,6 +149,8 @@ export function createMetaDetailsScreenMethods02() {
             </div>
           </div>
         `;
+
+      showVidaaDetailPreview(this.container, params);
 
       // Android composes Detail immediately and lets the ViewModel load metadata
       // independently. The loading shell is already visible, so do not hold

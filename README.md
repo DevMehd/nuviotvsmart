@@ -74,6 +74,25 @@ services (AIOStreams, Xperience or Posters+) or per device in Settings → Integ
 
 ### Balanced performance on the personal Vercel deployment
 
+The hosted personal build uses `POST /api/addon-data` for catalogue and metadata
+requests to the exact observed Xperience and AIOStreams hosts. Private addon URLs
+stay in request bodies. The Paris Vercel function rejects arbitrary destinations
+and redirects, bounds response size/concurrency, compacts catalogue fields and
+uses an 8 MiB / 64-entry in-process cache (catalogues: two minutes, metadata: five
+minutes). Responses are private and never enter the shared CDN cache. The cache
+is opportunistic per function instance; it does not persist across deployments.
+A direct-source request races a server that takes longer than 700 ms. Other hosts
+and local archives use the original direct transport.
+
+VIDAA restores complete catalogue pages from a bounded local snapshot matching
+the active profile and the exact configured addon. Snapshots expire after one day
+and are refreshed by the normal Home loader. Build-hashed scripts and styles use
+cache-first loading; documents still check the network for updates. Catalogue,
+metadata and route-state memory caches are bounded. Xperience badge matching is
+warmed in a dedicated worker when supported, with the existing matcher as fallback.
+Detail loading immediately shows available title artwork while playback progress
+is resolved. Repeated hero enrichment no longer restarts the same image transition.
+
 VIDAA keeps the existing Home animations while using smaller TMDB card artwork,
 bounded poster prefetching and two-row background catalogue batches. Secondary
 batches yield during remote navigation and stop when the Home load is obsolete.

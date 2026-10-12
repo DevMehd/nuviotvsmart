@@ -58,10 +58,31 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   var req = e.request;
   if (req.method !== "GET") return;
-  if (req.url.indexOf(self.location.origin) !== 0) return;
+  var requestUrl = new URL(req.url);
+  if (requestUrl.origin !== self.location.origin) return;
 
   // Let Vercel cache complete image variant URLs without offline-cache rewriting.
-  if (new URL(req.url).pathname === "/_vercel/image") return;
+  if (requestUrl.pathname === "/_vercel/image" || requestUrl.pathname.indexOf("/api/") === 0)
+    return;
+
+  // Build-hashed assets are immutable. Exact URL matching also prevents an
+  // older worker serving the wrong build while a new document is starting.
+  if (/\.[a-f0-9]{16}\.(js|css)$/.test(requestUrl.pathname) && !requestUrl.search) {
+    e.respondWith(
+      caches.open(CACHE_NAME).then(function (cache) {
+        return cache.match(req).then(function (cached) {
+          if (cached) return cached;
+          return fetch(req).then(function (response) {
+            if (!response || !response.ok) return response;
+            var copy = response.clone();
+            e.waitUntil(cache.put(req, copy).catch(function () {}));
+            return response;
+          });
+        });
+      })
+    );
+    return;
+  }
 
   // Never touch media range requests or video stream files
   if (req.headers && req.headers.get("range")) return;

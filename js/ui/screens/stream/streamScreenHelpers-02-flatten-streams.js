@@ -229,7 +229,9 @@ export async function preloadStreamBadgeImages(settings = StreamBadgeSettingsSto
 
 export async function preloadMatchedStreamBadgeImages(streams = [], settings = StreamBadgeSettingsStore.snapshot()) {
   const urls = new Set();
-  (streams || []).forEach((stream) => {
+  // The visible lazy rows warm their own badges later. Matching every source
+  // here made Nard's large rule set block the first interactive list paint.
+  (Environment.isVidaa() ? (streams || []).slice(0, 4) : streams || []).forEach((stream) => {
     getStreamImageBadges(stream, settings)
       .slice(0, STREAM_BADGE_LIMIT)
       .forEach((badge) => {

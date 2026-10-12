@@ -204,6 +204,12 @@ export function animateHeroBackdropSwap(
   const normalizedAlt = String(nextAlt || "featured").trim() || "featured";
   const currentSrc = String(backdrop.getAttribute("src") || "").trim();
   const transitionMode = options?.transitionMode || "crossfade";
+  // Enrichment of the same title must not restart its in-flight image fade.
+  if (normalizedSrc && backdrop.heroBackdropPendingSource === normalizedSrc) {
+    backdrop.setAttribute("alt", normalizedAlt);
+    return;
+  }
+  backdrop.heroBackdropPendingSource = normalizedSrc;
   const token = Number(backdrop.heroBackdropTransitionToken || 0) + 1;
   backdrop.heroBackdropTransitionToken = token;
 
@@ -215,6 +221,7 @@ export function animateHeroBackdropSwap(
     if (Number(backdrop.heroBackdropTransitionToken || 0) !== token) {
       return;
     }
+    backdrop.heroBackdropPendingSource = "";
     backdrop.classList.remove("home-hero-backdrop-transition-enter", "is-visible");
     clearGhosts();
   };

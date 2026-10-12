@@ -1,3 +1,4 @@
+import { setHomeHtmlIfChanged } from "./homeStableMarkup.js";
 import { ensureHeroMdbListRatings } from "./homeHeroMdbListLoad.js";
 import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import * as internals from "./homeScreenContext.js";
@@ -106,13 +107,13 @@ export function createHomeScreenMethods05() {
       if (this.layoutMode === "modern") {
         const primaryNode = heroNode.querySelector(".home-modern-hero-meta-line");
         if (primaryNode) {
-          primaryNode.innerHTML = renderModernHeroPrimary(display);
+          setHomeHtmlIfChanged(primaryNode, renderModernHeroPrimary(display));
           primaryNode.classList.toggle("is-empty", !display.leadingMeta.length && !display.trailingMeta.length && !display.showImdbPrimary);
         }
 
         const secondaryNode = heroNode.querySelector(".home-modern-hero-secondary");
         if (secondaryNode) {
-          secondaryNode.innerHTML = renderModernHeroSecondary(display);
+          setHomeHtmlIfChanged(secondaryNode, renderModernHeroSecondary(display));
           secondaryNode.classList.toggle(
             "is-empty",
             !display.secondaryHighlightText &&
@@ -125,13 +126,13 @@ export function createHomeScreenMethods05() {
       } else {
         const primaryNode = heroNode.querySelector(".home-hero-meta-primary");
         if (primaryNode) {
-          primaryNode.innerHTML = renderMetaTokens(display.metaPrimary);
+          setHomeHtmlIfChanged(primaryNode, renderMetaTokens(display.metaPrimary));
           primaryNode.classList.toggle("is-empty", !display.metaPrimary.length);
         }
 
         const secondaryNode = heroNode.querySelector(".home-hero-meta-secondary");
         if (secondaryNode) {
-          secondaryNode.innerHTML = renderMetaTokens(display.metaSecondary);
+          setHomeHtmlIfChanged(secondaryNode, renderMetaTokens(display.metaSecondary));
           secondaryNode.classList.toggle("is-empty", !display.metaSecondary.length);
         }
 
@@ -154,12 +155,12 @@ export function createHomeScreenMethods05() {
 
       const descriptionNode = heroNode.querySelector(".home-hero-description");
       if (descriptionNode) {
-        descriptionNode.textContent = display.description || " ";
+        if (descriptionNode.textContent !== (display.description || " ")) descriptionNode.textContent = display.description || " ";
         descriptionNode.classList.toggle("is-empty", !display.description);
       }
       const mdbRow = heroNode.querySelector(".home-hero-mdb-ratings");
       if (mdbRow) {
-        mdbRow.innerHTML = display.mdbListMarkup || "";
+        setHomeHtmlIfChanged(mdbRow, display.mdbListMarkup || "");
         mdbRow.classList.toggle("is-empty", !display.mdbListMarkup);
       }
       this.scheduleHomeTruncationUpdate({ scope: heroNode });
@@ -167,7 +168,7 @@ export function createHomeScreenMethods05() {
 
       const indicators = heroNode.querySelector(".home-hero-indicators");
       if (indicators) {
-        indicators.innerHTML = buildHeroIndicators(this.heroCandidates, hero);
+        setHomeHtmlIfChanged(indicators, buildHeroIndicators(this.heroCandidates, hero));
       }
       // These nodes were replaced outside the incremental renderer. Register
       // their new children so the next refresh replaces them instead of appending.
