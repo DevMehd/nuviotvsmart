@@ -172,6 +172,7 @@ export function createHomeScreenMethods04() {
     invalidateNavigationModel() {
       this.navigationDomVersion = Number(this.navigationDomVersion || 0) + 1;
       this.navModel = null;
+      this.homeVidaaTrackGeometry = null;
     },
     requestRender(options = {}) {
       if (!this.container || Router.getCurrent() !== "home") {

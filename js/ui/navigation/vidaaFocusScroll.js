@@ -8,7 +8,7 @@ export function animateVidaaFocusScroll(
   container,
   axis,
   targetValue,
-  { duration = VIDAA_FOCUS_SCROLL_DURATION_MS } = {}
+  { duration = VIDAA_FOCUS_SCROLL_DURATION_MS, maxScrollValue = null } = {}
 ) {
   if (!container) return;
 
@@ -41,9 +41,11 @@ export function animateVidaaFocusScroll(
   }
 
   const max =
-    key === "y"
-      ? Math.max(0, container.scrollHeight - container.clientHeight)
-      : Math.max(0, container.scrollWidth - container.clientWidth);
+    typeof maxScrollValue === "number" && Number.isFinite(maxScrollValue) && maxScrollValue >= 0
+      ? maxScrollValue
+      : key === "y"
+        ? Math.max(0, container.scrollHeight - container.clientHeight)
+        : Math.max(0, container.scrollWidth - container.clientWidth);
   const nextValue = Math.max(0, Math.min(max, Math.round(Number(targetValue) || 0)));
   const startValue = Number(container[property] || 0);
   const durationMs = Math.max(0, Math.min(VIDAA_FOCUS_SCROLL_DURATION_MS, Number(duration) || 0));

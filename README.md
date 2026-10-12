@@ -78,6 +78,12 @@ VIDAA keeps the existing Home animations while using smaller TMDB card artwork,
 bounded poster prefetching and two-row background catalogue batches. Secondary
 batches yield during remote navigation and stop when the Home load is obsolete.
 Player and plugin libraries are cached on first use rather than prefetched at startup.
+Stable Home rows reuse bounded numeric navigation geometry, invalidated by row
+changes, pagination, sidebar changes and viewport resizing. Warm horizontal
+navigation starts its animation without a separate measurement frame. Constrained
+Home scrolling takes 100 ms; full mode retains 140 ms. The active-card reserve is
+smaller during long navigation runs while visible cards and nearby artwork remain
+protected by the viewport window.
 
 Vercel builds enable its native `/_vercel/image` service for raster artwork from
 `ImKaptain/nuvio-art` only. Cards use 640 px, hero artwork uses 1280 px, and failed

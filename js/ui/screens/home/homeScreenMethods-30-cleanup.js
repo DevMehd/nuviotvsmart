@@ -9,6 +9,7 @@ export function createHomeScreenMethods30() {
 
   return {
     cleanup() {
+      this.homeVidaaTrackGeometry = null;
       const preserveRenderedTvHome = Boolean(
         getTvRuntimePerformanceProfile().isTvRuntime &&
         this.hasLoadedOnce &&

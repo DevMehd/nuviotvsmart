@@ -1,4 +1,5 @@
 import * as internals from "./homeScreenContext.js";
+import { getVidaaHomeTrackTarget } from "./vidaaHomeNavigationGeometry.js";
 
 export function createHomeScreenMethods17() {
   const { Platform, MODERN_HOME_CONSTANTS } = internals;
@@ -248,6 +249,18 @@ export function createHomeScreenMethods17() {
           }
           return;
         }
+        if (Platform.isVidaa()) {
+          const track = target?.closest?.(".home-track, .home-grid-track");
+          const leftPad = Number.parseFloat(track?.dataset?.trackPadAlignLeft || "");
+          if (Number.isFinite(leftPad)) {
+            const cached = getVidaaHomeTrackTarget(this, track, target, leftPad, { onlyCached: true, layoutAdjustment });
+            if (cached) {
+              this.modernCameraFollowLastHorizontalContainer = cached.container;
+              this.animateScroll(cached.container, "x", cached.value, 140, { maxScrollValue: cached.maxScrollValue });
+              return;
+            }
+          }
+        }
         const _target = target;
         const _adj = layoutAdjustment;
         this._trackHorizRaf = requestAnimationFrame(() => {
@@ -261,7 +274,7 @@ export function createHomeScreenMethods17() {
           }
           if (Platform.isVidaa()) {
             this.modernCameraFollowLastHorizontalContainer = next.container;
-            this.animateScroll(next.container, "x", next.value, 140);
+            this.animateScroll(next.container, "x", next.value, 140, { maxScrollValue: next.maxScrollValue });
             return;
           }
           if (Math.abs(Number(next.container.scrollLeft || 0) - Number(next.value || 0)) <= 1) {

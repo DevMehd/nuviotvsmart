@@ -155,7 +155,8 @@ export function createHomeScreenMethods02() {
           this.modernCameraFollowLastHorizontalContainer = container;
         }
         animateVidaaFocusScroll(this, container, axis, targetValue, {
-          duration: Number(duration) > 0 ? 140 : 0
+          duration: Number(duration) > 0 ? (this.isPerformanceConstrained?.() === false ? 140 : 100) : 0,
+          maxScrollValue: options?.maxScrollValue
         });
         return;
       }
@@ -218,7 +219,10 @@ export function createHomeScreenMethods02() {
         return;
       }
       if (Platform.isVidaa()) {
-        animateVidaaFocusScroll(this, container, axis, targetValue, { duration: 140 });
+        animateVidaaFocusScroll(this, container, axis, targetValue, {
+          duration: this.isPerformanceConstrained?.() === false ? 140 : 100,
+          maxScrollValue: options?.maxScrollValue
+        });
         return;
       }
       const property = axis === "y" ? "scrollTop" : "scrollLeft";

@@ -1,4 +1,5 @@
 import * as internals from "./homeScreenContext.js";
+import { getVidaaHomeTrackTarget } from "./vidaaHomeNavigationGeometry.js";
 
 export function createHomeScreenMethods15() {
   const {
@@ -318,13 +319,18 @@ export function createHomeScreenMethods15() {
         leftPad = Math.max(0, Number.parseFloat(styles?.paddingLeft || "0") || 0);
         track.dataset.trackPadAlignLeft = String(leftPad);
       }
+      if (Platform.isVidaa()) {
+        const cached = getVidaaHomeTrackTarget(this, track, target, leftPad, { layoutAdjustment });
+        if (cached) return cached;
+      }
       const trackRect = track.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
       const targetLeft = targetRect.left - trackRect.left + Number(track.scrollLeft || 0) - Number(layoutAdjustment || 0);
       const maxScrollLeft = Math.max(0, Number(track.scrollWidth || 0) - Number(track.clientWidth || 0));
       return {
         container: track,
-        value: Math.max(0, Math.min(maxScrollLeft, targetLeft - leftPad))
+        value: Math.max(0, Math.min(maxScrollLeft, targetLeft - leftPad)),
+        maxScrollValue: maxScrollLeft
       };
     }
   };

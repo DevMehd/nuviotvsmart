@@ -1,9 +1,10 @@
 import { releaseVidaaHomeImage } from "./vidaaHomeImageWindow.js";
 import { prefetchVidaaPosterSource } from "./vidaaHomePosterPrefetch.js";
+import { invalidateVidaaHomeTrackGeometry } from "./vidaaHomeNavigationGeometry.js";
 
 const ROW_SELECTOR = ".home-row, .home-modern-row, .home-grid-section, .home-row-continue";
 const STYLE_PROPERTIES = ["width", "height", "box-sizing"];
-const ACTIVE_CARD_HEADROOM = 64;
+const ACTIVE_CARD_HEADROOM = 16;
 
 function restoreCard(card, record) {
   card.appendChild(record.content);
@@ -18,6 +19,7 @@ export function restoreVidaaHomeCard(screen, card) {
   const record = screen.homeVidaaParkedCards?.get(card);
   if (!record) return false;
   restoreCard(card, record);
+  invalidateVidaaHomeTrackGeometry(screen, card.closest?.(".home-track, .home-grid-track"));
   screen.homeVidaaParkedCards.delete(card);
   screen.homeVidaaActiveCards?.add(card);
   scheduleVidaaHomeCardWindow(screen);
@@ -63,8 +65,9 @@ export function pruneVidaaHomeCards(screen) {
 export function scheduleVidaaHomeCardWindow(screen, { initialize = false } = {}) {
   const active = screen.homeVidaaActiveCards;
   const highWaterMark = Math.max(
-    96,
-    Number(screen.homeVidaaCardWindowBaseSize || 0) + ACTIVE_CARD_HEADROOM
+    screen.isPerformanceConstrained?.() === false ? 96 : 48,
+    Number(screen.homeVidaaCardWindowBaseSize || 0) +
+      (screen.isPerformanceConstrained?.() === false ? 64 : ACTIVE_CARD_HEADROOM)
   );
   if (
     (active ? active.size <= highWaterMark : !initialize) ||
@@ -226,6 +229,7 @@ export function updateVidaaHomeCardWindow(
     card.style.setProperty("height", `${change.height}px`);
     while (card.firstChild) record.content.appendChild(card.firstChild);
     card.classList.add("vidaa-card-parked");
+    invalidateVidaaHomeTrackGeometry(screen, card.closest?.(".home-track, .home-grid-track"));
     parked.set(card, record);
     active.delete(card);
   }

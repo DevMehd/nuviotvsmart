@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>VIDAA cached navigation geometry</title>
+<style>
+  body { margin: 0; background: #161616; color: white; font: 16px sans-serif; }
+  #fixture { position: relative; margin-left: 37px; width: 900px; }
+  .home-track { display: flex; gap: 24px; overflow-x: auto; width: 800px; padding: 12px 40px; }
+  .home-content-card { flex: 0 0 180.5px; height: 130px; background: #345; border-radius: 12px; }
+  .home-content-card:nth-child(3n) { flex-basis: 210px; }
+  #result { white-space: pre-wrap; }
+</style>
+<pre id="result">RUNNING</pre>
+<div id="fixture"><div class="home-track"></div></div>
+<script type="module">
+  import { getVidaaHomeTrackTarget, invalidateVidaaHomeTrackGeometry } from '../js/ui/screens/home/vidaaHomeNavigationGeometry.js';
+  const result = document.querySelector('#result');
+  const track = document.querySelector('.home-track');
+  const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  try {
+    track.innerHTML = Array.from({ length: 40 }, (_, i) => `<article tabindex="0" class="home-content-card" data-nav-row="0" data-nav-col="${i}">${i}</article>`).join('');
+    const cards = [...track.children];
+    const owner = { navModel: { rows: [cards] }, navigationDomVersion: 1 };
+    let compared = 0;
+    for (let step = 0; step < 200; step++) {
+      const i = step % cards.length;
+      track.scrollLeft = (step * 53) % 1000;
+      const cached = getVidaaHomeTrackTarget(owner, track, cards[i], 40);
+      const expected = Math.max(0, Math.min(track.scrollWidth - track.clientWidth, cards[i].getBoundingClientRect().left - track.getBoundingClientRect().left + track.scrollLeft - 40));
+      assert(Math.abs(cached.value - expected) < 0.01, `Incorrect alignment at move ${step}: ${cached.value} vs ${expected}`);
+      compared++;
+    }
+    // A genuinely different row shape invalidates the old numeric positions.
+    cards[0].style.flexBasis = '270px';
+    invalidateVidaaHomeTrackGeometry(owner, track);
+    const updated = getVidaaHomeTrackTarget(owner, track, cards[5], 40);
+    const expected = cards[5].getBoundingClientRect().left - track.getBoundingClientRect().left + track.scrollLeft - 40;
+    assert(Math.abs(updated.value - expected) < 0.01, 'Width changes must update alignment');
+    result.textContent = `PASS: ${compared} real DOM moves, fractional/variable widths, native scrolling, windowed cache and row mutation.`;
+  } catch (error) { result.textContent = `FAIL: ${error.stack}`; }
+</script>

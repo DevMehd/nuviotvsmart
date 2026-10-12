@@ -158,6 +158,7 @@ export function createHomeScreenMethods05() {
     },
     setSidebarExpanded(expanded) {
       const nextExpanded = Boolean(expanded);
+      if (Boolean(this.sidebarExpanded) !== nextExpanded) this.homeVidaaTrackGeometry = null;
       this.sidebarExpanded = nextExpanded;
       if (this.layoutPrefs?.modernSidebar) {
         return;
