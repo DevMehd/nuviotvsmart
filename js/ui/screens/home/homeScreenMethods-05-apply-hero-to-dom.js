@@ -1,6 +1,7 @@
+import { ensureHeroMdbListRatings } from "./homeHeroMdbListLoad.js";
+import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import * as internals from "./homeScreenContext.js";
 import { restoreVidaaHomeCard } from "./vidaaHomeCardWindow.js";
-import { registerHomeDomNodes } from "./homeDomUpdate.js";
 
 export function createHomeScreenMethods05() {
   const {
@@ -44,15 +45,19 @@ export function createHomeScreenMethods05() {
       heroNode.dataset.itemTitle = hero?.name || "Untitled";
       heroNode.classList.toggle("is-hero-meta-enriching", Boolean(hero?.heroMetaEnriching));
       heroNode.classList.remove("is-hero-focus-pending");
-      const heroCrossfadeMs =
-        this.layoutMode === "modern" ? HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS : HOME_LEGACY_HERO_BACKDROP_CROSSFADE_MS;
+      const heroCrossfadeMs = Platform.isVidaa()
+        ? 200
+        : this.layoutMode === "modern"
+          ? HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS
+          : HOME_LEGACY_HERO_BACKDROP_CROSSFADE_MS;
       const heroTransitionMode = getTvHeroTransitionMode();
 
       const backdrop = heroNode.querySelector(".home-hero-backdrop:not(.home-hero-backdrop-transition-ghost)");
       if (backdrop) {
         const src = display.backdrop || "";
         if (backdrop instanceof HTMLImageElement) {
-          const shouldFreezeBackdrop = Boolean(hero?.heroMetaEnriching) && String(backdrop.getAttribute("src") || "").trim();
+          const shouldFreezeBackdrop =
+            !Platform.isVidaa() && Boolean(hero?.heroMetaEnriching) && String(backdrop.getAttribute("src") || "").trim();
           if (!shouldFreezeBackdrop) {
             animateHeroBackdropSwap(backdrop, src, display.title || "featured", heroCrossfadeMs, {
               transitionMode: heroTransitionMode
@@ -110,7 +115,11 @@ export function createHomeScreenMethods05() {
           secondaryNode.innerHTML = renderModernHeroSecondary(display);
           secondaryNode.classList.toggle(
             "is-empty",
-            !display.secondaryHighlightText && !display.badges.length && !display.showImdbSecondary && !display.languageText
+            !display.secondaryHighlightText &&
+              !display.badges.length &&
+              !display.showImdbSecondary &&
+              !display.languageText &&
+              !display.mdbListMarkup
           );
         }
       } else {
@@ -148,6 +157,11 @@ export function createHomeScreenMethods05() {
         descriptionNode.textContent = display.description || " ";
         descriptionNode.classList.toggle("is-empty", !display.description);
       }
+      const mdbRow = heroNode.querySelector(".home-hero-mdb-ratings");
+      if (mdbRow) {
+        mdbRow.innerHTML = display.mdbListMarkup || "";
+        mdbRow.classList.toggle("is-empty", !display.mdbListMarkup);
+      }
       this.scheduleHomeTruncationUpdate({ scope: heroNode });
       this.syncCollectionHeroMedia(hero);
 
@@ -155,6 +169,16 @@ export function createHomeScreenMethods05() {
       if (indicators) {
         indicators.innerHTML = buildHeroIndicators(this.heroCandidates, hero);
       }
+      // These nodes were replaced outside the incremental renderer. Register
+      // their new children so the next refresh replaces them instead of appending.
+      registerHomeDomNodes(
+        Array.from(
+          heroNode.querySelectorAll(
+            ".home-hero-title-text, .home-modern-hero-meta-line, .home-modern-hero-secondary, .home-hero-meta-primary, .home-hero-meta-secondary, .home-hero-chip-row, .home-hero-description, .home-hero-mdb-ratings, .home-hero-indicators"
+          )
+        )
+      );
+      void ensureHeroMdbListRatings.call(this);
     },
     setSidebarExpanded(expanded) {
       const nextExpanded = Boolean(expanded);

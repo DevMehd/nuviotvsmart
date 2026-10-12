@@ -275,14 +275,14 @@ export function createStreamScreenMethods09() {
           // that placeholder-only class once hydrated so its visible wrapping
           // and card geometry remain byte-for-byte CSS-equivalent to the eager
           // rendering path.
-          if (Environment.isTizen()) {
+          if (Environment.isTizen() || Environment.isVidaa()) {
             placeholder.classList.remove("stream-route-card-badges-lazy");
           }
           placeholder.dataset.badgesHydrated = "true";
           changed = true;
           // Keep already-visited Tizen rows hydrated. Removing a wrapped badge row
           // above the viewport could change list geometry and move the focused card.
-        } else if (!shouldHydrate && hydrated && !Environment.isTizen()) {
+        } else if (!shouldHydrate && hydrated && !Environment.isTizen() && !Environment.isVidaa()) {
           placeholder.textContent = "";
           placeholder.dataset.badgesHydrated = "false";
           changed = true;

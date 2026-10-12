@@ -246,6 +246,8 @@ export function createPlayerScreenMethods09() {
         return null;
       }
       const current = this.streamCandidates[this.currentStreamIndex] || null;
+      // Debrid/P2P candidates remain selected while their playback URL is resolving.
+      // A ready URL on another candidate does not make it the current source.
       if (current) {
         return current;
       }

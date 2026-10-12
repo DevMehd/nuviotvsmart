@@ -301,6 +301,9 @@ export function createPlayerScreenMethods29() {
       return Boolean(this.loadingVisible && !this.hasPresentedPlaybackFrame);
     },
     isBufferingSpinnerVisible() {
+      if (Environment.isWebOS() && PlayerController.isWebOsDtsAudioBuffering?.()) {
+        return !this.isStartupLoadingVisible() && !this.isExternalFrameMode() && !this.isStartupErrorVisible();
+      }
       if (this.seekLoading) {
         if (this.isStartupLoadingVisible()) {
           return false;

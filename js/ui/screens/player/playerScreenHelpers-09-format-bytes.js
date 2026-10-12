@@ -1,4 +1,5 @@
 import { PlayerController } from "../../../core/player/playerController.js";
+import { getStreamPresentationBadges, getDeclaredStreamBadges } from "../../../core/streams/streamPresentationBadges.js";
 
 import {
   audioTrackLabelConflictsWithCodec,
@@ -329,7 +330,7 @@ export function getPlayerSourceLogoDisplayUrl(value = "", onSettled = null) {
 }
 
 export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadgeSettingsStore.snapshot()) {
-  const matchedBadges = matchStreamBadges(stream, badgeSettings.rules);
+  const matchedBadges = [...getDeclaredStreamBadges(stream), ...matchStreamBadges(stream, badgeSettings.rules)];
   const chips = [];
   const sizeBytes = stream.behaviorHints?.videoSize;
   if (badgeSettings.showFileSizeBadges !== false && sizeBytes != null) {
@@ -344,6 +345,11 @@ export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadg
       chips.push(chip);
     }
   });
+  if (!matchedBadges.length && Environment.isVidaa()) {
+    getStreamPresentationBadges(stream).forEach((label) => {
+      chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
+    });
+  }
   return chips.length
     ? `<div class="stream-route-card-badges player-source-badges" aria-label="${escapeHtml(t("settings_stream_badges_section", {}, "Fusion Style"))}">${chips.join("")}</div>`
     : "";

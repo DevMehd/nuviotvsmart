@@ -21,9 +21,9 @@ for (const platform of ["vidaa", "tizen", "webos", "browser"]) {
   Platform.current = null;
   const hero = normalizeCollectionFolderItem(seed);
   assert.equal(hero.poster, seed.coverImageUrl);
-  assert.equal(hero.heroVideoUrl, platform === "vidaa" ? "" : seed.heroVideoUrl);
-  assert.equal(hero.focusGifUrl, platform === "vidaa" ? "" : seed.focusGifUrl);
-  assert.equal(hero.focusGifEnabled, platform !== "vidaa");
+  assert.equal(hero.heroVideoUrl, seed.heroVideoUrl);
+  assert.equal(hero.focusGifUrl, seed.focusGifUrl);
+  assert.equal(hero.focusGifEnabled, true);
   const configuredGif = normalizeCollectionFolderItem({ ...seed, focusGifEnabled: false });
   assert.equal(
     configuredGif.poster,
@@ -41,25 +41,34 @@ for (const platform of ["vidaa", "tizen", "webos", "browser"]) {
   );
 
   const image = new HTMLImageElement();
+  image.tagName = "IMG";
   image.dataset = { src: seed.focusGifUrl };
-  const attrs = new Map([["src", seed.focusGifUrl]]);
+  const attrs = new Map();
   image.getAttribute = (name) => attrs.get(name) || null;
   image.setAttribute = (name, value) => attrs.set(name, value);
   image.removeAttribute = (name) => attrs.delete(name);
-  const classes = new Set(["is-focus-gif-active"]);
+  const classes = new Set(["focused"]);
   const card = {
+    isConnected: true,
     querySelector: () => image,
-    classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name) }
+    classList: {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
+      contains: (name) => classes.has(name)
+    }
   };
   const methods = createHomeScreenMethods11();
   methods.hydrateCollectionFocusGif(card, true);
-  assert.equal(attrs.has("src"), platform !== "vidaa");
-  assert.equal(classes.has("is-focus-gif-active"), platform !== "vidaa");
+  if (platform === "vidaa") {
+    assert.equal(attrs.has("src"), false, "Passing focus must not eagerly start GIF decoding");
+    await new Promise((resolve) => setTimeout(resolve, 110));
+  }
+  assert.equal(attrs.has("src"), true);
+  assert.equal(classes.has("is-focus-gif-active"), true);
+  methods.hydrateCollectionFocusGif(card, false);
+  assert.equal(attrs.has("src"), false, "Leaving a collection stops GIF decoding");
   const preserveOwner = { isCollectionFolderNode: () => true, getNodeHeroSource: () => seed };
-  assert.equal(
-    methods.shouldPreserveCollectionHeroMedia.call(preserveOwner, card),
-    platform !== "vidaa"
-  );
+  assert.equal(methods.shouldPreserveCollectionHeroMedia.call(preserveOwner, card), true);
 
   let mounts = 0;
   let clears = 0;
@@ -84,10 +93,13 @@ for (const platform of ["vidaa", "tizen", "webos", "browser"]) {
     }
   };
   createHomeScreenMethods12().syncCollectionHeroMedia.call(owner, seed);
-  assert.equal(mounts, platform === "vidaa" ? 0 : 1);
-  assert.equal(clears, platform === "vidaa" ? 1 : 0);
-  assert.equal(active, platform !== "vidaa");
+  assert.equal(mounts, 1);
+  assert.equal(clears, 0);
+  assert.equal(active, true);
+  createHomeScreenMethods12().syncCollectionHeroMedia.call(owner, null);
+  assert.equal(clears, 1, "Leaving the collection stops its hero media");
+  assert.equal(active, false);
 }
 console.log(
-  "VIDAA collection checks passed: static artwork, no hover video/GIF, stale playback stopped, other platforms preserved."
+  "Collection checks passed: static unfocused artwork, focused-only GIF/video and cleanup across platforms."
 );

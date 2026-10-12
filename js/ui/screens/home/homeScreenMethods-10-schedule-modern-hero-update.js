@@ -1,4 +1,5 @@
 import * as internals from "./homeScreenContext.js";
+import { isVidaaHomePreviewBusy } from "./vidaaHomePreviewPolicy.js";
 
 export function createHomeScreenMethods10() {
   const { MODERN_HOME_CONSTANTS, getTvRuntimePerformanceProfile, shouldEnrichModernHero, preloadHeroAssets, buildHeroIdentity } = internals;
@@ -9,6 +10,7 @@ export function createHomeScreenMethods10() {
         return;
       }
       const isVidaa = getTvRuntimePerformanceProfile().platform === "vidaa";
+      const isPreviewBusy = () => (isVidaa ? isVidaaHomePreviewBusy(this) : Boolean(this.isHomeNavigationSettling?.()));
       const hero = this.getNodeHeroSource(node);
       if (!hero || !hero.id) {
         return;
@@ -19,7 +21,7 @@ export function createHomeScreenMethods10() {
         currentHeroIdentity === nextHeroIdentity &&
         !this.heroItem?.heroMetaEnriching &&
         !shouldEnrichModernHero(hero) &&
-        (!isVidaa || !this.isVidaaHomeLoadingBusy())
+        !isPreviewBusy()
       ) {
         this.container?.querySelector(".home-modern-hero-card")?.classList.remove("is-hero-focus-pending");
         this.syncCollectionHeroMedia(hero);
@@ -43,11 +45,7 @@ export function createHomeScreenMethods10() {
         if (Number(this.heroFocusToken || 0) !== focusToken || this.getCurrentFocusedNode() !== node || !node?.isConnected) {
           return;
         }
-        if (
-          (isVidaa && this.isVidaaHomeLoadingBusy()) ||
-          this.isHomeNavigationSettling?.() ||
-          (deferUntilVerticalSettle && !canPreloadHeroDuringVerticalScroll && this.isModernVerticalScrollActive())
-        ) {
+        if (isPreviewBusy() || (deferUntilVerticalSettle && !canPreloadHeroDuringVerticalScroll && this.isModernVerticalScrollActive())) {
           this.heroBackdropPreloadTimer = setTimeout(
             () => waitForVerticalSettle(callback),
             MODERN_HOME_CONSTANTS.verticalScrollSettlePollMs
@@ -56,7 +54,7 @@ export function createHomeScreenMethods10() {
         }
         callback();
       };
-      const preloadDelay = isVidaa ? Math.max(250, delay) : Math.max(0, Math.min(120, delay - 80));
+      const preloadDelay = isVidaa ? (isRapidNav ? 60 : 20) : Math.max(0, Math.min(120, delay - 80));
       this.heroBackdropPreloadTimer = setTimeout(() => {
         this.heroBackdropPreloadTimer = null;
         waitForVerticalSettle(() => {
@@ -79,11 +77,7 @@ export function createHomeScreenMethods10() {
           this.heroFocusDelayTimer = null;
           return;
         }
-        if (
-          (isVidaa && this.isVidaaHomeLoadingBusy()) ||
-          this.isHomeNavigationSettling?.() ||
-          (deferUntilVerticalSettle && this.isModernVerticalScrollActive())
-        ) {
+        if (isPreviewBusy() || (deferUntilVerticalSettle && this.isModernVerticalScrollActive())) {
           this.heroFocusDelayTimer = setTimeout(commitHeroWhenSettled, MODERN_HOME_CONSTANTS.verticalScrollSettlePollMs);
           return;
         }
@@ -107,7 +101,7 @@ export function createHomeScreenMethods10() {
           if (focusedNode !== node || !node?.isConnected || !node.classList.contains("focused")) {
             return;
           }
-          if ((isVidaa && this.isVidaaHomeLoadingBusy()) || this.isHomeNavigationSettling?.()) {
+          if (isPreviewBusy()) {
             this.heroFocusDelayTimer = setTimeout(commitHeroWhenSettled, MODERN_HOME_CONSTANTS.verticalScrollSettlePollMs);
             return;
           }

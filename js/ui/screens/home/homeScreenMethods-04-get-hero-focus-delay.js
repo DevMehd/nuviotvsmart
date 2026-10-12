@@ -2,6 +2,7 @@ import * as internals from "./homeScreenContext.js";
 import { getTvRuntimePerformanceProfile } from "../../../platform/tvRuntimePerformance.js";
 import { startHomeContinueWatchingLoad } from "./homeContinueWatchingLoad.js";
 import { homeMetadataSettingsSignature } from "./homeMetadataSettings.js";
+import { getVidaaHeroFocusDelay } from "./vidaaHomePreviewPolicy.js";
 
 function catalogItemIdentity(item = {}) {
   const id = String(item?.id || item?.videoId || item?.contentId || "").trim();
@@ -116,7 +117,7 @@ export function createHomeScreenMethods04() {
   return {
     getHeroFocusDelay({ rapid = false } = {}) {
       if (Platform.isVidaa()) {
-        return 250;
+        return getVidaaHeroFocusDelay({ rapid });
       }
       if (this.isLegacyTvRuntime()) {
         return rapid ? 260 : 150;
@@ -151,7 +152,10 @@ export function createHomeScreenMethods04() {
         this.initialHomeLoadTimeout = null;
       }
     },
-    releaseInitialHomeLoading() {
+    releaseInitialHomeLoading({ force = false } = {}) {
+      if (!force && !this.continueWatchingInitialResolved) {
+        return;
+      }
       this.isInitialHomeLoading = false;
       this.cancelInitialHomeLoadTimeout();
     },
@@ -165,7 +169,7 @@ export function createHomeScreenMethods04() {
         // Match Android's stable Home gate: a slow or incomplete startup must
         // reveal the available surface instead of keeping a full-screen loader
         // indefinitely. The catalog requests continue in the background.
-        this.releaseInitialHomeLoading();
+        this.releaseInitialHomeLoading({ force: true });
         this.requestBackgroundRender();
       }, HOME_STABLE_GATE_TIMEOUT_MS);
     },

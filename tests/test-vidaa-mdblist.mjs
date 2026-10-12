@@ -257,6 +257,7 @@ try {
       MdbListSettingsStore.set = (value) => saved.push(value);
       const owner = {
         actionMap: new Map(),
+        registerAction: () => "",
         renderSectionHeader: () => "",
         renderActionRow: () => "",
         renderToggleRow: () => "",

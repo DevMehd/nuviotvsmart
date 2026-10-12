@@ -1,6 +1,8 @@
+import { MdbListSettingsStore } from "../../../data/local/mdbListSettingsStore.js";
 import * as internals from "./homeScreenContext.js";
 import { homeMetadataSettingsSignature, isHomeTmdbEnabled } from "./homeMetadataSettings.js";
 import { resolveHomeTmdbLookupId } from "./homeMetadataIds.js";
+import { setHomeCollectionFocusGif } from "./homeCollectionFocusGif.js";
 
 export function createHomeScreenMethods11() {
   const {
@@ -71,7 +73,7 @@ export function createHomeScreenMethods11() {
         if (isVidaa && !(await this.waitForVidaaHomeLoadingIdle(canCommitHero))) {
           return false;
         }
-        if (deferCommit) {
+        if (deferCommit && !isVidaa) {
           const display = buildModernHeroPresentation(resolvedHero);
           await Promise.all([preloadImageSource(display?.backdrop), preloadImageSource(display?.logo)]);
         }
@@ -158,7 +160,10 @@ export function createHomeScreenMethods11() {
         // Each provider publishes independently. Keep successful localized data
         // when an addon fails or finishes later, and accept slow TV responses.
         await Promise.allSettled([
-          mdbListRepository.getImdbRatingForItem(hero.imdbId || itemId, itemType).then(async (rating) => {
+          (MdbListSettingsStore.get().showOnHero
+            ? mdbListRepository.getRatingsForMeta(hero, itemId, itemType).then((result) => result?.ratings?.imdb ?? null)
+            : mdbListRepository.getImdbRatingForItem(hero.imdbId || itemId, itemType)
+          ).then(async (rating) => {
             mdbImdbRating = rating;
             if (rating != null) await publishLatestResults();
           }),
@@ -260,30 +265,13 @@ export function createHomeScreenMethods11() {
       return Boolean(this.resolveCollectionFolderTargetFromNode(node));
     },
     shouldPreserveCollectionHeroMedia(node) {
-      if (Platform.isVidaa()) return false;
       if (!this.isCollectionFolderNode(node)) {
         return false;
       }
       return Boolean(firstNonEmpty(this.getNodeHeroSource(node)?.heroVideoUrl));
     },
     hydrateCollectionFocusGif(node, active = false) {
-      const gifNode = node?.querySelector?.(".home-poster-focus-gif") || null;
-      if (!(gifNode instanceof HTMLImageElement)) {
-        return;
-      }
-      if (active && !Platform.isVidaa()) {
-        const src = String(gifNode.dataset.src || gifNode.getAttribute("src") || "").trim();
-        if (src && !gifNode.getAttribute("src")) {
-          gifNode.setAttribute("src", src);
-        }
-        node.classList.add("is-focus-gif-active");
-        return;
-      }
-      node.classList.remove("is-focus-gif-active");
-      // Match Android's focused-only GIF lifecycle: hiding the overlay is not
-      // enough on TV browsers because an <img> with src keeps decoding/animating.
-      // Preserve data-src so the asset can be loaded again on the next focus.
-      gifNode.removeAttribute("src");
+      setHomeCollectionFocusGif(this, node, active, Platform.isVidaa() ? 100 : 0);
     },
     syncFocusedCollectionCardState() {
       const focused = this.getCurrentFocusedNode();

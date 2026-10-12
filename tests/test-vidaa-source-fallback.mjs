@@ -323,12 +323,25 @@ test("a user pause after waiting cannot switch sources on the old deadline", asy
   ui.clearSourceFallbackDeadline();
   const { onWaiting, onPause } = createPlayerVideoLifecycleHandlers.call(ui, video, () => false);
   onWaiting();
+  video.paused = true;
+  PlayerController.isPlaying = false;
   onPause();
   assert.equal(ui.paused, true);
   assert.equal(ui.sourceFallbackDeadlineTimer, null);
   await advance(100000);
   assert.deepEqual(calls, []);
   assert.deepEqual(terminals, []);
+});
+
+test("a decoder pause while buffering preserves playback intent and the fallback deadline", async () => {
+  const { ui, video } = screen({ healthy: true, seconds: 25 });
+  ui.clearSourceFallbackDeadline();
+  const { onWaiting, onPause } = createPlayerVideoLifecycleHandlers.call(ui, video, () => false);
+  onWaiting();
+  video.paused = true;
+  onPause();
+  assert.equal(ui.paused, false);
+  assert.notEqual(ui.sourceFallbackDeadlineTimer, null);
 });
 
 test("a same-source recovery keeps its original hard ceiling and attempt", async () => {

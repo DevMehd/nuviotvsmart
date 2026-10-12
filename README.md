@@ -85,6 +85,14 @@ Home scrolling takes 100 ms; full mode retains 140 ms. The active-card reserve i
 smaller during long navigation runs while visible cards and nearby artwork remain
 protected by the viewport window.
 
+The personal 1.2.4 deployment restores collection GIFs only on the focused card,
+uses earlier guarded hero artwork updates and adds subtle inner-card motion.
+VIDAA source lists preserve declared/imported badges and show recognized source
+details when image badges are unavailable. Reduced motion remains available.
+Every fresh VIDAA launch shows the latest French entry from `CHANGELOG.fr.md`.
+Update that file for each published change; the build requires its version to
+match `package.json`. See `AGENTS.md` for the personal deployment rules.
+
 Vercel builds enable its native `/_vercel/image` service for raster artwork from
 `ImKaptain/nuvio-art` only. Cards use 640 px, hero artwork uses 1280 px, and failed
 optimizations fall back to the public source. Unknown hosts, signed URLs, private

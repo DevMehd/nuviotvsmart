@@ -1,4 +1,4 @@
-/* global __NUVIO_APP_VERSION__ */
+/* global __NUVIO_APP_VERSION__, __NUVIO_PERSONAL_CHANGELOG__ */
 
 import "./core/diagnostics/consoleDebugBuffer.js";
 import { VidaaFrameDiagnostics } from "./core/diagnostics/vidaaFrameDiagnostics.js";
@@ -22,7 +22,10 @@ import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
 import { Platform } from "./platform/index.js";
 import { TizenCapabilities } from "./platform/tizen/tizenCapabilities.js";
 import { PluginServiceClient } from "./platform/pluginServiceClient.js";
-import { getTvRuntimePerformanceProfile } from "./platform/tvRuntimePerformance.js";
+import {
+  getTvRuntimePerformanceProfile,
+  getTvPerformanceMode
+} from "./platform/tvRuntimePerformance.js";
 import { LocalStore } from "./core/storage/localStore.js";
 import { ServerConfigurationStore } from "./data/local/serverConfigurationStore.js";
 import { I18n } from "./i18n/index.js";
@@ -61,6 +64,8 @@ let appShellRendered = false;
 let updateCheckStarted = false;
 
 const APP_VERSION = typeof __NUVIO_APP_VERSION__ !== "undefined" ? __NUVIO_APP_VERSION__ : "0.0.0";
+const PERSONAL_CHANGELOG =
+  typeof __NUVIO_PERSONAL_CHANGELOG__ !== "undefined" ? __NUVIO_PERSONAL_CHANGELOG__ : null;
 const UPDATE_DISMISSED_TAG_KEY = "app_update_dismissed_tag";
 const UPDATE_ROUTE_WAIT_TIMEOUT_MS = 60_000;
 
@@ -102,6 +107,20 @@ async function checkForAppUpdateOnStartup() {
     // WebView and profile-sync requests start cold. Do not let a fast GitHub
     // response get discarded while Router is still waiting for that route.
     if (!(await waitForInitialRoute())) {
+      return;
+    }
+
+    // A fresh TV launch always explains the current personal deployment.
+    // Upstream's installer prompt is for packaged apps and cannot update this URL.
+    if (Platform.isVidaa() && PERSONAL_CHANGELOG) {
+      showAppUpdatePrompt(PERSONAL_CHANGELOG, {
+        title: "Nouveautés de Nuvio personnel",
+        notesHeading: "Modifications",
+        subtitle:
+          "Version du " +
+          PERSONAL_CHANGELOG.date.split("-").reverse().join("/") +
+          ". Déjà disponible sur ta télé."
+      });
       return;
     }
 
@@ -189,6 +208,10 @@ function applyPerformanceMode() {
   const rootClasses = document.documentElement.classList;
   const modernSidebarBlurCapable = !rootClasses.contains("no-backdrop-filter") && !constrained;
   document.documentElement.classList.toggle("performance-constrained", constrained);
+  document.documentElement.classList.toggle(
+    "vidaa-balanced-motion",
+    Platform.isVidaa() && getTvPerformanceMode() !== "reduced"
+  );
   document.body.classList.toggle("performance-constrained", constrained);
   document.documentElement.classList.toggle(
     "modern-sidebar-blur-capable",
@@ -487,6 +510,21 @@ function setupProviderCredentialForegroundLifecycle() {
   window.addEventListener("focus", requestAfterBackground);
 }
 
+function setupTizenPlaybackLifecycle() {
+  if (!Platform.isTizen()) return;
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden" || Router.getCurrent() !== "player") return;
+
+    // Samsung requires hidden playback to follow the player exit path.
+    // Do not consume a regular Back: it can merely dismiss an overlay and
+    // leave playback running. Reuse the existing stop/progress/return path.
+    const screen = Router.getCurrentScreen();
+    screen?.cancelSourceLoad?.();
+    screen?.navigateBackToStreamScreen?.();
+  });
+}
+
 function setupPluginRuntimeLifecycle() {
   const cancel = () => PluginRuntime.cancelAll();
   document.addEventListener("visibilitychange", () => {
@@ -568,6 +606,7 @@ async function bootstrapApp() {
 
   FocusEngine.init();
   setupProviderCredentialForegroundLifecycle();
+  setupTizenPlaybackLifecycle();
   setupPluginRuntimeLifecycle();
   setupWebOsAppLifecycle();
 

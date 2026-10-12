@@ -176,12 +176,12 @@ platform("vidaa");
       return this._src;
     }
   };
-  cards[9].dataset.posterSrc = "parked-poster-0-9";
-  cards[9].querySelector = () => null;
+  cards[8].dataset.posterSrc = "parked-poster-0-8";
+  cards[8].querySelector = () => null;
 
   owner.scheduleHomeLazyImageHydration(cards[0], { navigationDirection: "right" });
   assert.equal(images[0].src, "poster-0-0", "Focused poster must start immediately");
-  for (let index = 1; index <= 8; index += 1) {
+  for (let index = 1; index <= 7; index += 1) {
     assert.equal(
       images[index].src,
       `poster-0-${index}`,
@@ -190,10 +190,11 @@ platform("vidaa");
     assert.equal(images[index].fetchPriority, "low");
   }
   assert.ok(
-    prefetched.includes("parked-poster-0-9"),
+    prefetched.includes("parked-poster-0-8"),
     "Parked cards must still start network prefetch without remounting their DOM"
   );
   assert.equal(images[0].fetchPriority, "high");
+  assert.ok(!images[9].src, "Cards beyond the constrained runway remain deferred");
   globalThis.Image = previousImage;
 }
 

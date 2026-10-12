@@ -59,7 +59,10 @@ export function buildReleaseNotesContent(notes, documentRef = globalThis.documen
   return container;
 }
 
-export function showAppUpdatePrompt(update, { documentRef = globalThis.document, onClose } = {}) {
+export function showAppUpdatePrompt(
+  update,
+  { documentRef = globalThis.document, onClose, title, subtitle, notesHeading } = {}
+) {
   if (!update || !documentRef?.body) {
     return null;
   }
@@ -74,7 +77,7 @@ export function showAppUpdatePrompt(update, { documentRef = globalThis.document,
 
   const notesLabel = documentRef.createElement("div");
   notesLabel.className = "app-update-notes-label";
-  notesLabel.textContent = t("update_release_notes", "What's new");
+  notesLabel.textContent = notesHeading || t("update_release_notes", "What's new");
   content.appendChild(notesLabel);
 
   const notes = buildReleaseNotesContent(update.notes, documentRef);
@@ -99,11 +102,10 @@ export function showAppUpdatePrompt(update, { documentRef = globalThis.document,
   };
 
   dialog = new NuvioDialog({
-    title: t("update_title", "App Update"),
-    subtitle: t(
-      "update_installer_required",
-      "Use Nuvio TV Installer to update the app on your TV."
-    ),
+    title: title || t("update_title", "App Update"),
+    subtitle:
+      subtitle ||
+      t("update_installer_required", "Use Nuvio TV Installer to update the app on your TV."),
     widthVw: 52.1,
     panelClassName: "app-update-dialog",
     actionsClassName: "app-update-actions",

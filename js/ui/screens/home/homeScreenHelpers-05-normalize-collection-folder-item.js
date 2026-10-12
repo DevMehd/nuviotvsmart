@@ -208,7 +208,7 @@ export function normalizeCollectionFolderItem(item, collectionMeta = null) {
       ? firstNonEmpty(...sources.filter((src) => src !== focusGifUrl && !/\.gifv?(?:$|[?#])|^data:image\/gif/i.test(String(src || ""))))
       : firstNonEmpty(...sources);
   const coverImageUrl = artwork(item.coverImageUrl, item.coverImage);
-  const focusGifEnabled = !isVidaa && item.focusGifEnabled !== false;
+  const focusGifEnabled = item.focusGifEnabled !== false;
   const hideTitle = Boolean(item.hideTitle);
   const tileShape = normalizeCollectionPosterShape(item.tileShape || item.posterShape);
   const coverEmoji = firstNonEmpty(item.coverEmoji);
@@ -239,13 +239,13 @@ export function normalizeCollectionFolderItem(item, collectionMeta = null) {
     collectionTitle,
     folderId,
     coverImageUrl,
-    focusGifUrl: isVidaa ? "" : focusGifUrl,
+    focusGifUrl,
     focusGifEnabled,
     coverEmoji,
     tileShape,
     hideTitle,
     heroBackdropUrl: artwork(item.heroBackdropUrl),
-    heroVideoUrl: isVidaa ? "" : firstNonEmpty(item.heroVideoUrl),
+    heroVideoUrl: firstNonEmpty(item.heroVideoUrl),
     titleLogoUrl: firstNonEmpty(item.titleLogoUrl)
   };
 }

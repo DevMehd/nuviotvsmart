@@ -1087,3 +1087,91 @@ html.vidaa-tv .home-screen-shell.home-layout-modern .home-hero-backdrop,
 html.vidaa-tv .home-screen-shell .home-poster-landscape-logo {
   filter: none;
 }
+
+/* Preview metadata is optional. Keep the current card's logo and available
+   text visible while providers fill in ratings/runtime in the background. */
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .home-modern-hero-card.is-hero-meta-enriching
+  .home-modern-hero-copy,
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .home-modern-hero-card.is-hero-focus-pending
+  .home-modern-hero-copy {
+  visibility: visible;
+}
+
+html.vidaa-tv .home-screen-shell .home-hero-backdrop.home-hero-backdrop-transition-enter,
+html.vidaa-tv .home-screen-shell.home-layout-modern .home-hero-logo {
+  transition-duration: 200ms;
+}
+
+/* Animate the inner frame, leaving the outer card's cached navigation bounds
+   unchanged. No shadow tween, row-wide GPU promotion or blur is introduced. */
+html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-poster-frame,
+html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-continue-media {
+  transition: transform 160ms cubic-bezier(0.2, 0, 0, 1) !important;
+  transform: scale(1);
+}
+
+html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-poster-card.focused .home-poster-frame,
+html.vidaa-tv.vidaa-balanced-motion
+  .home-screen-shell
+  .home-continue-card.focused
+  .home-continue-media {
+  transform: scale(1.015) !important;
+}
+
+html.vidaa-tv.vidaa-balanced-motion .home-route-content-enter,
+html.vidaa-tv.vidaa-balanced-motion .addons-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .search-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .library-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .settings-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .settings-slide-panel {
+  animation: vidaa-soft-reveal 180ms ease-out both !important;
+}
+
+@keyframes vidaa-soft-reveal {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+html.vidaa-tv .stream-route-stream-badge.technical {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.vidaa-tv.vidaa-balanced-motion .home-route-content-enter,
+  html.vidaa-tv.vidaa-balanced-motion .addons-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .search-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .library-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .settings-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .settings-slide-panel {
+    animation: none !important;
+  }
+  html.vidaa-tv.vidaa-balanced-motion
+    .home-screen-shell
+    .home-poster-card.focused
+    .home-poster-frame,
+  html.vidaa-tv.vidaa-balanced-motion
+    .home-screen-shell
+    .home-continue-card.focused
+    .home-continue-media {
+    transform: none !important;
+    transition: none !important;
+  }
+}

@@ -1,4 +1,5 @@
 import * as internals from "./homeScreenContext.js";
+import { clearHomeCollectionFocusGif } from "./homeCollectionFocusGif.js";
 import { forgetHomeMarkup } from "./patchHomeMarkup.js";
 import { suspendVidaaHomeCardWindow, discardVidaaHomeCards } from "./vidaaHomeCardWindow.js";
 
@@ -9,6 +10,7 @@ export function createHomeScreenMethods30() {
 
   return {
     cleanup() {
+      clearHomeCollectionFocusGif(this);
       this.homeVidaaTrackGeometry = null;
       const preserveRenderedTvHome = Boolean(
         getTvRuntimePerformanceProfile().isTvRuntime &&
@@ -21,6 +23,7 @@ export function createHomeScreenMethods30() {
         if (preserveRenderedTvHome) suspendVidaaHomeCardWindow(this);
         else discardVidaaHomeCards(this);
       }
+      this.heroMdbListRequest = null;
       if (this.unsubscribeStartupSyncPullCompleted) {
         this.unsubscribeStartupSyncPullCompleted();
         this.unsubscribeStartupSyncPullCompleted = null;

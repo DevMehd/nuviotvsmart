@@ -1,3 +1,19 @@
+## 1.2.4
+
+### Improvements & Fixes
+
+- Added bounded, seek-aware DTS and TrueHD to AC-3 conversion for supported webOS Matroska playback, with fallback to the original audio track when conversion cannot proceed (@WhiteGiso)
+- Added configurable MDBList ratings to Home hero cards in Modern and Classic/Grid layouts, including provider visibility and order, certified Rotten Tomatoes states, and bounded lookups (@WhiteGiso)
+- Improved Home catalog loading with deferred-row prefetch reuse within TV budgets, more efficient retained-row updates, and refreshed rows after effects-mode changes; expanded Trakt collection artwork and metadata (@nenad, @WhiteGiso)
+- Improved profile and Home sync behavior by showing local profiles while remote lock checks resolve and applying synced catalog preferences only to installed rows (@WhiteGiso)
+- Added a persisted device-local reduced-effects override, restored automatic mode, and hid the browser control when the runtime does not support it (@perinazzoo, @WhiteGiso)
+- Improved webOS responsiveness by avoiding Home layer stalls, delaying unnecessary proxy startup, and keeping cached badge image payloads out of stream markup (@WhiteGiso)
+- Improved TV sign-in with QR-first login and a login-mode switch while preserving Android's email/password default (@nenad, @WhiteGiso)
+- Improved TV playback controls and recovery with safer webOS audio and subtitle selection, synchronized pause and buffering state, and better post-play focus and localized recommendations; native Back now dismisses post-play dialogs (@WhiteGiso)
+- Routed hidden Samsung playback through the existing player exit lifecycle for consistent cleanup and navigation (@WhiteGiso)
+- Added stream refresh and preserved D-pad focus while results reload; superseded loads no longer replace current results (@WhiteGiso)
+- Updated the loading indicator to follow the selected theme accent colors, including on legacy TV runtimes (@WhiteGiso)
+
 ## 1.2.3
 
 ### Improvements & Fixes

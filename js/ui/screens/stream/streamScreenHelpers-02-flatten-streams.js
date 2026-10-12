@@ -129,6 +129,7 @@ export function flattenStreams(streamResult) {
         clientResolve: stream.clientResolve || null,
         debridCacheStatus: stream.debridCacheStatus || null,
         streamPresentation: stream.streamPresentation || null,
+        badges: Array.isArray(stream.badges) ? stream.badges : [],
         subtitles: Array.isArray(stream.subtitles) ? stream.subtitles : [],
         addonId: stream.addonId || group.addonId || null,
         addonBaseUrl: stream.addonBaseUrl || group.addonBaseUrl || null,

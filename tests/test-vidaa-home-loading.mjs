@@ -226,8 +226,17 @@ for (const name of ["vidaa", "tizen", "webos", "browser"]) {
       }
       await advance(held && name === "vidaa" ? 900 : 849);
       await paint();
-      assert.deepEqual(imageLoads, [], `${label}: retain the complete quiet window`);
-      assert.deepEqual(work, { metadata: [], trailers: [], promoted: [], activated: [] });
+      if (held && name === "vidaa") {
+        assert.deepEqual(
+          imageLoads,
+          ["https://example.com/final.jpg"],
+          `${label}: release allows hero artwork before the heavier focus effects`
+        );
+        assert.deepEqual(work, { metadata: ["final"], trailers: [], promoted: [], activated: [] });
+      } else {
+        assert.deepEqual(imageLoads, [], `${label}: retain the burst quiet window`);
+        assert.deepEqual(work, { metadata: [], trailers: [], promoted: [], activated: [] });
+      }
       await advance(1150);
       await paint();
       assert.deepEqual(
@@ -328,7 +337,11 @@ for (const direction of [39, 40]) {
   assert.deepEqual(expanded, []);
   noteVidaaNavigationKeyUp(direction);
   await advance(690);
-  assert.deepEqual(imageLoads, [], "The final release must receive the 250ms quiet period");
+  assert.deepEqual(
+    imageLoads,
+    ["https://example.com/final.jpg"],
+    "Hero artwork warms after a short quiet period while heavier poster work remains deferred"
+  );
   await advance(750);
   await paint();
   assert.deepEqual(metadata, ["final"]);
@@ -341,7 +354,8 @@ for (const direction of [39, 40]) {
   assert.deepEqual(imageLoads, ["https://example.com/final.jpg"]);
 }
 
-// Idle input alone is insufficient while either camera axis is still moving.
+// Horizontal camera motion does not postpone a stable hero. Vertical camera
+// motion remains guarded so moving between rows avoids expensive interim work.
 {
   reset();
   const state = home();
@@ -353,8 +367,8 @@ for (const direction of [39, 40]) {
   state.scheduleModernHeroUpdate(state.focused);
   await advance(600);
   await paint();
-  assert.deepEqual(state.commits, []);
-  assert.deepEqual(imageLoads, []);
+  assert.equal(state.commits.at(-1).id, "camera-pending");
+  assert.deepEqual(imageLoads, ["https://example.com/camera-pending.jpg"]);
   state.scrollAnimations.get(track).x = null;
   await advance(670);
   await paint();
@@ -442,7 +456,11 @@ for (const direction of [39, 40]) {
   await advance(720);
   await settled;
   assert.equal(state.commits.at(-1).description, "Loaded after settling");
-  assert.deepEqual(imageLoads, ["https://example.com/settled.jpg"]);
+  assert.deepEqual(
+    imageLoads,
+    [],
+    "Enrichment publishes available data; the DOM renderer owns independent artwork loading"
+  );
 }
 
 // Existing trailer responses cannot mount on a card that lost focus.
@@ -474,8 +492,8 @@ for (const direction of [39, 40]) {
   assert.equal(mounts, 0);
 }
 
-// A single accepted tap keeps its original media timing; the burst gate must
-// not slow normal navigation or an immediate expansion preference.
+// A single accepted tap warms hero artwork early on VIDAA. More expensive
+// trailer/expansion work keeps its existing quiet-window budget.
 for (const name of ["vidaa", "tizen", "webos", "browser"]) {
   reset(name);
   const state = home();
@@ -486,8 +504,8 @@ for (const name of ["vidaa", "tizen", "webos", "browser"]) {
   await advance(120);
   assert.equal(
     imageLoads.length,
-    name === "vidaa" ? 0 : 1,
-    `${name}: retain the first-tap artwork timing`
+    1,
+    `${name}: warm first-tap artwork without waiting for metadata`
   );
   assert.deepEqual(
     work.activated,
@@ -503,7 +521,7 @@ for (const name of ["vidaa", "tizen", "webos", "browser"]) {
   );
   if (name === "vidaa") {
     await advance(249);
-    assert.deepEqual(imageLoads, []);
+    assert.deepEqual(imageLoads, [`https://example.com/${id}.jpg`]);
     await advance(250);
     assert.deepEqual(imageLoads, [`https://example.com/${id}.jpg`]);
     assert.deepEqual(work.trailers, [id]);

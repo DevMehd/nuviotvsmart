@@ -5,6 +5,7 @@ import { withRequestTimeout } from "../../core/network/requestTimeout.js";
 import { Platform } from "../../platform/index.js";
 import { PluginServiceClient } from "../../platform/pluginServiceClient.js";
 
+const CACHE_MAX_ITEMS = 200;
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
@@ -227,6 +228,8 @@ async function getRatings(meta, fallbackItemId, fallbackItemType, apiKey) {
       // A connection failure or empty/malformed response must not suppress
       // ratings for the rest of the session after the network recovers.
       if (ratings && PROVIDERS.some(({ key }) => ratings[key] != null)) {
+        if (!cache.has(cacheKey) && cache.size >= CACHE_MAX_ITEMS)
+          cache.delete(cache.keys().next().value);
         cache.set(cacheKey, { ratings, expiresAtMs: Date.now() + CACHE_TTL_MS });
       }
       return ratings;

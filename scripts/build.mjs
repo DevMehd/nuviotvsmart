@@ -11,6 +11,7 @@ import { readAppMetadata, syncVersionFiles } from "./appMetadata.mjs";
 import { compatibilityPolicy } from "./compatibilityPolicy.mjs";
 import { writeRuntimeEnvScriptFile } from "./envProperties.mjs";
 import { buildI18nBundles } from "./buildI18nBundles.mjs";
+import { readPersonalChangelog } from "./personalChangelog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -592,6 +593,7 @@ async function buildPluginRuntimeAssets() {
 
 async function buildBundle() {
   const { version } = await readAppMetadata();
+  const personalChangelog = await readPersonalChangelog(rootDir, version);
 
   console.log("starting bundle build...");
   const result = await build({
@@ -605,7 +607,8 @@ async function buildBundle() {
     metafile: true,
     define: {
       "process.env.NODE_ENV": '"production"',
-      __NUVIO_APP_VERSION__: JSON.stringify(version)
+      __NUVIO_APP_VERSION__: JSON.stringify(version),
+      __NUVIO_PERSONAL_CHANGELOG__: JSON.stringify(personalChangelog)
     }
   });
   if (
