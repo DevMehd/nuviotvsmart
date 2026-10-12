@@ -2,6 +2,10 @@
 
 ## 2026-10-12 — 1.2.4
 
+- Fond et logo : fondu entre les images sans passage par un fond sombre, avec une légère arrivée des informations du titre sélectionné.
+- Navigation prolongée : positions des cartes réutilisées quand leurs images sont réactivées, avec vérification de leur taille pour garder la sélection bien alignée.
+- Correction des petits écarts de hauteur qui pouvaient s’accumuler lors du défilement entre les lignes.
+
 - Accueil plus rapide : les derniers catalogues du profil réapparaissent immédiatement, puis s’actualisent en arrière-plan.
 - Catalogues et fiches Xperience/AIOStreams préparés côté Vercel avec un cache court, des données allégées et un retour automatique à la source directe si nécessaire.
 - Démarrage accéléré grâce à la réutilisation locale des fichiers de la version installée ; les mises à jour restent vérifiées au lancement.

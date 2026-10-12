@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
-const { getVidaaHomeTrackTarget, invalidateVidaaHomeTrackGeometry } =
+const { getVidaaHomeTrackTarget, invalidateVidaaHomeTrackGeometry, markVidaaHomeTrackSlotChanged } =
   await import("../js/ui/screens/home/vidaaHomeNavigationGeometry.js");
 const { createHomeScreenMethods15 } =
   await import("../js/ui/screens/home/homeScreenMethods-15-schedule-focused-poster-flow.js");
@@ -12,6 +12,7 @@ const { createHomeScreenMethods02 } =
 const { animateVidaaFocusScroll } = await import("../js/ui/navigation/vidaaFocusScroll.js");
 let reads = 0;
 let shift = 0;
+let recycledWidth = 230;
 const track = {
   dataset: { trackPadAlignLeft: "40" },
   scrollLeft: 0,
@@ -41,7 +42,10 @@ const cards = Array.from({ length: 20 }, (_, i) => ({
   closest: () => track,
   getBoundingClientRect() {
     reads++;
-    return { left: 90 + 40 + i * 250 + shift - track.scrollLeft };
+    return {
+      left: 90 + 40 + i * 250 + shift - track.scrollLeft,
+      width: i === 4 ? recycledWidth : 230
+    };
   }
 }));
 const screen = {
@@ -67,6 +71,21 @@ assert.equal(
   coldReads,
   "Repeated navigation in an unchanged row does not reread coordinates or bounds"
 );
+
+// Recycling artwork keeps the outer slot. Verify only that slot after writes,
+// while a changed width still invalidates every following coordinate.
+const beforeRecycle = reads;
+for (let step = 0; step < 100; step++) {
+  markVidaaHomeTrackSlotChanged(screen, track, cards[4], 230);
+  assert.equal(getVidaaHomeTrackTarget(screen, track, cards[4], 40, { onlyCached: true }), null);
+  assert.equal(getVidaaHomeTrackTarget(screen, track, cards[4], 40).value, 1000);
+}
+assert.equal(reads - beforeRecycle, 100, "One changed slot must not remeasure 20 cards");
+recycledWidth = 300;
+markVidaaHomeTrackSlotChanged(screen, track, cards[4], 230);
+const beforeResize = reads;
+getVidaaHomeTrackTarget(screen, track, cards[4], 40);
+assert.ok(reads - beforeResize > 1, "A real size change must rebuild coordinates");
 
 // The warm path starts motion during the input turn, avoiding a second RAF.
 const frames = [];

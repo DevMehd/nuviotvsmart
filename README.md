@@ -74,6 +74,13 @@ services (AIOStreams, Xperience or Posters+) or per device in Settings → Integ
 
 ### Balanced performance on the personal Vercel deployment
 
+Balanced VIDAA artwork transitions use a bounded two-layer fade through Web
+Animations where supported, without forcing layout to restart CSS transitions.
+Oversized outgoing images retain a single layer. Reduced-motion preferences and
+the original fallback remain available. Offscreen card recycling preserves exact
+fractional dimensions and checks only changed slots before reusing navigation
+coordinates.
+
 The hosted personal build uses `POST /api/addon-data` for catalogue and metadata
 requests to the exact observed Xperience and AIOStreams hosts. Private addon URLs
 stay in request bodies. The Paris Vercel function rejects arbitrary destinations

@@ -41,6 +41,7 @@ export function createHomeScreenMethods05() {
       if (!display) {
         return;
       }
+      const changedHero = heroNode.dataset.itemId !== String(hero?.id || "") || heroNode.dataset.itemType !== String(hero?.type || "movie");
       heroNode.dataset.itemId = hero?.id || "";
       heroNode.dataset.itemType = hero?.type || "movie";
       heroNode.dataset.itemTitle = hero?.name || "Untitled";
@@ -179,6 +180,26 @@ export function createHomeScreenMethods05() {
           )
         )
       );
+      if (
+        changedHero &&
+        Platform.isVidaa() &&
+        document.documentElement.classList.contains("vidaa-balanced-motion") &&
+        !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+      ) {
+        const copy = heroNode.querySelector(".home-modern-hero-copy");
+        this.vidaaHeroCopyAnimation?.cancel();
+        try {
+          this.vidaaHeroCopyAnimation = copy?.animate?.(
+            [
+              { opacity: 0.7, transform: "translateY(5px)" },
+              { opacity: 1, transform: "translateY(0)" }
+            ],
+            { duration: 160, easing: "ease-out" }
+          );
+        } catch {
+          /* Optional visual feedback must not block hero updates. */
+        }
+      }
       void ensureHeroMdbListRatings.call(this);
     },
     setSidebarExpanded(expanded) {

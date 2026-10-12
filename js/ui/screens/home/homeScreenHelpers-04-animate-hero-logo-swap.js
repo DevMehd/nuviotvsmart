@@ -1,4 +1,5 @@
 /* eslint-disable no-unused-vars */
+import { useVidaaHeroTransition, swapVidaaHeroImage, finishVidaaHeroTransition } from "./vidaaHeroTransition.js";
 import { Router } from "../../navigation/routerState.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
@@ -221,14 +222,38 @@ export function animateHeroLogoSwap(logoNode, nextSrc, nextAlt = "", durationMs 
   };
 
   if (!normalizedSrc) {
+    finishVidaaHeroTransition(logoNode);
     finalize();
     logoNode.remove();
+    return;
+  }
+
+  if (currentSrc === normalizedSrc && useVidaaHeroTransition(logoNode)) {
+    logoNode.heroLogoPendingSource = "";
+    logoNode.setAttribute("alt", normalizedAlt);
     return;
   }
 
   if (currentSrc === normalizedSrc) {
     finalize();
     logoNode.setAttribute("alt", normalizedAlt);
+    return;
+  }
+
+  if (useVidaaHeroTransition(logoNode)) {
+    preloadImageSource(normalizedSrc).then((loaded) => {
+      if (Number(logoNode.heroLogoTransitionToken || 0) !== token || !logoNode.isConnected) return;
+      logoNode.heroLogoPendingSource = "";
+      if (loaded) {
+        swapVidaaHeroImage(logoNode, normalizedSrc, normalizedAlt, "logo", durationMs);
+      } else {
+        finishVidaaHeroTransition(logoNode);
+        finalize();
+        logoNode.setAttribute("src", normalizedSrc);
+        logoNode.setAttribute("alt", normalizedAlt);
+        logoNode.classList.remove("placeholder");
+      }
+    });
     return;
   }
 

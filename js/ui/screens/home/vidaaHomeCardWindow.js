@@ -1,6 +1,6 @@
 import { releaseVidaaHomeImage } from "./vidaaHomeImageWindow.js";
 import { prefetchVidaaPosterSource } from "./vidaaHomePosterPrefetch.js";
-import { invalidateVidaaHomeTrackGeometry } from "./vidaaHomeNavigationGeometry.js";
+import { markVidaaHomeTrackSlotChanged } from "./vidaaHomeNavigationGeometry.js";
 
 const ROW_SELECTOR = ".home-row, .home-modern-row, .home-grid-section, .home-row-continue";
 const STYLE_PROPERTIES = ["width", "height", "box-sizing"];
@@ -19,7 +19,12 @@ export function restoreVidaaHomeCard(screen, card) {
   const record = screen.homeVidaaParkedCards?.get(card);
   if (!record) return false;
   restoreCard(card, record);
-  invalidateVidaaHomeTrackGeometry(screen, card.closest?.(".home-track, .home-grid-track"));
+  markVidaaHomeTrackSlotChanged(
+    screen,
+    card.closest?.(".home-track, .home-grid-track"),
+    card,
+    record.width
+  );
   screen.homeVidaaParkedCards.delete(card);
   screen.homeVidaaActiveCards?.add(card);
   scheduleVidaaHomeCardWindow(screen);
@@ -196,8 +201,9 @@ export function updateVidaaHomeCardWindow(
       card.childNodes.length &&
       !card.querySelector("iframe, video")
     ) {
-      const width = card.offsetWidth;
-      const height = card.offsetHeight;
+      // offsetWidth/Height round fractional CSS pixels. Repeating that
+      // rounding across parked rows changes the total scroll extent.
+      const { width, height } = card.getBoundingClientRect();
       if (width > 0 && height > 0) changes.push({ card, width, height });
     }
   }
@@ -209,6 +215,7 @@ export function updateVidaaHomeCardWindow(
       continue;
     }
     const record = {
+      width: change.width,
       content: card.ownerDocument.createDocumentFragment(),
       styles: STYLE_PROPERTIES.map((property) => [
         property,
@@ -229,7 +236,12 @@ export function updateVidaaHomeCardWindow(
     card.style.setProperty("height", `${change.height}px`);
     while (card.firstChild) record.content.appendChild(card.firstChild);
     card.classList.add("vidaa-card-parked");
-    invalidateVidaaHomeTrackGeometry(screen, card.closest?.(".home-track, .home-grid-track"));
+    markVidaaHomeTrackSlotChanged(
+      screen,
+      card.closest?.(".home-track, .home-grid-track"),
+      card,
+      record.width
+    );
     parked.set(card, record);
     active.delete(card);
   }

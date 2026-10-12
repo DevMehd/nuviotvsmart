@@ -1,4 +1,5 @@
 /* eslint-disable no-unused-vars */
+import { useVidaaHeroTransition, swapVidaaHeroImage, finishVidaaHeroTransition } from "./vidaaHeroTransition.js";
 import { Router } from "../../navigation/routerState.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
@@ -227,6 +228,7 @@ export function animateHeroBackdropSwap(
   };
 
   if (!normalizedSrc) {
+    finishVidaaHeroTransition(backdrop);
     finalize();
     backdrop.removeAttribute("src");
     backdrop.setAttribute("alt", normalizedAlt);
@@ -234,10 +236,33 @@ export function animateHeroBackdropSwap(
     return;
   }
 
+  if (currentSrc === normalizedSrc && useVidaaHeroTransition(backdrop)) {
+    backdrop.heroBackdropPendingSource = "";
+    backdrop.setAttribute("alt", normalizedAlt);
+    return;
+  }
+
   if (currentSrc === normalizedSrc) {
     finalize();
     backdrop.setAttribute("alt", normalizedAlt);
     backdrop.classList.remove("placeholder");
+    return;
+  }
+
+  if (useVidaaHeroTransition(backdrop)) {
+    preloadImageSource(normalizedSrc).then((loaded) => {
+      if (Number(backdrop.heroBackdropTransitionToken || 0) !== token || !backdrop.isConnected) return;
+      backdrop.heroBackdropPendingSource = "";
+      if (loaded) {
+        swapVidaaHeroImage(backdrop, normalizedSrc, normalizedAlt, "backdrop", durationMs);
+      } else {
+        finishVidaaHeroTransition(backdrop);
+        finalize();
+        backdrop.setAttribute("src", normalizedSrc);
+        backdrop.setAttribute("alt", normalizedAlt);
+        backdrop.classList.remove("placeholder");
+      }
+    });
     return;
   }
 

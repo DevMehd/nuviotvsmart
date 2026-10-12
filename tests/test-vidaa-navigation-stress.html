@@ -45,6 +45,7 @@
     restoreVidaaHomeNavigationNeighborhood,
     restoreAllVidaaHomeCards
   } from "../js/ui/screens/home/vidaaHomeCardWindow.js";
+  import { getVidaaHomeTrackTarget } from "../js/ui/screens/home/vidaaHomeNavigationGeometry.js";
   const container = document.getElementById("fixture");
   const result = document.getElementById("result");
   // Separate portrait/landscape runs cover the different visible card counts
@@ -78,7 +79,12 @@
     const tracks = [...container.querySelectorAll(".home-track")];
     const rows = tracks.map((track) => [...track.querySelectorAll("article")]);
     let focused = rows[0][0];
-    const screen = { container, navModel: { rows }, getCurrentFocusedNode: () => focused };
+    const screen = {
+      container,
+      layoutMode: "modern",
+      navModel: { rows },
+      getCurrentFocusedNode: () => focused
+    };
     const height = viewport.scrollHeight;
     const widths = tracks.map((track) => track.scrollWidth);
     updateVidaaHomeCardWindow(screen, viewport.getBoundingClientRect(), focused);
@@ -108,6 +114,20 @@
       await new Promise((resolve) => setTimeout(resolve, 20));
       peak = Math.max(peak, container.querySelectorAll(".home-poster-frame").length);
       peakSources = Math.max(peakSources, container.querySelectorAll("img[src]").length);
+      const cachedTarget = getVidaaHomeTrackTarget(screen, tracks[r], focused, 0);
+      const liveTarget = Math.max(
+        0,
+        Math.min(
+          tracks[r].scrollWidth - tracks[r].clientWidth,
+          focused.getBoundingClientRect().left -
+            tracks[r].getBoundingClientRect().left +
+            tracks[r].scrollLeft
+        )
+      );
+      assert(
+        Math.abs(cachedTarget.value - liveTarget) < 0.5,
+        "Recycled cards must retain exact navigation coordinates"
+      );
       assert(document.activeElement === focused, "Focus lost during direction reversal");
       assert(focused.querySelector("img"), "Selected card must stay restored");
       assert(viewport.scrollHeight === height, "Vertical scroll extent changed");

@@ -6,6 +6,21 @@ export function invalidateVidaaHomeTrackGeometry(screen, track) {
   if (track) screen.homeVidaaTrackGeometry?.delete(track);
 }
 
+// Parking changes the subtree, but normally preserves the card's flex slot.
+// Verify only changed slots on the next measurement frame instead of throwing
+// away all nearby coordinates. Never add these reads to the key-input fast path.
+export function markVidaaHomeTrackSlotChanged(screen, track, card, width) {
+  const record = screen.homeVidaaTrackGeometry?.get(track);
+  if (!record) return;
+  if (!Number.isFinite(width) || width <= 0) {
+    invalidateVidaaHomeTrackGeometry(screen, track);
+    return;
+  }
+  const dirty = record.dirtySlots || (record.dirtySlots = new Map());
+  dirty.set(card, width);
+  if (dirty.size > WINDOW_SIZE) invalidateVidaaHomeTrackGeometry(screen, track);
+}
+
 export function getVidaaHomeTrackTarget(
   screen,
   track,
@@ -29,6 +44,19 @@ export function getVidaaHomeTrackTarget(
     record?.viewportKey !== viewportKey
   )
     record = null;
+  if (record?.dirtySlots?.size) {
+    if (onlyCached) return null;
+    for (const [card, width] of record.dirtySlots) {
+      if (
+        card.isConnected === false ||
+        Math.abs(card.getBoundingClientRect().width - width) > 0.01
+      ) {
+        record = null;
+        break;
+      }
+    }
+    record?.dirtySlots.clear();
+  }
   if (!record?.positions.has(target)) {
     if (onlyCached) return null;
     const index = nodes.indexOf(target);
