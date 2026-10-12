@@ -87,6 +87,8 @@ import { isStreamEmptyStateVisible } from "./streamEmptyState.js";
 
 import { escapeHtml, STREAM_BADGE_LIMIT, t, formatBytes } from "./streamScreenHelpers-01-stream-badge-limit.js";
 import { getStreamPresentationBadges, getDeclaredStreamBadges } from "../../../core/streams/streamPresentationBadges.js";
+import { getStreamImageBadges } from "../../../core/streams/streamBadgePresets.js";
+import { buildVidaaBadgeFallbackAttributes } from "../../../core/media/vidaaBadgeOptimization.js";
 
 export function renderImageBadgeChip(badge = {}) {
   const imageUrl = normalizeAddonLogoUrl(badge.imageURL);
@@ -103,10 +105,7 @@ export function renderImageBadgeChip(badge = {}) {
   const backgroundColor = normalizeStreamBadgeChipColor(badge.tagColor);
   const outlineColor = normalizeStreamBadgeChipColor(badge.borderColor);
   const textColor = normalizeStreamBadgeChipColor(badge.textColor);
-  const filled =
-    String(badge.tagStyle || "")
-      .trim()
-      .toLowerCase() === "filled";
+  const filled = /^filled(?:\s|$)/i.test(String(badge.tagStyle || "").trim());
   const fallbackImageUrl = Environment.isWebOS() ? "" : imageUrl;
   const safeImageUrl = displayImageUrl || fallbackImageUrl;
   if (!safeImageUrl) {
@@ -119,7 +118,7 @@ export function renderImageBadgeChip(badge = {}) {
   ].join("");
   return `
     <span class="stream-route-stream-badge image${filled ? " filled" : ""}"${style ? ` style="${escapeHtml(style)}"` : ""}>
-      <img ${Environment.isWebOS() ? `data-cached-badge-image="${escapeHtml(imageUrl)}"` : `src="${escapeHtml(safeImageUrl)}"`} alt="${escapeHtml(badge.name || "")}" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+      <img ${Environment.isWebOS() ? `data-cached-badge-image="${escapeHtml(imageUrl)}"` : `src="${escapeHtml(safeImageUrl)}"${buildVidaaBadgeFallbackAttributes(safeImageUrl)}`} alt="${escapeHtml(badge.name || "")}" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
     </span>
   `;
 }
@@ -158,7 +157,7 @@ export function renderStreamBadges(stream = {}, enabled = true, badgeSettings = 
     return "";
   }
   const currentBadgeSettings = badgeSettings || StreamBadgeSettingsStore.snapshot();
-  const importedBadges = [...getDeclaredStreamBadges(stream), ...matchStreamBadges(stream, currentBadgeSettings.rules)];
+  const importedBadges = getStreamImageBadges(stream, currentBadgeSettings);
   return renderImportedStreamBadgeChips(stream, importedBadges, currentBadgeSettings.showFileSizeBadges !== false);
 }
 
@@ -172,9 +171,7 @@ export function hasStreamBadges(stream = {}, enabled = true, badgeSettings = nul
   }
   return (
     (Environment.isVidaa() && getStreamPresentationBadges(stream).length > 0) ||
-    [...getDeclaredStreamBadges(stream), ...matchStreamBadges(stream, currentBadgeSettings.rules)].some((badge) =>
-      normalizeAddonLogoUrl(badge.imageURL)
-    )
+    getStreamImageBadges(stream, currentBadgeSettings).some((badge) => normalizeAddonLogoUrl(badge.imageURL))
   );
 }
 
@@ -185,7 +182,7 @@ export function renderStreamBadgeContents(stream = {}, enabled = true, badgeSett
   const currentBadgeSettings = badgeSettings || StreamBadgeSettingsStore.snapshot();
   return renderImportedStreamBadgeChipContents(
     stream,
-    [...getDeclaredStreamBadges(stream), ...matchStreamBadges(stream, currentBadgeSettings.rules)],
+    getStreamImageBadges(stream, currentBadgeSettings),
     currentBadgeSettings.showFileSizeBadges !== false
   );
 }

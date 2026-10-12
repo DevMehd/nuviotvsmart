@@ -93,6 +93,12 @@ Every fresh VIDAA launch shows the latest French entry from `CHANGELOG.fr.md`.
 Update that file for each published change; the build requires its version to
 match `package.json`. See `AGENTS.md` for the personal deployment rules.
 
+VIDAA includes the user-selected Xperience Nard and Elite badge rule snapshots.
+Choose the pack under Settings → Fusion Style → Badge pack for each profile on
+this TV. This local preference survives cloud settings refreshes; existing custom
+imports retain their Android sync schema. Only matched badge artwork is warmed.
+Vercel resizes these two public CDN paths to 128 px; local archives use the CDN.
+
 Vercel builds enable its native `/_vercel/image` service for raster artwork from
 `ImKaptain/nuvio-art` only. Cards use 640 px, hero artwork uses 1280 px, and failed
 optimizations fall back to the public source. Unknown hosts, signed URLs, private

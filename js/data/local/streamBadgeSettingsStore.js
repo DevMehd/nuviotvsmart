@@ -1,4 +1,9 @@
 import { createProfileScopedStore } from "./profileScopedStore.js";
+import { Environment } from "../../platform/environment.js";
+import {
+  normalizeStreamBadgePreset,
+  resolveStreamBadgePresetRules
+} from "../../core/streams/streamBadgePresets.js";
 import {
   normalizeStreamBadgeRules,
   prepareStreamBadgeRules,
@@ -13,7 +18,8 @@ const DEFAULT_STREAM_BADGE_SETTINGS = {
   rules: { imports: [] },
   showFileSizeBadges: true,
   showAddonLogo: true,
-  badgePlacement: "BOTTOM"
+  badgePlacement: "BOTTOM",
+  personalBadgePreset: "AUTO"
 };
 
 function normalizeBadgePlacement(value = "") {
@@ -43,7 +49,8 @@ function normalizeStreamBadgeSettings(value = {}) {
     rules: normalizeStreamBadgeRules(rulesSource),
     showFileSizeBadges: showFileSizeBadges !== false,
     showAddonLogo: showAddonLogo !== false,
-    badgePlacement: normalizeBadgePlacement(badgePlacement)
+    badgePlacement: normalizeBadgePlacement(badgePlacement),
+    personalBadgePreset: normalizeStreamBadgePreset(source.personalBadgePreset)
   };
 }
 
@@ -145,7 +152,7 @@ export const StreamBadgeSettingsStore = {
 
       if (rules.imports.length > 1) {
         const nextRules = normalizeStreamBadgeRules(rules);
-        store.set({ rules: nextRules });
+        store.set({ rules: nextRules, personalBadgePreset: "IMPORTED" });
         return { status: "success", rules: nextRules };
       }
 
@@ -158,7 +165,7 @@ export const StreamBadgeSettingsStore = {
         .filter((importItem) => !sameSourceUrl(importItem.sourceUrl, nextImport.sourceUrl))
         .concat(nextImport);
       const nextRules = normalizeStreamBadgeRules({ imports: nextImports });
-      store.set({ rules: nextRules });
+      store.set({ rules: nextRules, personalBadgePreset: "IMPORTED" });
       return { status: "success", rules: nextRules };
     } catch (error) {
       return {
@@ -178,7 +185,7 @@ export const StreamBadgeSettingsStore = {
         isActive: sameSourceUrl(importItem.sourceUrl, normalizedSource)
       }))
     };
-    store.set({ rules: normalizeStreamBadgeRules(nextRules) });
+    store.set({ rules: normalizeStreamBadgeRules(nextRules), personalBadgePreset: "IMPORTED" });
   },
 
   deleteStreamBadgeRulesSource(sourceUrl) {
@@ -205,9 +212,17 @@ export const StreamBadgeSettingsStore = {
     store.set({ badgePlacement: normalizeBadgePlacement(placement) });
   },
 
+  setPersonalBadgePreset(value) {
+    // This TV preference belongs to the active profile. Cloud imports retain
+    // their standard Android schema and cannot overwrite this local selection.
+    store.set({ personalBadgePreset: normalizeStreamBadgePreset(value) }, { silentSync: true });
+  },
+
   snapshot() {
     const settings = normalizeStreamBadgeSettings(this.get());
-    settings.rules = prepareStreamBadgeRules(settings.rules);
+    settings.rules = prepareStreamBadgeRules(
+      resolveStreamBadgePresetRules(settings, Environment.isVidaa())
+    );
     return settings;
   }
 };

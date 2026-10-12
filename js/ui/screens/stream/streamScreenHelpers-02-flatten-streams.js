@@ -86,6 +86,7 @@ import {
 import { isStreamEmptyStateVisible } from "./streamEmptyState.js";
 
 import { streamMergeKey, mergeStreamItem, STREAM_BADGE_LIMIT, detectQuality } from "./streamScreenHelpers-01-stream-badge-limit.js";
+import { getStreamImageBadges } from "../../../core/streams/streamBadgePresets.js";
 
 export function flattenStreams(streamResult) {
   if (!streamResult || streamResult.status !== "success") {
@@ -229,7 +230,7 @@ export async function preloadStreamBadgeImages(settings = StreamBadgeSettingsSto
 export async function preloadMatchedStreamBadgeImages(streams = [], settings = StreamBadgeSettingsStore.snapshot()) {
   const urls = new Set();
   (streams || []).forEach((stream) => {
-    matchStreamBadges(stream, settings?.rules)
+    getStreamImageBadges(stream, settings)
       .slice(0, STREAM_BADGE_LIMIT)
       .forEach((badge) => {
         const url = normalizeAddonLogoUrl(badge.imageURL);

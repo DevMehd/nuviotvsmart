@@ -40,7 +40,7 @@
     }
   ],
   "images": {
-    "sizes": [640, 1280],
+    "sizes": [128, 640, 1280],
     "domains": [],
     "localPatterns": [],
     "remotePatterns": [
@@ -49,6 +49,13 @@
         "hostname": "raw.githubusercontent.com",
         "port": "",
         "pathname": "^/ImKaptain/nuvio-art/main/.*\\.(png|jpg|jpeg|webp)$",
+        "search": ""
+      },
+      {
+        "protocol": "https",
+        "hostname": "cdn.xperience-app.com",
+        "port": "",
+        "pathname": "^/badges/(elite|nardbadges)/[a-zA-Z0-9_-]+\\.webp$",
         "search": ""
       }
     ],

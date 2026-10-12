@@ -1,5 +1,7 @@
 import { PlayerController } from "../../../core/player/playerController.js";
 import { getStreamPresentationBadges, getDeclaredStreamBadges } from "../../../core/streams/streamPresentationBadges.js";
+import { getStreamImageBadges } from "../../../core/streams/streamBadgePresets.js";
+import { getVidaaBadgeImageUrl, buildVidaaBadgeFallbackAttributes } from "../../../core/media/vidaaBadgeOptimization.js";
 
 import {
   audioTrackLabelConflictsWithCodec,
@@ -290,17 +292,14 @@ export function normalizeStreamBadgeChipColor(value = "") {
 }
 
 export function renderPlayerImageBadgeChip(badge = {}) {
-  const imageUrl = normalizeImageUrl(badge.imageURL);
+  const imageUrl = getVidaaBadgeImageUrl(normalizeImageUrl(badge.imageURL));
   if (!imageUrl) {
     return "";
   }
   const backgroundColor = normalizeStreamBadgeChipColor(badge.tagColor);
   const outlineColor = normalizeStreamBadgeChipColor(badge.borderColor);
   const textColor = normalizeStreamBadgeChipColor(badge.textColor);
-  const filled =
-    String(badge.tagStyle || "")
-      .trim()
-      .toLowerCase() === "filled";
+  const filled = /^filled(?:\s|$)/i.test(String(badge.tagStyle || "").trim());
   const style = [
     filled && backgroundColor ? `background:${backgroundColor};` : "",
     outlineColor ? `border-color:${outlineColor};` : "",
@@ -308,7 +307,7 @@ export function renderPlayerImageBadgeChip(badge = {}) {
   ].join("");
   return `
     <span class="stream-route-stream-badge image${filled ? " filled" : ""}"${style ? ` style="${escapeHtml(style)}"` : ""}>
-      <img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(badge.name || "")}" loading="lazy" decoding="async" />
+      <img src="${escapeAttribute(imageUrl)}"${buildVidaaBadgeFallbackAttributes(imageUrl)} alt="${escapeAttribute(badge.name || "")}" loading="lazy" decoding="async" />
     </span>
   `;
 }
@@ -330,7 +329,7 @@ export function getPlayerSourceLogoDisplayUrl(value = "", onSettled = null) {
 }
 
 export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadgeSettingsStore.snapshot()) {
-  const matchedBadges = [...getDeclaredStreamBadges(stream), ...matchStreamBadges(stream, badgeSettings.rules)];
+  const matchedBadges = getStreamImageBadges(stream, badgeSettings);
   const chips = [];
   const sizeBytes = stream.behaviorHints?.videoSize;
   if (badgeSettings.showFileSizeBadges !== false && sizeBytes != null) {

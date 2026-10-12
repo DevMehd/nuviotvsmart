@@ -1,3 +1,5 @@
+import { normalizeMathematicalAlphanumericSymbols } from "./streamDisplayText.js";
+
 const STREAM_BADGE_IMPORT_LIMIT = 3;
 
 function isPlainObject(value) {
@@ -193,7 +195,7 @@ function streamBadgeDedupeKey(badge = {}) {
   return normalizeText(badge.imageURL || badge.name).toLowerCase();
 }
 
-function mergeStreamBadges(existing = [], matched = []) {
+export function mergeStreamBadges(existing = [], matched = []) {
   const merged = new Map();
   [
     ...(Array.isArray(existing) ? existing : []),
@@ -249,7 +251,7 @@ function badgeMatchCandidates(stream = {}) {
     ...(Array.isArray(parsed.hdr) ? parsed.hdr : [])
   ]
     .flatMap((value) => String(value || "").split(/\r?\n/))
-    .map((value) => normalizeText(value))
+    .map((value) => normalizeText(normalizeMathematicalAlphanumericSymbols(value)))
     .filter(Boolean)
     .filter(
       (value, index, array) =>

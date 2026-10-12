@@ -3,6 +3,7 @@ import { Environment } from "../../platform/environment.js";
 import { Platform } from "../../platform/index.js";
 import { getTvRuntimePerformanceProfile } from "../../platform/tvRuntimePerformance.js";
 import { isWebOsImageProxyUrl, normalizeImageUrl } from "./imageProxy.js";
+import { getVidaaBadgeImageUrl, getVidaaBadgeImageOriginal } from "./vidaaBadgeOptimization.js";
 
 const failedAddonLogoUrls = new Set();
 const addonLogoCache = new Map();
@@ -17,7 +18,7 @@ let addonLogoCacheHydrated = false;
 let addonLogoCachePersistTimer = null;
 
 export function normalizeAddonLogoUrl(value = "") {
-  return normalizeImageUrl(value);
+  return getVidaaBadgeImageUrl(normalizeImageUrl(value));
 }
 
 export function resetAddonLogoCache() {
@@ -54,15 +55,16 @@ export async function warmAddonLogoPreview(url = "") {
       addonLogoCache.set(normalized, { status: "failed", updatedAt: Date.now() });
       settle(false);
     };
-    const finishDirect = () => {
+    const finishDirect = (displayUrl = normalized) => {
       addonLogoCache.set(normalized, {
         status: "direct",
-        displayUrl: normalized,
+        displayUrl,
         updatedAt: Date.now()
       });
       settle(true);
     };
     const loadDirect = () => {
+      const source = getVidaaBadgeImageOriginal(normalized) || normalized;
       const directImage = new Image();
       directImage.decoding = "async";
       try {
@@ -71,11 +73,11 @@ export async function warmAddonLogoPreview(url = "") {
       directImage.onload = () => {
         (async () => {
           await awaitImageDecoded(directImage);
-          finishDirect();
+          finishDirect(source);
         })();
       };
       directImage.onerror = fail;
-      directImage.src = normalized;
+      directImage.src = source;
     };
     const finish = (image = null) => {
       if (image && typeof imageToDataUrl === "function") {
@@ -197,15 +199,16 @@ export function requestAddonLogo(url = "", onSettled = null) {
       addonLogoCache.set(normalized, { status: "failed", updatedAt: Date.now() });
       settle(false);
     };
-    const finishDirect = () => {
+    const finishDirect = (displayUrl = normalized) => {
       addonLogoCache.set(normalized, {
         status: "direct",
-        displayUrl: normalized,
+        displayUrl,
         updatedAt: Date.now()
       });
       settle(true);
     };
     const loadDirect = () => {
+      const source = getVidaaBadgeImageOriginal(normalized) || normalized;
       const directImage = new Image();
       directImage.decoding = "async";
       try {
@@ -214,11 +217,11 @@ export function requestAddonLogo(url = "", onSettled = null) {
       directImage.onload = () => {
         (async () => {
           await awaitImageDecoded(directImage);
-          finishDirect();
+          finishDirect(source);
         })();
       };
       directImage.onerror = fail;
-      directImage.src = normalized;
+      directImage.src = source;
     };
     const image = new Image();
     image.crossOrigin = "anonymous";

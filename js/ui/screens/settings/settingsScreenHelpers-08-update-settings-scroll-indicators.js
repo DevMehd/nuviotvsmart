@@ -301,7 +301,7 @@ export function getVisibleSections(model) {
     }
     // Android keeps Fusion/stream presentation controls inside the advanced
     // part of Layout, which is not exposed in Essential mode.
-    if (isEssential && section.id === "streams") {
+    if (isEssential && section.id === "streams" && !Platform.isVidaa()) {
       return false;
     }
     if (section.id === "account" || section.id === "profiles") {

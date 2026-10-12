@@ -2,6 +2,8 @@
 
 ## 2026-10-12 — 1.2.4
 
+- Ajout des vrais badges graphiques Xperience Nard et Elite, avec un choix indépendant pour chaque profil dans Paramètres → Style Fusion → Pack de badges.
+- Badges Xperience servis en petite taille sur Vercel pour préserver la fluidité ; le pack Nard est proposé par défaut.
 - Mise à jour du fork vers Nuvio 1.2.4, avec conservation de la connexion au compte Android et du QR code.
 - Retour des animations au survol des cartes studios et plateformes de streaming ; les animations des cartes quittées sont arrêtées.
 - Changement plus rapide du fond, du logo et des informations quand on sélectionne une nouvelle carte.
