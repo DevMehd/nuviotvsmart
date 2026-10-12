@@ -29,6 +29,7 @@ export function createPlayerControllerMethods18() {
       } = {}
     ) {
       if (!this.video) return;
+      this.stopWebOsDtsAudioTranscode({ resetFailures: true });
 
       const requestedUrl = String(url || "").trim();
       const playToken = Number(this.playRequestToken || 0) + 1;

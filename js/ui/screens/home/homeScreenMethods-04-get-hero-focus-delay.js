@@ -133,7 +133,10 @@ export function createHomeScreenMethods04() {
         this.initialHomeLoadTimeout = null;
       }
     },
-    releaseInitialHomeLoading() {
+    releaseInitialHomeLoading({ force = false } = {}) {
+      if (!force && !this.continueWatchingInitialResolved) {
+        return;
+      }
       this.isInitialHomeLoading = false;
       this.cancelInitialHomeLoadTimeout();
     },
@@ -147,7 +150,7 @@ export function createHomeScreenMethods04() {
         // Match Android's stable Home gate: a slow or incomplete startup must
         // reveal the available surface instead of keeping a full-screen loader
         // indefinitely. The catalog requests continue in the background.
-        this.releaseInitialHomeLoading();
+        this.releaseInitialHomeLoading({ force: true });
         this.requestBackgroundRender();
       }, HOME_STABLE_GATE_TIMEOUT_MS);
     },

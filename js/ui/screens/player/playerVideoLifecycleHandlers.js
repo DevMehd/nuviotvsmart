@@ -75,10 +75,7 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
     this.bufferingActive = false;
     this.clearBufferingSpinnerTimer();
     if (this.seekLoading) {
-      this.seekLoading = false;
-      this.seekLoadingBaselineSeconds = null;
-      this.seekLoadingTargetSeconds = null;
-      this.clearBufferingSpinnerTimer();
+      this.completeSeekLoadingIfReady();
     }
     if (isTizenAvPlayPlayback()) {
       this.lastPlaybackErrorAt = 0;
@@ -183,6 +180,11 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
       return;
     }
     if (PlayerController.isLivePlaybackItemType?.() && PlayerController.isPlaying) {
+      return;
+    }
+    if (this.isBufferingForPauseOverlay()) {
+      this.dismissPauseOverlay();
+      this.updateLoadingVisibility();
       return;
     }
     if (this.hasPresentedPlaybackFrame && !this.playbackEngineValidated) {
@@ -290,6 +292,10 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
   const onSeeked = () => {
     if (this.isStartupErrorVisible()) {
       return;
+    }
+    if (this.seekLoading) {
+      this.seekLoadingSettled = true;
+      this.seekLoadingProgressSeconds = null;
     }
     if (this.hasPresentedPlaybackFrame && !this.playbackEngineValidated) {
       this.resetPlaybackEngineValidation();

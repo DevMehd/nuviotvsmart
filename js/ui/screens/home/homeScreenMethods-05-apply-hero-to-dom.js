@@ -1,3 +1,5 @@
+import { ensureHeroMdbListRatings } from "./homeHeroMdbListLoad.js";
+import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import * as internals from "./homeScreenContext.js";
 
 export function createHomeScreenMethods05() {
@@ -107,7 +109,11 @@ export function createHomeScreenMethods05() {
           secondaryNode.innerHTML = renderModernHeroSecondary(display);
           secondaryNode.classList.toggle(
             "is-empty",
-            !display.secondaryHighlightText && !display.badges.length && !display.showImdbSecondary && !display.languageText
+            !display.secondaryHighlightText &&
+              !display.badges.length &&
+              !display.showImdbSecondary &&
+              !display.languageText &&
+              !display.mdbListMarkup
           );
         }
       } else {
@@ -135,6 +141,11 @@ export function createHomeScreenMethods05() {
         descriptionNode.textContent = display.description || " ";
         descriptionNode.classList.toggle("is-empty", !display.description);
       }
+      const mdbRow = heroNode.querySelector(".home-hero-mdb-ratings");
+      if (mdbRow) {
+        mdbRow.innerHTML = display.mdbListMarkup || "";
+        mdbRow.classList.toggle("is-empty", !display.mdbListMarkup);
+      }
       this.scheduleHomeTruncationUpdate({ scope: heroNode });
       this.syncCollectionHeroMedia(hero);
 
@@ -142,6 +153,16 @@ export function createHomeScreenMethods05() {
       if (indicators) {
         indicators.innerHTML = buildHeroIndicators(this.heroCandidates, hero);
       }
+      // These nodes were replaced outside the incremental renderer. Register
+      // their new children so the next refresh replaces them instead of appending.
+      registerHomeDomNodes(
+        Array.from(
+          heroNode.querySelectorAll(
+            ".home-hero-title-text, .home-modern-hero-meta-line, .home-modern-hero-secondary, .home-hero-meta-primary, .home-hero-meta-secondary, .home-hero-chip-row, .home-hero-description, .home-hero-mdb-ratings, .home-hero-indicators"
+          )
+        )
+      );
+      void ensureHeroMdbListRatings.call(this);
     },
     setSidebarExpanded(expanded) {
       const nextExpanded = Boolean(expanded);
