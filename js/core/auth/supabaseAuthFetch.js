@@ -2,6 +2,9 @@ import { ServerConfigurationStore } from "../../data/local/serverConfigurationSt
 import { recordSyncFailure } from "../sync/syncBackoffPolicy.js";
 import { trackSessionRequest } from "./sessionLifecycle.js";
 import { requireAccountBackend } from "../server/serverConfiguration.js";
+import { withRequestTimeout } from "../network/requestTimeout.js";
+
+const AUTH_REQUEST_TIMEOUT_MS = 20_000;
 
 const RETRYABLE_AUTH_STATUSES = new Set([
   408, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530
@@ -88,5 +91,30 @@ async function fetchSupabaseAuthInternal(endpoint, init = {}) {
 }
 
 export function fetchSupabaseAuth(endpoint, init = {}) {
-  return trackSessionRequest(fetchSupabaseAuthInternal(endpoint, init));
+  const { timeoutMs, ...fetchInit } = init;
+  const requestedTimeout = Number(timeoutMs);
+  const deadline =
+    Number.isFinite(requestedTimeout) && requestedTimeout > 0
+      ? requestedTimeout
+      : AUTH_REQUEST_TIMEOUT_MS;
+  return trackSessionRequest(
+    withRequestTimeout(
+      async (signal) => {
+        const response = await fetchSupabaseAuthInternal(endpoint, {
+          ...fetchInit,
+          credentials: fetchInit.credentials || "omit",
+          ...(signal ? { signal } : {})
+        });
+        // Fetch may resolve at headers while the JSON body is still stalled.
+        // Drain a clone inside the deadline before letting auth consume the body.
+        if (typeof response?.clone === "function") await response.clone().text();
+        return response;
+      },
+      deadline,
+      fetchInit.signal
+    ).catch((error) => {
+      recordSyncFailure(error);
+      throw error;
+    })
+  );
 }

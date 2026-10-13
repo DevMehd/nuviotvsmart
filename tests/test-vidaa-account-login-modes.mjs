@@ -10,22 +10,37 @@ globalThis.localStorage = {
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 const account = await import("../js/ui/screens/account/authQrSignInScreen.js");
 const {
-  AuthQrSignInScreen, AuthManager, QrLoginService, QrCodeGenerator, Router,
-  ScreenUtils, ServerConfigurationStore, I18n, Platform, savedLibraryRepository
+  AuthQrSignInScreen,
+  AuthManager,
+  QrLoginService,
+  QrCodeGenerator,
+  Router,
+  ScreenUtils,
+  ServerConfigurationStore,
+  I18n,
+  Platform,
+  savedLibraryRepository
 } = account;
 let methods = AuthQrSignInScreen;
 const upstream = process.argv.includes("--upstream");
 if (upstream) {
   const factories = [
-    ["01-mount", "01"], ["02-bind-controls", "02"], ["03-to-friendly-email-error", "03"]
+    ["01-mount", "01"],
+    ["02-bind-controls", "02"],
+    ["03-to-friendly-email-error", "03"]
   ];
   methods = {};
   for (const [suffix, number] of factories) {
     const path = `js/ui/screens/account/authQrSignInScreenMethods-${suffix}.js`;
     const url = new URL(`../${path}`, import.meta.url);
-    const source = execFileSync("git", ["show", `cfec25654f0580028d9a78a41b037bcd48af2a29:${path}`], { encoding: "utf8" })
-      .replace(/from "(\.[^"]+)"/g, (_, relative) => `from "${new URL(relative, url).href}"`);
-    const factory = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+    const source = execFileSync(
+      "git",
+      ["show", `cfec25654f0580028d9a78a41b037bcd48af2a29:${path}`],
+      { encoding: "utf8" }
+    ).replace(/from "(\.[^"]+)"/g, (_, relative) => `from "${new URL(relative, url).href}"`);
+    const factory = await import(
+      `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
+    );
     Object.assign(methods, factory[`createAuthQrSignInScreenMethods${number}`]());
   }
 }
@@ -33,13 +48,21 @@ if (upstream) {
 let timerId = 0;
 const timeouts = new Map();
 const intervals = new Map();
-globalThis.setTimeout = (callback) => { const id = ++timerId; timeouts.set(id, callback); return id; };
+globalThis.setTimeout = (callback) => {
+  const id = ++timerId;
+  timeouts.set(id, callback);
+  return id;
+};
 globalThis.clearTimeout = (id) => timeouts.delete(id);
-globalThis.setInterval = (callback) => { const id = ++timerId; intervals.set(id, callback); return id; };
+globalThis.setInterval = (callback) => {
+  const id = ++timerId;
+  intervals.set(id, callback);
+  return id;
+};
 globalThis.clearInterval = (id) => intervals.delete(id);
 let signedIn = false;
 Object.defineProperty(AuthManager, "isAuthenticated", { configurable: true, get: () => signedIn });
-I18n.t = (key, values) => values ? `${key}:${JSON.stringify(values)}` : key;
+I18n.t = (key, values) => (values ? `${key}:${JSON.stringify(values)}` : key);
 const navigations = [];
 Router.stack = [];
 Router.navigate = (route, params) => navigations.push({ route, params });
@@ -52,15 +75,31 @@ ScreenUtils.setInitialFocus = (container, selector) => {
   container.nodes.forEach((node) => node.classList.remove("focused"));
   container.querySelector(selector)?.classList.add("focused");
 };
-ScreenUtils.show = (container) => { container.style.display = "block"; };
-ScreenUtils.hide = (container) => { container.style.display = "none"; };
+ScreenUtils.show = (container) => {
+  container.style.display = "block";
+};
+ScreenUtils.hide = (container) => {
+  container.style.display = "none";
+};
 const generatedCodes = [];
 QrCodeGenerator.generate = (_, content) => generatedCodes.push(content);
-const qrResult = (code) => ({ code, deviceNonce: `nonce-${code}`, loginUrl: `https://fixture.invalid/login/${code}`, verificationUri: "https://fixture.invalid/login", expiresAt: Date.now() + 300000 });
+const qrResult = (code) => ({
+  code,
+  deviceNonce: `nonce-${code}`,
+  loginUrl: `https://fixture.invalid/login/${code}`,
+  verificationUri: "https://fixture.invalid/login",
+  expiresAt: Date.now() + 300000
+});
 const starts = [];
 let configuration;
 ServerConfigurationStore.getActive = () => configuration;
-const config = (email, qr, extra = {}) => ({ backendUrl: "https://fixture.invalid", publishableKey: "fixture-public", capabilities: { emailPasswordAuth: email, tvLogin: qr }, isCustom: true, ...extra });
+const config = (email, qr, extra = {}) => ({
+  backendUrl: "https://fixture.invalid",
+  publishableKey: "fixture-public",
+  capabilities: { emailPasswordAuth: email, tvLogin: qr },
+  isCustom: true,
+  ...extra
+});
 
 class Element {
   constructor(tagName, attributes, container) {
@@ -72,30 +111,75 @@ class Element {
     this.listeners = new Map();
     this.innerText = "";
     const classes = new Set(this.attribute("class").split(/\s+/));
-    this.classList = { add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name) };
+    this.classList = {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
+      contains: (name) => classes.has(name)
+    };
   }
-  attribute(name) { return this.attributes.match(new RegExp(`${name}=["']([^"']*)["']`))?.[1] || ""; }
-  addEventListener(name, callback) { this.listeners.set(name, callback); }
-  click() { this.listeners.get("click")?.(); }
+  attribute(name) {
+    return this.attributes.match(new RegExp(`${name}=["']([^"']*)["']`))?.[1] || "";
+  }
+  addEventListener(name, callback) {
+    this.listeners.set(name, callback);
+  }
+  click() {
+    let stopped = false;
+    this.container.listeners.get("click")?.({
+      target: this,
+      preventDefault() {},
+      stopImmediatePropagation() {
+        stopped = true;
+      }
+    });
+    if (!stopped) this.listeners.get("click")?.();
+  }
+  closest() {
+    return this;
+  }
+  matches(selector) {
+    return selector.split(",").some((tag) => tag.trim().toUpperCase() === this.tagName);
+  }
   setAttribute() {}
-  querySelector(selector) { return selector === "canvas" ? {} : this.container.querySelector(selector); }
+  querySelector(selector) {
+    return selector === "canvas" ? {} : this.container.querySelector(selector);
+  }
 }
 globalThis.HTMLButtonElement = Element;
 function container() {
   return {
-    style: {}, nodes: [], markup: "",
+    style: {},
+    nodes: [],
+    markup: "",
+    listeners: new Map(),
+    addEventListener(name, callback) {
+      this.listeners.set(name, callback);
+    },
+    contains(node) {
+      return this.nodes.includes(node);
+    },
     set innerHTML(value) {
       this.markup = value;
-      this.nodes = [...value.matchAll(/<(button|input|div|canvas|p|form)\b([^>]*)>/g)].map(([, tag, attributes]) => new Element(tag, attributes, this));
+      this.nodes = [...value.matchAll(/<(button|input|div|canvas|p|form)\b([^>]*)>/g)].map(
+        ([, tag, attributes]) => new Element(tag, attributes, this)
+      );
     },
-    get innerHTML() { return this.markup; },
-    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    get innerHTML() {
+      return this.markup;
+    },
+    querySelector(selector) {
+      return this.querySelectorAll(selector)[0] || null;
+    },
     querySelectorAll(selector) {
       return this.nodes.filter((node) => {
         if (selector.startsWith("#")) return node.id === selector.slice(1);
         const action = selector.match(/^\[data-action=['"]([^'"]+)['"]\]$/);
         if (action) return node.dataset.action === action[1];
-        if (selector.startsWith(".")) return selector.slice(1).split(".").every((name) => node.classList.contains(name));
+        if (selector.startsWith("."))
+          return selector
+            .slice(1)
+            .split(".")
+            .every((name) => node.classList.contains(name));
         return false;
       });
     }
@@ -113,10 +197,15 @@ function screen(overrides = {}) {
 }
 function deferred() {
   let resolve, reject;
-  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return { promise, resolve, reject };
 }
-async function settle() { for (let index = 0; index < 20; index++) await Promise.resolve(); }
+async function settle() {
+  for (let index = 0; index < 20; index++) await Promise.resolve();
+}
 const tests = [];
 const test = (name, run) => tests.push({ name, run });
 
@@ -184,7 +273,10 @@ test("VIDAA local menu keeps both custom-server buttons and local/official contr
   const connectButtons = host.querySelectorAll("[data-action='connect-custom']");
   assert.equal(connectButtons.length, 2);
   for (const button of connectButtons) button.click();
-  assert.deepEqual(navigations.map((entry) => entry.params.initialMode), ["input", "input"]);
+  assert.deepEqual(
+    navigations.map((entry) => entry.params.initialMode),
+    ["input", "input"]
+  );
   assert.ok(host.markup.includes('data-action="use-official"'));
   assert.ok(!host.markup.includes('data-action="use-local"'));
   assert.equal(ui.useLocalMode, true);
@@ -213,7 +305,13 @@ test("shared backend keeps registration and hides server/QR controls", async () 
 });
 
 test("signed-in and busy QR/email requests preserve upstream switch blockers", async () => {
-  for (const flag of ["isLeaving", "isSignedIn", "isStartingQr", "isPolling", "isEmailSubmitting"]) {
+  for (const flag of [
+    "isLeaving",
+    "isSignedIn",
+    "isStartingQr",
+    "isPolling",
+    "isEmailSubmitting"
+  ]) {
     const ui = screen();
     await mount(ui);
     ui[flag] = true;
@@ -253,7 +351,7 @@ for (const rejectOld of [false, true]) {
     const old = deferred();
     const fresh = deferred();
     let calls = 0;
-    QrLoginService.start = () => ++calls === 1 ? old.promise : fresh.promise;
+    QrLoginService.start = () => (++calls === 1 ? old.promise : fresh.promise);
     const ui = screen();
     await mount(ui, config(false, true));
     ui.cleanup();
@@ -285,7 +383,10 @@ test("stale poll cannot exchange credentials or reset a new poll after QR remoun
     pollCodes.push(code);
     return pollCodes.length === 1 ? oldPoll.promise : newPoll.promise;
   };
-  QrLoginService.exchange = async (code) => { exchangeCodes.push(code); return true; };
+  QrLoginService.exchange = async (code) => {
+    exchangeCodes.push(code);
+    return true;
+  };
   let calls = 0;
   QrLoginService.start = async () => qrResult(++calls === 1 ? "OLD" : "NEW");
   const ui = screen();
@@ -320,7 +421,7 @@ test("stale connected statistics never replace a new mount's pending stats", asy
   const old = deferred();
   const fresh = deferred();
   let calls = 0;
-  savedLibraryRepository.getAll = () => ++calls === 1 ? old.promise : fresh.promise;
+  savedLibraryRepository.getAll = () => (++calls === 1 ? old.promise : fresh.promise);
   const ui = screen({ loadConnectedStats: methods.loadConnectedStats, updateConnectedStats() {} });
   await mount(ui);
   ui.cleanup();
@@ -336,17 +437,73 @@ test("stale connected statistics never replace a new mount's pending stats", asy
   ui.cleanup();
 });
 
+test("webOS key/click pairs cannot switch login mode twice or swallow consecutive OK actions", async () => {
+  globalThis.__NUVIO_PLATFORM__ = "webos";
+  Platform.current = null;
+  const ui = screen();
+  const host = await mount(ui);
+  const menu = host.querySelector("[data-action='server-menu']");
+  menu.classList.add("focused");
+  let prevented = 0;
+  await ui.onKeyDown({
+    keyCode: 13,
+    preventDefault() {
+      prevented++;
+    }
+  });
+  assert.equal(ui.isServerMenuOpen, true);
+  host.querySelector("[data-action='login-qr']").click();
+  assert.equal(ui.useEmailLogin, true, "The paired click after render must be consumed");
+  const qr = host.querySelector("[data-action='login-qr']");
+  host.nodes.forEach((node) => node.classList.remove("focused"));
+  qr.classList.add("focused");
+  await ui.onKeyDown({
+    keyCode: 13,
+    preventDefault() {
+      prevented++;
+    }
+  });
+  await settle();
+  assert.equal(ui.useQrLogin, true, "The next deliberate OK must still activate");
+  assert.equal(starts.length, 1);
+  assert.equal(prevented, 2);
+  ui.cleanup();
+});
+
+test("webOS deduplication preserves same-kind actions and never consumes text-input clicks", async () => {
+  globalThis.__NUVIO_PLATFORM__ = "webos";
+  Platform.current = null;
+  const ui = screen();
+  const host = await mount(ui);
+  assert.equal(ui.isActivationDuplicated("keydown"), false);
+  assert.equal(ui.isActivationDuplicated("keydown"), false);
+  const previous = ui.lastActivation;
+  host.querySelector("#auth-email-input").click();
+  assert.equal(ui.lastActivation, previous);
+  assert.equal(ui.isActivationDuplicated("click"), true);
+  assert.equal(ui.isActivationDuplicated("click"), false);
+  assert.equal(ui.isActivationDuplicated("click"), false);
+  ui.cleanup();
+  assert.equal(ui.lastActivation, null);
+});
+
 let failures = 0;
 for (const { name, run } of tests) {
   if (upstream && !name.startsWith("stale")) continue;
   signedIn = false;
+  globalThis.__NUVIO_PLATFORM__ = "vidaa";
+  Platform.current = null;
   starts.length = 0;
   generatedCodes.length = 0;
   navigations.length = 0;
   focusSelectors.length = 0;
   timeouts.clear();
   intervals.clear();
-  QrLoginService.start = async () => { const result = qrResult(`CODE${starts.length + 1}`); starts.push(result); return result; };
+  QrLoginService.start = async () => {
+    const result = qrResult(`CODE${starts.length + 1}`);
+    starts.push(result);
+    return result;
+  };
   try {
     await run();
     console.log(`PASS ${name}`);

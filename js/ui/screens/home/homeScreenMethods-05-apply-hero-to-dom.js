@@ -1,6 +1,7 @@
+import { ensureHeroMdbListRatings } from "./homeHeroMdbListLoad.js";
+import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import * as internals from "./homeScreenContext.js";
 import { restoreVidaaHomeCard } from "./vidaaHomeCardWindow.js";
-import { registerHomeDomNodes } from "./homeDomUpdate.js";
 
 export function createHomeScreenMethods05() {
   const {
@@ -113,6 +114,7 @@ export function createHomeScreenMethods05() {
           logoNode.setAttribute("decoding", "async");
           logoNode.setAttribute("fetchpriority", "high");
           brandNode.insertBefore(logoNode, brandNode.firstChild);
+          registerHomeDomNodes([logoNode]);
         }
         if (logoNode) {
           logoNode.heroLogoIdentity = heroIdentity;
@@ -140,7 +142,11 @@ export function createHomeScreenMethods05() {
           secondaryNode.innerHTML = renderModernHeroSecondary(display);
           secondaryNode.classList.toggle(
             "is-empty",
-            !display.secondaryHighlightText && !display.badges.length && !display.showImdbSecondary && !display.languageText
+            !display.secondaryHighlightText &&
+              !display.badges.length &&
+              !display.showImdbSecondary &&
+              !display.languageText &&
+              !display.mdbListMarkup
           );
         }
       } else {
@@ -162,21 +168,15 @@ export function createHomeScreenMethods05() {
           chipNode.classList.toggle("is-empty", !display.chips.length);
         }
       }
-      // Metadata replaced above belongs to the generated Home tree. Register it
-      // so incremental renders reconcile it instead of retaining it as runtime
-      // content alongside another copy of the rating.
-      registerHomeDomNodes(
-        Array.from(
-          heroNode.querySelectorAll(
-            ".home-modern-hero-meta-line, .home-modern-hero-secondary, .home-hero-meta-primary, .home-hero-meta-secondary, .home-hero-chip-row"
-          )
-        )
-      );
-
       const descriptionNode = heroNode.querySelector(".home-hero-description");
       if (descriptionNode) {
         descriptionNode.textContent = display.description || " ";
         descriptionNode.classList.toggle("is-empty", !display.description);
+      }
+      const mdbRow = heroNode.querySelector(".home-hero-mdb-ratings");
+      if (mdbRow) {
+        mdbRow.innerHTML = display.mdbListMarkup || "";
+        mdbRow.classList.toggle("is-empty", !display.mdbListMarkup);
       }
       this.scheduleHomeTruncationUpdate({ scope: heroNode });
       this.syncCollectionHeroMedia(hero);
@@ -185,6 +185,16 @@ export function createHomeScreenMethods05() {
       if (indicators) {
         indicators.innerHTML = buildHeroIndicators(this.heroCandidates, hero);
       }
+      // These nodes were replaced outside the incremental renderer. Register
+      // their new children so the next refresh replaces them instead of appending.
+      registerHomeDomNodes(
+        Array.from(
+          heroNode.querySelectorAll(
+            ".home-hero-title-text, .home-modern-hero-meta-line, .home-modern-hero-secondary, .home-hero-meta-primary, .home-hero-meta-secondary, .home-hero-chip-row, .home-hero-description, .home-hero-mdb-ratings, .home-hero-indicators"
+          )
+        )
+      );
+      void ensureHeroMdbListRatings.call(this);
     },
     setSidebarExpanded(expanded) {
       const nextExpanded = Boolean(expanded);

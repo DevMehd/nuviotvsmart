@@ -133,7 +133,7 @@ beforeCleanup.forEach((record) => assert.equal(record.image.src, ""));
 const listeners = new Map();
 const live = {
   dataset: {},
-  classList: { contains: () => false },
+  classList: { contains: () => false, add() {}, remove() {} },
   src: "visible-poster",
   addEventListener(type, callback) {
     const set = listeners.get(type) || new Set();
@@ -154,7 +154,10 @@ for (let step = 0; step < 100; step++) {
   assert.equal(listeners.get("error").size, 1);
 }
 [...listeners.get("error")][0]();
+await Promise.resolve(); // The observer lets inline fallback handlers run first.
 assert.equal(listeners.get("load").size, 0);
+live.src = live.dataset.src; // Hydration retries the retired source before observation.
+delete live.dataset.src;
 observeVidaaPosterReady(owner, live);
 releaseVidaaHomeImage(live);
 assert.equal(live.dataset.src, "visible-poster");

@@ -397,6 +397,53 @@ test("webOS logo service readiness never delays provider search and still refres
   }
 });
 
+test("refresh supersedes in-flight source chunks even without AbortController", async () => {
+  const originalAbort = globalThis.AbortController;
+  globalThis.AbortController = undefined;
+  try {
+    const old = providerSearch();
+    const ui = screen({ startFromBeginning: true });
+    const oldLoad = ui.loadStreams();
+    await settle();
+    const fresh = providerSearch();
+    const newLoad = ui.loadStreams({ forceRefresh: true });
+    await settle();
+    assert.equal(fresh.calls[0].options.forceRefresh, true);
+    fresh.finish();
+    await newLoad;
+    const expectedStreams = ui.streams.slice();
+    old.calls[0].options.onChunk({
+      addonName: "obsolete",
+      streams: [{ url: "https://fixture.invalid/obsolete.mp4" }]
+    });
+    old.resolve({
+      status: "success",
+      data: [{ addonName: "obsolete", streams: [{ url: "https://fixture.invalid/obsolete.mp4" }] }]
+    });
+    await oldLoad;
+    assert.deepEqual(ui.streams, expectedStreams);
+    assert.ok(ui.sourceChips.every((chip) => chip.name !== "obsolete"));
+  } finally {
+    globalThis.AbortController = originalAbort;
+  }
+});
+
+test("progressive source results preserve a filter the user selected while loading", async () => {
+  const providers = providerSearch();
+  const ui = screen({ startFromBeginning: true });
+  const loading = ui.loadStreams();
+  await settle();
+  ui.streamUserMovedFocus = true;
+  ui.focusState = { zone: "filter", index: 2 };
+  providers.calls[0].options.onChunk(groups[0]);
+  await settle();
+  assert.deepEqual(ui.focusState, { zone: "filter", index: 2 });
+  providers.finish();
+  await loading;
+  assert.deepEqual(ui.focusState, { zone: "filter", index: 2 });
+  assert.equal(ui.streams.length, 1);
+});
+
 let failures = 0;
 for (const [index, { name, run }] of tests.entries()) {
   profileId = String(index + 1);

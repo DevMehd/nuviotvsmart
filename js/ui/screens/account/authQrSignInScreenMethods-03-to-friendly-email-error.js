@@ -206,7 +206,9 @@ export function createAuthQrSignInScreenMethods03() {
         const dialog = this.container?.querySelector(".auth-signout-confirm-dialog");
         if (ScreenUtils.handleDpadNavigation(event, dialog)) return;
         if (keyCode !== 13) return;
-        const action = dialog?.querySelector(".focusable.focused")?.dataset?.action;
+        const focusedDialogAction = dialog?.querySelector(".focusable.focused")?.dataset?.action;
+        if (focusedDialogAction && this.suppressNativeActivation(event)) return;
+        const action = focusedDialogAction;
         if (action === "cancel-signout") {
           this.dismissSignOutConfirmation();
         } else if (action === "confirm-signout") {
@@ -230,6 +232,7 @@ export function createAuthQrSignInScreenMethods03() {
 
       const current = navigationContainer?.querySelector(".focusable.focused");
       const action = current?.dataset?.action || "";
+      if (action && action !== "email-input" && action !== "password-input" && this.suppressNativeActivation(event)) return;
       if (action === "server-menu") {
         this.toggleServerMenu();
       } else if (action === "use-official" || action === "connect-custom") {
@@ -285,6 +288,7 @@ export function createAuthQrSignInScreenMethods03() {
       this.isLeaving = true;
       this.showSignOutConfirmation = false;
       this.stopIntervals();
+      this.lastActivation = null;
       this.qrResult = null;
       this.qrStatusText = "";
       if (this.container) ScreenUtils.hide(this.container);

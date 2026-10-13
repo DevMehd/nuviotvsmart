@@ -50,7 +50,10 @@ export function createPlayerScreenMethods61() {
       if (rememberSelection) {
         this.startupAudioFallbackApplied = false;
       }
-      if (selectedEntry.supported === false || isUnsupportedWebOsAudioTrack(selectedEntry.track)) {
+      if (
+        !selectedEntry.canTryAudioConversion &&
+        (selectedEntry.supported === false || isUnsupportedWebOsAudioTrack(selectedEntry.track))
+      ) {
         this.invalidateTrackDialogCaches();
         this.renderAudioDialog();
         return;
@@ -147,9 +150,18 @@ export function createPlayerScreenMethods61() {
             trackPreference: this.getAudioTrackPreference(selectedEntry)
           };
           applied =
-            typeof PlayerController.setWebOsEmbeddedAudioTrack === "function"
-              ? PlayerController.setWebOsEmbeddedAudioTrack(targetTrackIndex, selectedEntry.embeddedAudioTrackIndex)
-              : false;
+            Environment.isWebOS() && (selectedEntry.canTryAudioConversion || PlayerController.webOsDtsAudioState)
+              ? PlayerController.setWebOsAudioTrackWithDtsConversion(
+                  embeddedTrack || selectedEntry.track,
+                  targetTrackIndex,
+                  selectedEntry.embeddedAudioTrackIndex,
+                  "embedded",
+                  Boolean(selectedEntry.canTryAudioConversion),
+                  Boolean(rememberSelection)
+                )
+              : typeof PlayerController.setWebOsEmbeddedAudioTrack === "function"
+                ? PlayerController.setWebOsEmbeddedAudioTrack(targetTrackIndex, selectedEntry.embeddedAudioTrackIndex)
+                : false;
         }
         if (applied) {
           if (Environment.isWebOS()) {
@@ -213,7 +225,18 @@ export function createPlayerScreenMethods61() {
       }
       beginVidaaTrackSwitch(this);
       const controllerResult =
-        typeof PlayerController.setNativeAudioTrack === "function" ? PlayerController.setNativeAudioTrack(nativeTrackIndex) : false;
+        Environment.isWebOS() && (selectedEntry.canTryAudioConversion || PlayerController.webOsDtsAudioState)
+          ? PlayerController.setWebOsAudioTrackWithDtsConversion(
+              selectedEntry.track,
+              nativeTrackIndex,
+              nativeTrackIndex,
+              "native",
+              Boolean(selectedEntry.canTryAudioConversion),
+              Boolean(rememberSelection)
+            )
+          : typeof PlayerController.setNativeAudioTrack === "function"
+            ? PlayerController.setNativeAudioTrack(nativeTrackIndex)
+            : false;
       const appliedByController = await Promise.resolve(controllerResult).catch(() => false);
       if (!isCurrentSelection()) return false;
       if (appliedByController || (resolveVidaaIdentity && selectionMatches())) {
@@ -291,7 +314,7 @@ export function createPlayerScreenMethods61() {
       }
 
       const entries = this.getAudioEntries();
-      const hasSupportedEntries = entries.some((entry) => entry?.supported !== false);
+      const hasSupportedEntries = entries.some((entry) => entry?.supported !== false || entry?.canTryAudioConversion);
       const supportNotice = this.getAudioDialogSupportNotice();
       const audioControls = [
         {
@@ -351,14 +374,28 @@ export function createPlayerScreenMethods61() {
                 .map((entry, index) => {
                   const selected = entry.selected;
                   const focused = this.audioFocusedColumn === "tracks" && index === this.audioDialogIndex;
-                  const disabled = entry.supported === false;
+                  const disabled = entry.supported === false && !entry.canTryAudioConversion;
                   const pending = this.isAudioEntryPending(entry);
-                  const unsupportedText =
-                    entry.unsupportedReason === "tizen-dash-audio"
+                  const conversionFailed =
+                    entry.canTryAudioConversion &&
+                    PlayerController.hasWebOsDtsAudioConversionFailed?.(
+                      entry.track,
+                      Number.isFinite(Number(entry.track?.nativeTrackIndex))
+                        ? Number(entry.track.nativeTrackIndex)
+                        : (entry.embeddedAudioTrackIndex ?? entry.audioTrackIndex)
+                    );
+                  const unsupportedText = entry.canTryAudioConversion
+                    ? t(
+                        "player_audio_conversion_warning",
+                        {},
+                        "Audio may not work on this TV because automatic conversion is unavailable for this track."
+                      )
+                    : entry.unsupportedReason === "tizen-dash-audio"
                       ? t("player_audio_tizen_dash_unsupported", {}, "Changing DASH audio tracks is not supported on this TV.")
                       : t("player.audio.unsupportedCodec", {}, "Codec not supported by this device");
                   const label = disabled ? `${entry.label || ""} · ${t("player.audio.unsupported", {}, "Unsupported")}` : entry.label || "";
-                  const secondary = disabled ? [entry.secondary, unsupportedText].filter(Boolean).join(" · ") : entry.secondary || "";
+                  const secondary =
+                    disabled || conversionFailed ? [entry.secondary, unsupportedText].filter(Boolean).join(" · ") : entry.secondary || "";
                   return `
                   <div class="player-dialog-item focusable${selected ? " selected" : ""}${focused ? " focused" : ""}${disabled ? " disabled" : ""}${pending ? " pending" : ""}" data-audio-column="tracks" data-audio-index="${index}" aria-disabled="${disabled ? "true" : "false"}" aria-busy="${pending ? "true" : "false"}">
                     <div class="player-dialog-item-main">${escapeHtml(label)}</div>

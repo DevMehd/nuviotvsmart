@@ -119,6 +119,7 @@ function surface() {
       return new Promise(() => {});
     },
     buildSyncSensitiveHomeSignature: () => "signature",
+    pickInitialHero: () => null,
     loadData: () => new Promise(() => {}),
     getInitialFocusSelector: () => ".focusable"
   };

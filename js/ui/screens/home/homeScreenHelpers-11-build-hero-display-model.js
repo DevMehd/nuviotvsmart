@@ -1,3 +1,4 @@
+import { renderHeroMdbListRatings } from "./homeMdbListRatings.js";
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
 
@@ -212,7 +213,8 @@ export function buildHeroDisplayModel(hero, layoutMode) {
   }
   const year = extractYear(hero);
   const localizationPending = isHomeHeroLocalizationPending(hero, layoutMode);
-  const imdb = hideHomeHeroRatings() ? null : resolveImdbRating(hero);
+  const mdbListMarkup = renderHeroMdbListRatings(hero, layoutMode);
+  const imdb = mdbListMarkup || hideHomeHeroRatings() ? null : resolveImdbRating(hero);
   const genres =
     !localizationPending && Array.isArray(hero?.genres) ? hero.genres.filter(Boolean).slice(0, 3).map(localizedGenreLabel) : [];
   const typeLabel = formatContentTypeLabel(hero?.type || hero?.apiType || "movie", "movie");
@@ -247,6 +249,7 @@ export function buildHeroDisplayModel(hero, layoutMode) {
   }
 
   return {
+    mdbListMarkup,
     title: localizationPending ? "" : hero?.name || "Untitled",
     description: localizationPending ? "" : firstNonEmpty(hero?.description) || " ",
     logo: localizationPending ? "" : firstNonEmpty(hero?.logo),
@@ -292,20 +295,39 @@ export function buildModernHeroPresentation(hero) {
   const contentTypeText = formatContentTypeLabel(normalized.type || normalized.apiType || "movie", "movie");
   const runtimeText = formatRuntimeText(normalized);
   const yearText = extractReleaseDateText(normalized);
-  const imdbText = hideHomeHeroRatings() ? "" : resolveImdbRating(normalized);
-  const statusBadge = firstNonEmpty(normalized.status).toUpperCase();
+  const mdbListMarkup = renderHeroMdbListRatings(normalized, "modern");
+  const imdbText = mdbListMarkup || hideHomeHeroRatings() ? "" : resolveImdbRating(normalized);
+  const rawStatus = firstNonEmpty(normalized.status);
+  const statusKeys = {
+    ended: "ended",
+    continuing: "continuing",
+    "returning series": "continuing",
+    current: "current",
+    cancelled: "cancelled",
+    canceled: "cancelled",
+    released: "released",
+    planned: "planned",
+    rumored: "rumored",
+    "in production": "in_production",
+    "post production": "post_production"
+  };
+  const statusKey = statusKeys[rawStatus.toLowerCase()];
+  const statusBadge = (
+    statusKey ? I18n.t(`${isSeries ? "series" : "movie"}_status_${statusKey}`, {}, { fallback: rawStatus }) : rawStatus
+  ).toUpperCase();
   const ageRatingBadge = firstNonEmpty(normalized.ageRating);
   const languageText = firstNonEmpty(normalized.language).toUpperCase();
   const secondaryHighlightText = isContinueWatchingHero ? firstNonEmpty(normalized.progressStatus).toUpperCase() : "";
-  const leadingMeta = isContinueWatchingHero
-    ? [[normalized.episodeCode, normalized.episodeTitle, genres[0]].filter(Boolean).join(" · ") || contentTypeText].filter(Boolean)
-    : [contentTypeText, genres[0]].filter(Boolean);
+  const episodeLabel =
+    isSeries && isContinueWatchingHero ? [normalized.episodeCode, normalized.episodeTitle].filter(Boolean).join(" · ") : "";
+  const leadingMeta = [episodeLabel || contentTypeText, genres[0]].filter(Boolean);
   const trailingMeta = isContinueWatchingHero ? [yearText].filter(Boolean) : [runtimeText, yearText].filter(Boolean);
   const badges = isContinueWatchingHero ? [] : [ageRatingBadge, statusBadge].filter(Boolean);
   const showImdbPrimary = Boolean(imdbText) && !isSeries && !badges.length && !secondaryHighlightText;
   const showImdbSecondary = Boolean(imdbText) && !showImdbPrimary;
 
   return {
+    mdbListMarkup,
     title: localizationPending ? "" : normalized.name || "Untitled",
     logo: localizationPending ? "" : firstNonEmpty(normalized.logo),
     description: localizationPending
@@ -332,7 +354,7 @@ export function renderModernHeroMetaGroup(tokens = []) {
 }
 
 export function renderModernHeroPrimary(display) {
-  const left = renderModernHeroMetaGroup(display.leadingMeta);
+  const left = escapeHtml(display.leadingMeta.filter(Boolean).join(" • "));
   const rightTokens = display.trailingMeta.filter(Boolean).map((token) => `<span>${escapeHtml(token)}</span>`);
   if (display.showImdbPrimary) {
     rightTokens.push(`
@@ -369,6 +391,7 @@ export function renderModernHeroSecondary(display) {
   if (display.languageText) {
     parts.push(`<span class="home-modern-hero-secondary-detail">${escapeHtml(display.languageText)}</span>`);
   }
+  if (display.mdbListMarkup) parts.push(display.mdbListMarkup);
   return parts.join('<span class="home-hero-dot">•</span>');
 }
 

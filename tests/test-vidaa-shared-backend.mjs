@@ -135,6 +135,9 @@ if (!live) {
       release = resolve;
     });
   const pending = auth.signUpWithEmail("new@example.com", "valid-password");
+  // The bounded auth transport schedules dispatch in a microtask. Start the
+  // fixture request before changing the session and releasing its late reply.
+  await Promise.resolve();
   auth.sessionGeneration++;
   release(new Response(JSON.stringify(response)));
   await assert.rejects(() => pending, /cancelled/);

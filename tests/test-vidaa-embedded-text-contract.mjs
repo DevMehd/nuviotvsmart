@@ -60,6 +60,7 @@ function demux(change = () => {}) {
     clearTimeout,
     module: { exports: {} },
     require(name) {
+      if (name === "url") return { URL };
       if (name === "http" || name === "https") return transport;
       if (name === "net") return {};
       if (name === "zlib")

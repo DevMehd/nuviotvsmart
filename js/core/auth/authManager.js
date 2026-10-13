@@ -6,7 +6,9 @@ import { PluginCodeStore } from "../../data/local/pluginCodeStore.js";
 import { ServerConfigurationStore } from "../../data/local/serverConfigurationStore.js";
 import { accountAuthorizationHeaders } from "../server/serverConfiguration.js";
 import {
+  cancelPendingSessionRequests,
   notifySessionTeardownHandlers,
+  trackSessionRequest,
   waitForPendingSessionRequests
 } from "./sessionLifecycle.js";
 
@@ -347,6 +349,7 @@ class AuthManagerClass {
         // Abort is best effort on older TV runtimes.
       }
     }
+    cancelPendingSessionRequests();
 
     let sessionStorageCleared = true;
     try {
@@ -446,9 +449,9 @@ class AuthManagerClass {
       return true;
     }
 
+    const generation = this.sessionGeneration;
     this.refreshPromise = (async () => {
       try {
-        const generation = this.sessionGeneration;
         const key = publishableKey();
         const res = await fetchSupabaseAuth("/auth/v1/token?grant_type=refresh_token", {
           method: "POST",
@@ -459,6 +462,7 @@ class AuthManagerClass {
           body: JSON.stringify({ refresh_token: refreshToken }),
           signal: this.getSessionSignal()
         });
+        if (generation !== this.sessionGeneration) return false;
         if (!res.ok) {
           const responseBody = await res.text();
           if (isInvalidRefreshResponse(res.status, responseBody)) {
@@ -486,6 +490,9 @@ class AuthManagerClass {
         this.lastRefreshFailureKind = null;
         return true;
       } catch (error) {
+        // Teardown cancels requests even on TVs without native abort support.
+        // A cancelled refresh must not report the previous token as usable.
+        if (generation !== this.sessionGeneration) return false;
         console.warn("Session refresh failed", error);
         if (accessToken) {
           this.lastRefreshFailureKind = "transient";
@@ -679,7 +686,13 @@ class AuthManagerClass {
   // EFFECTIVE USER ID (PORTING CACHE LOGIC)
   // ------------------------------------
 
-  async getEffectiveUserId() {
+  getEffectiveUserId() {
+    // Sync services await the whole owner lookup during teardown. Tracking
+    // only its individual fetches would leave a cycle if refresh signs out.
+    return trackSessionRequest(this._resolveEffectiveUserId());
+  }
+
+  async _resolveEffectiveUserId() {
     if (this.cachedEffectiveUserId) return this.cachedEffectiveUserId;
     const generation = this.sessionGeneration;
 

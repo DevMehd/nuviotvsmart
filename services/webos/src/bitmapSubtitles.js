@@ -1,3 +1,4 @@
+var URL = require("url").URL;
 var http = require("http");
 var https = require("https");
 var net = require("net");
@@ -2058,6 +2059,13 @@ function clearBitmapSubtitleCaches() {
 }
 
 module.exports = {
+  matroska: {
+    parseHeader: parseHeader,
+    parseCues: parseCues,
+    readElement: readElement,
+    requestRange: requestRange,
+    cancelRequestContext: cancelRequestContext
+  },
   getBitmapSubtitleWindow: getBitmapSubtitleWindow,
   getEmbeddedTextSubtitleWindow: getEmbeddedTextSubtitleWindow,
   prepareBitmapSubtitleSource: prepareBitmapSubtitleSource,

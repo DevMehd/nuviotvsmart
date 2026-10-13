@@ -300,6 +300,7 @@ assert.equal(Platform.isBackEvent({ keyCode: 8, target: { tagName: "DIV" } }), t
   const checkpoint = new Error("stop before media probing");
   const playback = {
     video: {},
+    stopWebOsDtsAudioTranscode: PlayerController.stopWebOsDtsAudioTranscode,
     stopProgressSaving() {},
     cancelProgressSyncAfterSeek() {},
     flushCurrentProgress() {

@@ -377,7 +377,16 @@ export const SharedPluginScreen = {
         return;
       }
       if (AuthManager.isAuthenticated) {
-        if (!(await LibrarySyncService.push())) {
+        const saved = await LibrarySyncService.push();
+        // Invalid credentials can sign out while the cloud save is pending.
+        // Never restore the old account's snapshot into a new session/profile.
+        if (
+          !this.mounted ||
+          profileId !== ProfileManager.getActiveProfileId() ||
+          generation !== AuthManager.sessionGeneration
+        )
+          return;
+        if (!saved) {
           await addonRepository.setAddonOrder(previousUrls);
           addonRepository.setAddonEnabledStates(
             Object.entries(previousEnabled).map(([url, enabled]) => ({ url, enabled })),

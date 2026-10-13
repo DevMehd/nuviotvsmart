@@ -38,6 +38,15 @@ class Element extends EventTarget {
   get firstChild() {
     return this.children[0] || null;
   }
+  get childNodes() {
+    return this.children;
+  }
+  cloneNode() {
+    const clone = new this.constructor();
+    clone.attributes = new Map(this.attributes);
+    clone.dataset = { ...this.dataset };
+    return clone;
+  }
   getAttribute(name) {
     return this.attributes.get(name) ?? null;
   }

@@ -9,6 +9,7 @@ export function createHomeScreenMethods30() {
 
   return {
     cleanup() {
+      this.heroMdbListRequest = null;
       const preserveRenderedTvHome = Boolean(
         getTvRuntimePerformanceProfile().isTvRuntime &&
         this.hasLoadedOnce &&

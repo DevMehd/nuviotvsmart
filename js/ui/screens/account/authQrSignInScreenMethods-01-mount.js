@@ -41,6 +41,22 @@ export function createAuthQrSignInScreenMethods01() {
       this.isServerMenuOpen = false;
       this.focusAfterRender = null;
       this.showSignOutConfirmation = false;
+      this.lastActivation = null;
+      if (!this.container.__nuvioActivationDedupe) {
+        this.container.__nuvioActivationDedupe = true;
+        this.container.addEventListener(
+          "click",
+          (event) => {
+            const target = event.target?.closest?.("[data-action], .focusable, button");
+            if (!target || !this.container?.contains(target) || target.matches("input, textarea")) return;
+            if (this.isActivationDuplicated("click")) {
+              event.stopImmediatePropagation();
+              event.preventDefault();
+            }
+          },
+          true
+        );
+      }
       this.isSignedIn = AuthManager.isAuthenticated;
       this.connectedStats = null;
       this.isConnectedStatsLoading = this.isSignedIn;
@@ -85,7 +101,10 @@ export function createAuthQrSignInScreenMethods01() {
           : [];
       const menuItems = [
         ...loginModeItem,
-        { action: "connect-custom", label: I18n.t(configuration?.isCustom ? "server_options_change_custom" : "server_options_connect_custom") },
+        {
+          action: "connect-custom",
+          label: I18n.t(configuration?.isCustom ? "server_options_change_custom" : "server_options_connect_custom")
+        },
         ...(!configuration?.isLocal ? [{ action: "use-local", label: I18n.t("server_options_use_local") }] : []),
         ...(configuration?.isCustom || configuration?.isLocal
           ? [{ action: "use-official", label: I18n.t("server_options_use_official") }]

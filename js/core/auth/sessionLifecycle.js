@@ -1,5 +1,5 @@
 const teardownHandlers = new Set();
-const pendingSessionRequests = new Set();
+const pendingSessionRequests = new Map();
 
 export function registerSessionTeardownHandler(handler) {
   if (typeof handler !== "function") {
@@ -26,8 +26,17 @@ export async function notifySessionTeardownHandlers(options = {}) {
 }
 
 export function trackSessionRequest(request) {
-  const promise = Promise.resolve(request);
-  pendingSessionRequests.add(promise);
+  let cancel;
+  const promise = new Promise((resolve, reject) => {
+    cancel = () => {
+      const error = new Error("Account session request cancelled");
+      error.name = "AbortError";
+      error.code = "SESSION_CANCELLED";
+      reject(error);
+    };
+    Promise.resolve(request).then(resolve, reject);
+  });
+  pendingSessionRequests.set(promise, cancel);
   promise.then(
     () => pendingSessionRequests.delete(promise),
     () => pendingSessionRequests.delete(promise)
@@ -35,12 +44,19 @@ export function trackSessionRequest(request) {
   return promise;
 }
 
+export function cancelPendingSessionRequests() {
+  // A rejected token can start sign-out from inside a tracked request. Reject
+  // its callers before draining sync work, otherwise each waits on the other.
+  // Logical cancellation also works on TVs without AbortController.
+  pendingSessionRequests.forEach((cancel) => cancel());
+}
+
 export async function waitForPendingSessionRequests() {
   // A sync operation can issue its next page/request from the continuation of
   // the previous one. Drain until a full pass stays empty so a server switch
   // cannot leave a follow-up request from the old configuration behind.
   while (pendingSessionRequests.size) {
-    const pending = [...pendingSessionRequests];
+    const pending = [...pendingSessionRequests.keys()];
     await Promise.allSettled(pending);
     await Promise.resolve();
   }

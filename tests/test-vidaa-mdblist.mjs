@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { MDBLIST_RATING_ORDER } from "../js/data/local/mdbListSettingsStore.js";
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
@@ -265,7 +266,10 @@ try {
         },
         async render() {}
       };
-      renderMdblistIntegrationDetail.call(owner, { mdbList: settings });
+      owner.registerAction = () => "";
+      renderMdblistIntegrationDetail.call(owner, {
+        mdbList: { ...settings, ratingOrder: MDBLIST_RATING_ORDER }
+      });
       owner.actionMap.get("integration:mdblist:key")();
       globalThis.fetch = async () => response({ error: "quota" }, 429);
       assert.equal(await owner.textDialog.onSubmit("new-key"), false);

@@ -1,3 +1,4 @@
+import { MdbListSettingsStore } from "../../../data/local/mdbListSettingsStore.js";
 import * as internals from "./homeScreenContext.js";
 import { homeMetadataSettingsSignature, isHomeTmdbEnabled } from "./homeMetadataSettings.js";
 import { resolveHomeTmdbLookupId } from "./homeMetadataIds.js";
@@ -187,7 +188,10 @@ export function createHomeScreenMethods11() {
         // Each provider publishes independently. Keep successful localized data
         // when an addon fails or finishes later, and accept slow TV responses.
         await Promise.allSettled([
-          mdbListRepository.getImdbRatingForItem(hero.imdbId || itemId, itemType).then(async (rating) => {
+          (MdbListSettingsStore.get().showOnHero
+            ? mdbListRepository.getRatingsForMeta(hero, itemId, itemType).then((result) => result?.ratings?.imdb ?? null)
+            : mdbListRepository.getImdbRatingForItem(hero.imdbId || itemId, itemType)
+          ).then(async (rating) => {
             mdbImdbRating = rating;
             if (rating != null) await publishLatestResults();
           }),
