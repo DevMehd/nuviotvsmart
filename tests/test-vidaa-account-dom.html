@@ -53,6 +53,7 @@
       const json = (data) =>
         new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
       globalThis.fetch = async (rawUrl, init = {}) => {
+        if (init.signal?.aborted) throw init.signal.reason || new Error("Request aborted");
         const url = new URL(rawUrl, location.href);
         if (url.origin === location.origin) return originalFetch(rawUrl, init);
         const body = init.body ? JSON.parse(init.body) : {};
@@ -137,6 +138,7 @@
       };
       const { AuthQrSignInScreen } = await import("../js/ui/screens/account/authQrSignInScreen.js");
       const { AuthManager } = await import("../js/core/auth/authManager.js");
+      const { AuthState } = await import("../js/core/auth/authState.js");
       const { Router } = await import("../js/ui/navigation/routerState.js");
       const { I18n } = await import("../js/i18n/index.js");
       const { PluginScreen } = await import("../js/ui/screens/plugin/pluginScreen.js");
@@ -236,9 +238,35 @@
         "The account collection folder loads its real addon catalog"
       );
       FolderDetailScreen.cleanup();
+
+      approved = false;
+      const completedSequence = sequence;
+      const unsubscribeLogout = AuthManager.subscribe((state) => {
+        if (state !== AuthState.SIGNED_OUT) return;
+        route = "authQrSignIn";
+        void AuthQrSignInScreen.mount();
+      });
+      try {
+        await AuthManager.signOut();
+        await waitFor(() => AuthQrSignInScreen.qrResult);
+        assert(sequence > completedSequence, "Logout automatically starts a new QR session");
+        assert(
+          document.querySelector("#qr-container canvas")?.width === 320,
+          "Logout renders a usable QR without a reload or manual refresh"
+        );
+        assert(!AuthManager.getSessionSignal()?.aborted, "New QR uses the fresh auth signal");
+        assert(
+          localStorage.getItem("profiles") === null,
+          "Old profiles are cleared before the QR screen opens"
+        );
+      } finally {
+        unsubscribeLogout();
+        AuthQrSignInScreen.cleanup();
+        AuthManager.clearAnonymousSession();
+      }
       result.dataset.status = "pass";
       result.textContent =
-        "PASS: original Account and Addons DOM, QR expiry/retry/approval, TV focus/Back, selected-profile phone updates, Home collection routing and folder content (simulated backend).";
+        "PASS: original Account and Addons DOM, QR expiry/retry/approval/logout, TV focus/Back, selected-profile phone updates, Home collection routing and folder content (simulated backend).";
     }
   } catch (error) {
     result.dataset.status = "fail";

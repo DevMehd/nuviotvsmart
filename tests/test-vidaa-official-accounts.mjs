@@ -42,6 +42,7 @@ let missingDeviceRPC = false;
 let revoked = false;
 const accountToken = jwt("existing-nuvio-account");
 globalThis.fetch = async (url, init = {}) => {
+  if (init.signal?.aborted) throw init.signal.reason || new Error("Request aborted");
   const target = new URL(url);
   assert.equal(target.origin, "https://api.nuvio.tv", "Account requests use the official backend");
   const body = init.body ? JSON.parse(init.body) : {};
@@ -239,6 +240,46 @@ assert.notEqual(retry.code, second.code);
 assert.notEqual(retry.deviceNonce, second.deviceNonce);
 missingDeviceRPC = true;
 assert.equal((await QrLoginService.start()).legacy, true);
+
+// App routing mounts the next QR screen synchronously on the signed-out event.
+missingDeviceRPC = false;
+status = "pending";
+SessionStore.accessToken = accountToken;
+SessionStore.refreshToken = "account-refresh-1";
+SessionStore.isAnonymousSession = false;
+values.set("profiles", '[{"id":"1","name":"Previous account"}]');
+AuthManager.setState(AuthState.AUTHENTICATED);
+const previousSignal = AuthManager.getSessionSignal();
+let signedOutSnapshot;
+let nextQr;
+const unsubscribeLogout = AuthManager.subscribe((state) => {
+  if (state !== AuthState.SIGNED_OUT) return;
+  signedOutSnapshot = {
+    aborted: AuthManager.getSessionSignal()?.aborted,
+    previousProfiles: values.get("profiles")
+  };
+  nextQr = QrLoginService.start();
+});
+try {
+  await AuthManager.signOut();
+  const regenerated = await nextQr;
+  assert.equal(signedOutSnapshot.aborted, false, "Logout routing receives a fresh auth signal");
+  assert.equal(
+    signedOutSnapshot.previousProfiles,
+    undefined,
+    "Old account data is cleared before QR mount"
+  );
+  assert.ok(previousSignal.aborted, "Previous account requests remain cancelled");
+  assert.notEqual(AuthManager.getSessionSignal(), previousSignal);
+  assert.ok(regenerated?.loginUrl, "Logout immediately generates a usable QR without a reload");
+  assert.equal(SessionStore.isAnonymousSession, true);
+  assert.equal(
+    (await QrLoginService.poll(regenerated.code, regenerated.deviceNonce)).status,
+    "pending"
+  );
+} finally {
+  unsubscribeLogout();
+}
 
 revoked = true;
 SessionStore.accessToken = jwt("existing-nuvio-account", "https://api.nuvio.tv", true);

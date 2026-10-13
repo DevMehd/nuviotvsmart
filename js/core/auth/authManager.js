@@ -344,12 +344,11 @@ class AuthManagerClass {
     });
     const sessionRequestsDrained = await waitForPendingSessionRequests();
 
-    // Notify the UI only after teardown listeners have captured and drained
-    // their in-flight work. The app-level signed-out listener also calls
-    // StartupSyncService.stop(), so changing state earlier would discard the
-    // promises we need to await here.
+    // Stop authenticated work after the old requests have drained. Defer UI
+    // listeners until local cleanup finishes and a fresh auth signal is ready:
+    // the signed-out listener immediately mounts and starts the next QR login.
     if (!wasSignedOut && notifyState) {
-      this.setState(AuthState.SIGNED_OUT);
+      this.state = AuthState.SIGNED_OUT;
     }
 
     let accountDataCleared = true;
@@ -376,6 +375,10 @@ class AuthManagerClass {
     // before the switch remain cancelled, while the next auth/QR attempt can
     // use a live signal without waiting for a page reload.
     this.sessionAbortController = createAbortController();
+
+    if (!wasSignedOut && notifyState) {
+      this.setState(AuthState.SIGNED_OUT);
+    }
 
     if (!verify) {
       return true;
