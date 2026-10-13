@@ -23,7 +23,6 @@ docs/vidaa-*.md
 docs/official-nuvio-accounts.md
 docs/upstream-1.2.5-integration.md
 docs/fixtures/
-assets/avatars/
 scripts/release-build-poller.mjs
 scripts/vidaa-*-probe.*
 scripts/vidaa-plugin-context-runtime.js
