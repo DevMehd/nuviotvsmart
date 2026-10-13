@@ -1229,3 +1229,119 @@ html.vidaa-tv .stream-route-stream-badge.technical {
     transition: none !important;
   }
 }
+
+/* The diagnostic uses paged results so every control remains reachable on TV. */
+html.vidaa-tv .vidaa-benchmark-shell {
+  gap: 14px;
+  padding: 36px 54px;
+}
+.vidaa-benchmark-shell h1 {
+  margin: 0;
+  font-size: 34px;
+}
+.vidaa-benchmark-shell header p {
+  margin: 8px 0 0;
+  font-size: 21px;
+}
+.benchmark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.benchmark-actions button {
+  font-size: 20px;
+  min-height: 48px;
+  padding: 8px 18px;
+}
+.benchmark-report {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 28px;
+  border-radius: 20px;
+  background: #171d27;
+  font-size: 21px;
+}
+.benchmark-report h2 {
+  margin: 0;
+  font-size: 29px;
+}
+.benchmark-subtitle {
+  margin: 4px 0 18px;
+  color: #b8c7da;
+}
+.benchmark-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 28px;
+  border-bottom: 1px solid #30394a;
+  padding: 9px 0;
+}
+.benchmark-row strong {
+  text-align: right;
+  font-weight: 500;
+}
+.benchmark-note {
+  font-size: 19px;
+  color: #bdc8d8;
+  line-height: 1.35;
+}
+.vidaa-benchmark-shell footer {
+  font-size: 18px;
+  color: #bdc8d8;
+}
+.vidaa-benchmark-hud {
+  position: fixed;
+  z-index: 2147483000;
+  top: 12px;
+  left: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: #141a24;
+  color: #fff;
+  font: 20px/1.35 sans-serif;
+  pointer-events: none;
+  white-space: pre-line;
+}
+.vidaa-benchmark-hud[hidden] {
+  display: none;
+}
+.benchmark-qr {
+  display: flex;
+  gap: 36px;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+.benchmark-qr-code {
+  flex: 0 0 auto;
+  width: 400px;
+  height: 400px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #fff;
+}
+.benchmark-qr-code canvas {
+  display: block;
+  width: 400px;
+  height: 400px;
+}
+.benchmark-qr-code canvas[hidden] {
+  display: none;
+}
+.benchmark-qr-copy {
+  flex: 1;
+  min-width: 0;
+}
+.benchmark-qr-url {
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #0f141c;
+  font-family: monospace;
+  font-size: 22px;
+  word-break: break-all;
+}
+.benchmark-note[hidden] {
+  display: none;
+}

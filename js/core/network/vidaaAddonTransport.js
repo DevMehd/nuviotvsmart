@@ -1,3 +1,4 @@
+import { VidaaBenchmark } from "../diagnostics/vidaaBenchmark.js";
 import { ProfileManager } from "../profile/profileManager.js";
 
 const HOSTS = new Set(["xperience-app.com", "aiostreams.fortheweak.cloud"]);
@@ -84,6 +85,9 @@ export async function fetchPreparedAddonData(url, kind, { signal = null } = {}) 
   const abort = () => controller.abort();
   signal?.addEventListener?.("abort", abort, { once: true });
   const timeout = setTimeout(abort, 5500);
+  const benchmarkRequest = VidaaBenchmark.beginAddon();
+  let benchmarkStatus = "failed";
+  let benchmarkCache = null;
   try {
     const response = await fetch("/api/addon-data", {
       method: "POST",
@@ -94,12 +98,15 @@ export async function fetchPreparedAddonData(url, kind, { signal = null } = {}) 
       signal: controller.signal
     });
     if (!response.ok) throw new Error("addon_service_unavailable");
+    benchmarkCache = response.headers?.get?.("X-Nuvio-Data-Cache");
     const data = await response.json();
     if (kind === "catalog" ? !Array.isArray(data?.metas) : !data?.meta)
       throw new Error("invalid_payload");
+    benchmarkStatus = "success";
     return data;
   } catch {
     if (signal?.aborted) {
+      benchmarkStatus = "aborted";
       const error = new Error("Request aborted");
       error.name = "AbortError";
       throw error;
@@ -108,6 +115,7 @@ export async function fetchPreparedAddonData(url, kind, { signal = null } = {}) 
     cooldownUntil = Date.now() + 60000;
     return null;
   } finally {
+    VidaaBenchmark.endAddon(benchmarkRequest, benchmarkStatus, benchmarkCache);
     clearTimeout(timeout);
     signal?.removeEventListener?.("abort", abort);
   }

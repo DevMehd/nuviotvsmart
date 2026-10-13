@@ -52,6 +52,12 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
   const frameRing = numericRing(Math.floor(frameCapacity));
   const inputRing = numericRing(Math.floor(inputCapacity));
   const subscribers = new Set();
+  let sampleListener = null;
+  const sample = (kind, value) => {
+    try {
+      sampleListener?.(kind, value);
+    } catch (_) {}
+  };
   const documentRef = root.document;
   let enabled = false;
   let active = false;
@@ -116,6 +122,7 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
           // a historical buffer or reading long-task attribution.
           if (Number.isFinite(entry.startTime) && entry.startTime < observedAfter) continue;
           if (!Number.isFinite(duration) || duration <= 0) continue;
+          sample("longtask", duration);
           longTaskCount += 1;
           longTaskDuration += duration;
           longTaskMax = Math.max(longTaskMax, duration);
@@ -137,6 +144,7 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
       const frameTime = Number.isFinite(timestamp) ? timestamp : now();
       if (previousFrame !== null && frameTime > previousFrame) {
         frameRing.push(frameTime - previousFrame);
+        sample("frame", frameTime - previousFrame);
         totalFrames += 1;
       }
       previousFrame = frameTime;
@@ -144,6 +152,7 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
         const delay = now() - pendingInput;
         if (Number.isFinite(delay) && delay >= 0) {
           inputRing.push(delay);
+          sample("input", delay);
           totalInputs += 1;
         }
         pendingInput = null;
@@ -206,6 +215,8 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
     documentRef?.removeEventListener?.("webkitvisibilitychange", syncVisibility);
     documentRef?.removeEventListener?.("keydown", onInput, true);
     documentRef?.removeEventListener?.("pointerdown", onInput, true);
+    root.removeEventListener?.("keydown", onInput, true);
+    root.removeEventListener?.("pointerdown", onInput, true);
     documentRef?.removeEventListener?.("nuvio:beforeExitApp", stop);
     root.removeEventListener?.("pagehide", onPageHide);
     root.removeEventListener?.("pageshow", onPageShow);
@@ -227,6 +238,10 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
       documentRef?.addEventListener?.("webkitvisibilitychange", syncVisibility);
       documentRef?.addEventListener?.("keydown", onInput, true);
       documentRef?.addEventListener?.("pointerdown", onInput, true);
+      // VIDAA: FocusEngine stops arrows, OK and Back at the document capture
+      // listener, so only the window capture phase sees every remote press.
+      root.addEventListener?.("keydown", onInput, true);
+      root.addEventListener?.("pointerdown", onInput, true);
       documentRef?.addEventListener?.("nuvio:beforeExitApp", stop);
       root.addEventListener?.("pagehide", onPageHide);
       root.addEventListener?.("pageshow", onPageShow);
@@ -279,6 +294,9 @@ export function createVidaaFrameDiagnostics(root = globalThis, options = {}) {
           maxMs: longTaskMax
         }
       };
+    },
+    setSampleListener(listener) {
+      sampleListener = typeof listener === "function" ? listener : null;
     },
     subscribe(listener) {
       subscribers.add(listener);

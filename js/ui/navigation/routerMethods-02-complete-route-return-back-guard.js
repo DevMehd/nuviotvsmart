@@ -1,3 +1,4 @@
+import { VidaaBenchmark } from "../../core/diagnostics/vidaaBenchmark.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./router.js";
 import { resetVidaaNavigationActivity } from "./vidaaNavigationActivity.js";
@@ -134,7 +135,12 @@ export function createRouterMethods02() {
         previousRoute
       });
 
-      await Screen.mount(this.currentParams, navigationContext);
+      const benchmarkRoute = VidaaBenchmark.beginRoute(routeName);
+      try {
+        await Screen.mount(this.currentParams, navigationContext);
+      } finally {
+        VidaaBenchmark.endRoute(benchmarkRoute, routeName);
+      }
       this.completeRouteReturnBackGuard(routeReturnBackGuardNavigationId);
       logRouterPerf("navigate", {
         ms: Number((routerPerfNow() - navigationStart).toFixed(2)),

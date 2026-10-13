@@ -1,7 +1,7 @@
 /* global __NUVIO_APP_VERSION__, __NUVIO_PERSONAL_CHANGELOG__ */
 
 import "./core/diagnostics/consoleDebugBuffer.js";
-import { VidaaFrameDiagnostics } from "./core/diagnostics/vidaaFrameDiagnostics.js";
+import { VidaaBenchmark } from "./core/diagnostics/vidaaBenchmark.js";
 import { detailWatchedEnrichmentService } from "./data/repository/detailWatchedEnrichmentService.js";
 import { Router } from "./ui/navigation/router.js";
 import { FocusEngine } from "./ui/navigation/focusEngine.js";
@@ -581,7 +581,12 @@ async function bootstrapApp() {
   appShellRendered = true;
   markBootStage("Initializing TV platform");
   Platform.init();
-  VidaaFrameDiagnostics.initialize({ enabled: Platform.isVidaa() });
+  VidaaBenchmark.initialize({
+    enabled: Platform.isVidaa(),
+    getRoute: () => Router.getCurrent(),
+    version: APP_VERSION,
+    mode: getTvPerformanceMode()
+  });
   setupPluginServiceLifecycle();
   if (shouldDisableTizenPluginSupport()) {
     markBootStage("PluginService disabled on Tizen below 6.0");

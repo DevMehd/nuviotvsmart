@@ -112,10 +112,11 @@ assert.equal(owner.collectionFocusGifPending, null);
 
 const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "utf8");
 const changelog = parsePersonalChangelog(notes, "1.2.4");
-assert.equal(changelog.date, "2026-10-12");
-assert.ok(changelog.notes.includes("badges"));
+assert.equal(changelog.date, "2026-10-13");
+assert.ok(changelog.notes.includes("Parcours automatique"));
+assert.ok(changelog.notes.includes("code QR"));
 assert.ok(
-  !changelog.notes.includes("2026-10-11"),
+  !changelog.notes.includes("2026-10-12"),
   "Only the latest entry is included in the TV prompt"
 );
 assert.throws(() => parsePersonalChangelog(notes, "1.2.5"));

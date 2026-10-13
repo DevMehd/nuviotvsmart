@@ -1,3 +1,4 @@
+import { createVidaaBenchmarkPanel } from "./vidaaBenchmarkPanel.js";
 import { I18n } from "../../../i18n/index.js";
 import {
   getConsoleDebugEvents,
@@ -109,6 +110,9 @@ export const ConsoleDebugScreen = {
   },
 
   cleanup() {
+    this.benchmarkPanel?.cleanup();
+    this.benchmarkPanel = null;
+    this.benchmarkLegacyView = false;
     if (this.container && this.handleClickBound) {
       this.container.removeEventListener("click", this.handleClickBound);
     }
@@ -273,6 +277,21 @@ export const ConsoleDebugScreen = {
   },
 
   async render({ stickToBottom = false } = {}) {
+    if (Platform.isVidaa() && !this.benchmarkLegacyView) {
+      if (!this.benchmarkPanel) {
+        this.benchmarkPanel = createVidaaBenchmarkPanel({
+          router: Router,
+          onLogs: () => {
+            this.benchmarkPanel?.cleanup();
+            this.benchmarkPanel = null;
+            this.benchmarkLegacyView = true;
+            void this.render();
+          }
+        });
+        this.benchmarkPanel.mount(this.container);
+      }
+      return;
+    }
     const previousScrollTop = Number(this.getLogList()?.scrollTop || this.logScrollTop || 0);
     const events = getConsoleDebugEvents();
     this.container.innerHTML = `
@@ -391,6 +410,10 @@ export const ConsoleDebugScreen = {
   },
 
   async handleClickEvent(event) {
+    if (this.benchmarkPanel) {
+      await this.benchmarkPanel.click(event);
+      return;
+    }
     const target = event?.target?.closest?.(".focusable");
     if (!target || !this.container?.contains?.(target)) {
       return;
@@ -446,10 +469,20 @@ export const ConsoleDebugScreen = {
     this.scrollLog(delta < 0 ? -1 : 1);
   },
 
+  consumeBackRequest() {
+    // The diagnostic export view closes on Back instead of leaving the console.
+    return Boolean(this.benchmarkPanel?.consumeBack?.());
+  },
+
   async onKeyDown(event) {
     if (Platform.isBackEvent(event)) {
       event?.preventDefault?.();
       await Router.back();
+      return;
+    }
+
+    if (this.benchmarkPanel) {
+      await this.benchmarkPanel.key(event);
       return;
     }
 

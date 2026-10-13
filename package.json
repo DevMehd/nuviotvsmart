@@ -52,6 +52,7 @@
     "flatted": "3.4.2"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.1",
     "assjs": "0.1.10",
     "cheerio": "^1.2.0",
     "crypto-js": "^4.2.0",

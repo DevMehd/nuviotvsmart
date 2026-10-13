@@ -1,5 +1,15 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-13 — 1.2.4
+
+- Nouveau diagnostic guidé en français : accueil, navigation, fiches, sources et lecture vidéo facultative, avec bilan par étape.
+- Parcours automatique : la télé enchaîne seule toutes les étapes (déplacements, appuis prolongés, fiches, liens vidéo, lecture avec avance et sous-titres) ; posez la télécommande, une touche interrompt le parcours.
+- Une étape dont l’écran attendu n’a pas été atteint est marquée « incomplète » avec la raison, et la page « Journal du parcours » du bilan liste les décisions du parcours automatique, sans titre ni identifiant.
+- Étapes manuelles : le chrono ne démarre plus qu’à votre première action attendue (première flèche sur l’accueil, ouverture d’une fiche, affichage des liens ou lancement de la vidéo).
+- Exporter JSON affiche un code QR : le téléphone ouvre le bilan dans son navigateur via un lien court valable 30 minutes ; la télé renvoie le bilan tant que le code reste affiché.
+- Relevé des capacités réelles du navigateur, du démarrage, des images, du réseau, du cache Vercel et de la mémoire JavaScript lorsqu’elle est disponible.
+- Bilan enregistré uniquement sur la télé, consultable par pages ; aucun lien privé ni identifiant dans les mesures ni dans le fichier exporté.
+
 ## 2026-10-12 — 1.2.4
 
 - Fond et logo : fondu entre les images sans passage par un fond sombre, avec une légère arrivée des informations du titre sélectionné.

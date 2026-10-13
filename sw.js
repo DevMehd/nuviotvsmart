@@ -62,7 +62,12 @@ self.addEventListener("fetch", function (e) {
   if (requestUrl.origin !== self.location.origin) return;
 
   // Let Vercel cache complete image variant URLs without offline-cache rewriting.
-  if (requestUrl.pathname === "/_vercel/image" || requestUrl.pathname.indexOf("/api/") === 0)
+  // Diagnostic report links (/d/<id>) are server responses, never app shell.
+  if (
+    requestUrl.pathname === "/_vercel/image" ||
+    requestUrl.pathname.indexOf("/api/") === 0 ||
+    requestUrl.pathname.indexOf("/d/") === 0
+  )
     return;
 
   // Build-hashed assets are immutable. Exact URL matching also prevents an

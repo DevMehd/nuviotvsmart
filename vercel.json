@@ -2,11 +2,29 @@
   "buildCommand": "npm run package:vidaa",
   "outputDirectory": "dist/vidaa",
   "regions": ["cdg1"],
-  "functions": { "api/addon-data.js": { "maxDuration": 10 } },
+  "functions": {
+    "api/addon-data.js": {
+      "maxDuration": 10
+    },
+    "api/diagnostic-report.js": {
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/d/:id",
+      "destination": "/api/diagnostic-report?id=:id"
+    }
+  ],
   "headers": [
     {
       "source": "/:path*.:hash([a-f0-9]{16}).:ext(js|css)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     },
     {
       "source": "/",
