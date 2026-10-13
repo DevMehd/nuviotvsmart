@@ -203,15 +203,18 @@ console.log("=== Running Nuvio TV VIDAA Platform Tests ===");
   const envResult = await readEnvProperties({ rootDir });
   assert.equal(
     envResult.env.NUVIO_SUPABASE_URL,
-    "https://oltcrfpuccskppegnqwi.supabase.co",
-    "VIDAA builds must use our shared project"
+    "https://api.nuvio.tv",
+    "VIDAA builds must use the official Nuvio account service"
   );
   assert.ok(
     envResult.env.NUVIO_SUPABASE_ANON_KEY.length > 20,
     "Default NUVIO_SUPABASE_ANON_KEY must be populated"
   );
-  assert.equal(envResult.env.NUVIO_ACCOUNT_BACKEND_MODE, "shared");
-  assert.ok(envResult.env.NUVIO_SUPABASE_ANON_KEY.startsWith("sb_publishable_"));
+  assert.equal(envResult.env.NUVIO_ACCOUNT_BACKEND_MODE, undefined);
+  assert.equal(
+    JSON.parse(Buffer.from(envResult.env.NUVIO_SUPABASE_ANON_KEY.split(".")[1], "base64url")).role,
+    "anon"
+  );
 
   console.log("✓ TV Runtime Profile & Default Backend Configuration passed");
 }

@@ -8,7 +8,6 @@ globalThis.localStorage = {
 };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.__NUVIO_ENV__ = {
-  NUVIO_ACCOUNT_BACKEND_MODE: "shared",
   NUVIO_SUPABASE_URL: "https://account.example",
   NUVIO_SUPABASE_ANON_KEY: "sb_publishable_fixture_public_key"
 };

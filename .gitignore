@@ -8,6 +8,7 @@ local.example.properties
 node_modules/
 tests/*
 !tests/test-vidaa-home-patching.html
+!tests/test-vidaa-account-dom.html
 !tests/test-vidaa-home-row-updates.html
 !tests/test-vidaa-home-window.html
 !tests/test-vidaa-home-poster-expansion.html

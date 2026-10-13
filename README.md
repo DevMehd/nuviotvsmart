@@ -91,7 +91,7 @@ this device for the current profile.
 
 Builds can supply optional TMDB and Trakt app defaults through `local.properties`.
 Personal credentials override those defaults; clearing them restores the defaults
-when available. The public source does not include shared API credentials.
+when available. The client includes the official public Nuvio account URL and anon key. Existing Nuvio accounts sign in through the official phone approval QR; Addons opens the official account manager.
 Without a configured TMDB key, enabling enrichment opens the key setup. Selecting
 a language alone cannot localize the metadata supplied by catalogue addons.
 
@@ -126,7 +126,7 @@ npm run serve:vidaa  # Start local VIDAA development server
 
 ## Acknowledgements
 
-Special thanks to **[@loggie86](https://github.com/loggie86)** for testing this VIDAA port on real Hisense TV hardware and providing crucial insights on navigation, launcher installation, and backend setup.
+Special thanks to **[@loggie86](https://github.com/loggie86)** for testing this VIDAA port on real Hisense TV hardware and providing crucial insights on navigation, launcher installation, and VIDAA compatibility.
 
 ## License
 

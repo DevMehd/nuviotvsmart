@@ -16,7 +16,6 @@ import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ProviderCredentialSyncService } from "./core/profile/providerCredentialSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
-import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
 import { Platform } from "./platform/index.js";
@@ -24,7 +23,6 @@ import { TizenCapabilities } from "./platform/tizen/tizenCapabilities.js";
 import { PluginServiceClient } from "./platform/pluginServiceClient.js";
 import { getTvRuntimePerformanceProfile } from "./platform/tvRuntimePerformance.js";
 import { LocalStore } from "./core/storage/localStore.js";
-import { ServerConfigurationStore } from "./data/local/serverConfigurationStore.js";
 import { I18n } from "./i18n/index.js";
 import { getLatestAppUpdateWithRetry } from "./core/update/appUpdateService.js";
 import { shouldShowUpdate } from "./core/update/updateBannerPolicy.js";
@@ -216,14 +214,6 @@ if (typeof globalThis.addEventListener === "function") {
   globalThis.addEventListener("nuvio:performance-mode", () => {
     applyPerformanceMode();
   });
-}
-
-function isAddonRemoteMode() {
-  try {
-    return new URLSearchParams(window.location.search).get("addonsRemote") === "1";
-  } catch {
-    return false;
-  }
 }
 
 async function shouldShowProfileSelection() {
@@ -611,9 +601,7 @@ async function bootstrapApp() {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
       hasSelectedProfileThisSession = false;
-      const shouldBypassQr =
-        ServerConfigurationStore.getActive().isLocal ||
-        Boolean(LocalStore.get(GUEST_QR_BYPASS_KEY, false));
+      const shouldBypassQr = Boolean(LocalStore.get(GUEST_QR_BYPASS_KEY, false));
       if (isSignedOutRouteAllowed()) {
         return;
       }
@@ -679,16 +667,11 @@ async function bootstrapApp() {
   await AuthManager.bootstrap();
 }
 
-async function bootstrapAddonRemoteMode() {
-  await renderAddonRemotePage();
-  appShellRendered = true;
-}
-
 if (document.readyState === "loading") {
   document.addEventListener(
     "DOMContentLoaded",
     () => {
-      const bootstrap = isAddonRemoteMode() ? bootstrapAddonRemoteMode : bootstrapApp;
+      const bootstrap = bootstrapApp;
       bootstrap().catch((error) => {
         console.error("App bootstrap failed", error);
         renderFatalError(error);
@@ -697,7 +680,7 @@ if (document.readyState === "loading") {
     { once: true }
   );
 } else {
-  const bootstrap = isAddonRemoteMode() ? bootstrapAddonRemoteMode : bootstrapApp;
+  const bootstrap = bootstrapApp;
   bootstrap().catch((error) => {
     console.error("App bootstrap failed", error);
     renderFatalError(error);

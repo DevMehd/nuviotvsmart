@@ -5,7 +5,6 @@ import { SupabaseApi } from "./supabaseApi.js";
 import { AvatarRepository } from "./avatarRepository.js";
 import { ProfileBackgroundRepository } from "./profileBackgroundRepository.js";
 import { MemberCatalogStorage } from "../../local/memberCatalogStorage.js";
-import { ServerConfigurationStore } from "../../local/serverConfigurationStore.js";
 
 const CACHE_KEY = "memberAccessCache";
 const STALE_AFTER_MS = 15 * 60 * 1000;
@@ -26,16 +25,6 @@ let currentFetchedAt = 0;
 let refreshPromise = null;
 let accessGeneration = 0;
 const listeners = new Set();
-
-function supportsMembership() {
-  const configuration = ServerConfigurationStore.getActive();
-  return (
-    AuthManager.isAuthenticated &&
-    !configuration.isLocal &&
-    !configuration.isCustom &&
-    !configuration.isShared
-  );
-}
 
 function normalizeAccess(payload) {
   const row = Array.isArray(payload)
@@ -124,7 +113,7 @@ async function refreshRemote() {
   let requestPromise;
   requestPromise = (async () => {
     try {
-      if (!supportsMembership()) {
+      if (!AuthManager.isAuthenticated) {
         return setCurrent(NONE_ACCESS, 0, false);
       }
       const response = await SupabaseApi.rpc("get_my_member_access", {}, true);
@@ -180,7 +169,7 @@ export function hasMemberEntitlement(access, entitlement) {
 
 export const MemberAccessRepository = {
   async getAccess({ force = false } = {}) {
-    if (!supportsMembership()) {
+    if (!AuthManager.isAuthenticated) {
       return setCurrent(NONE_ACCESS, 0, false);
     }
 
@@ -205,7 +194,7 @@ export const MemberAccessRepository = {
   },
 
   getCachedAccess() {
-    if (!supportsMembership()) {
+    if (!AuthManager.isAuthenticated) {
       return setCurrent(NONE_ACCESS, 0, false);
     }
     hydrateCachedAccess();

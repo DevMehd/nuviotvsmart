@@ -6,17 +6,6 @@ import { createStorageAssetUrl, revokeStorageAssetUrl } from "./storageAsset.js"
 const AVATAR_BUCKET = "avatars";
 const MEMBER_AVATAR_BUCKET = "membership-profile-avatars";
 const AVATAR_CATALOG_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
-const LOCAL_AVATARS = Object.freeze([
-  {
-    id: "local-nuvio",
-    displayName: "Nuvio",
-    imageUrl: "assets/brand/app_logo_mark.png",
-    category: "all",
-    sortOrder: 0,
-    bgColor: "#182b40",
-    memberOnly: false
-  }
-]);
 
 let cachedStandardCatalog = null;
 let standardCatalogPromise = null;
@@ -321,12 +310,6 @@ function refreshMemberCatalogInBackground() {
 
 export const AvatarRepository = {
   getCachedAvatarCatalog(hasMemberAccess = false) {
-    if (ServerConfigurationStore.getActive().isLocal) return LOCAL_AVATARS;
-    if (
-      ServerConfigurationStore.getActive().isCustom ||
-      ServerConfigurationStore.getActive().isShared
-    )
-      hasMemberAccess = false;
     hydrateStandardCatalog();
     const standardCatalog = Array.isArray(cachedStandardCatalog) ? cachedStandardCatalog : [];
     if (!hasMemberAccess) {
@@ -337,12 +320,6 @@ export const AvatarRepository = {
   },
 
   async getAvatarCatalog(hasMemberAccess = false) {
-    if (ServerConfigurationStore.getActive().isLocal) return LOCAL_AVATARS;
-    if (
-      ServerConfigurationStore.getActive().isCustom ||
-      ServerConfigurationStore.getActive().isShared
-    )
-      hasMemberAccess = false;
     hydrateStandardCatalog();
     const hadStandardCache = Array.isArray(cachedStandardCatalog);
     const standardCatalog = await loadStandardCatalog();
@@ -363,7 +340,6 @@ export const AvatarRepository = {
   },
 
   getAvatarImageUrl(avatarId, catalog = cachedStandardCatalog || []) {
-    if (ServerConfigurationStore.getActive().isLocal) catalog = LOCAL_AVATARS;
     const normalizedId = String(avatarId || "").trim();
     if (!normalizedId) {
       return null;

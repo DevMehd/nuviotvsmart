@@ -3,15 +3,13 @@
   var existing = root.__NUVIO_ENV__ || {};
 
   root.__NUVIO_ENV__ = {
-    NUVIO_ACCOUNT_BACKEND_MODE:
-      typeof existing.NUVIO_ACCOUNT_BACKEND_MODE === "undefined"
-        ? ""
-        : existing.NUVIO_ACCOUNT_BACKEND_MODE,
     NUVIO_SUPABASE_URL:
-      typeof existing.NUVIO_SUPABASE_URL === "undefined" ? "" : existing.NUVIO_SUPABASE_URL,
+      typeof existing.NUVIO_SUPABASE_URL === "undefined"
+        ? "https://api.nuvio.tv"
+        : existing.NUVIO_SUPABASE_URL,
     NUVIO_SUPABASE_ANON_KEY:
       typeof existing.NUVIO_SUPABASE_ANON_KEY === "undefined"
-        ? ""
+        ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI"
         : existing.NUVIO_SUPABASE_ANON_KEY,
     NUVIO_SUPABASE_FALLBACK_URL:
       typeof existing.NUVIO_SUPABASE_FALLBACK_URL === "undefined"
@@ -59,9 +57,14 @@
       typeof existing.SPONSOR_NAMES === "undefined" || !String(existing.SPONSOR_NAMES).trim()
         ? "ragmehos."
         : existing.SPONSOR_NAMES,
-    TMDB_API_KEY: typeof existing.TMDB_API_KEY === "undefined" ? "" : existing.TMDB_API_KEY,
+    TMDB_API_KEY:
+      typeof existing.TMDB_API_KEY === "undefined"
+        ? "01926d2187b6a5d861eefc750e9df3e3"
+        : existing.TMDB_API_KEY,
     TRAKT_CLIENT_ID:
-      typeof existing.TRAKT_CLIENT_ID === "undefined" ? "" : existing.TRAKT_CLIENT_ID,
+      typeof existing.TRAKT_CLIENT_ID === "undefined"
+        ? "5783db7c46a5b22f072d4b224f9bd7dc2cbaba66dbe3515d1feb59e3ca72394c"
+        : existing.TRAKT_CLIENT_ID,
     TRAKT_CLIENT_SECRET:
       typeof existing.TRAKT_CLIENT_SECRET === "undefined" ? "" : existing.TRAKT_CLIENT_SECRET,
     SIMKL_CLIENT_ID:

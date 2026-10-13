@@ -7,7 +7,6 @@ import { Router } from "../js/ui/navigation/routerState.js";
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 Platform.current = null;
-const { SharedPluginScreen } = await import("../js/ui/screens/plugin/sharedPluginScreen.js");
 const { PluginsScreen } = await import("../js/ui/screens/plugin/pluginsScreen.js");
 const { SettingsScreen } = await import("../js/ui/screens/settings/settingsScreen.js");
 const { SearchScreen } = await import("../js/ui/screens/search/searchScreen.js");
@@ -19,7 +18,7 @@ const { LibraryScreen } = await import("../js/ui/screens/library/libraryScreen.j
 const { ProfileSelectionScreen } = await import("../js/core/profile/profileSelectionScreen.js");
 
 // Replay the actual Shared Addons and Plugins handlers and focus navigation.
-for (const base of [SharedPluginScreen, PluginsScreen]) {
+for (const base of [PluginsScreen]) {
   const h = createTextInputHarness();
   h.attachGlobals();
   const plugin = base === PluginsScreen;

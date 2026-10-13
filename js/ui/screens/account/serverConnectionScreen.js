@@ -1,11 +1,10 @@
 import { AuthManager } from "../../../core/auth/authManager.js";
+import { Platform } from "../../../platform/index.js";
 import { discoverServer } from "../../../core/server/serverDiscovery.js";
 import { ServerConfigurationStore } from "../../../data/local/serverConfigurationStore.js";
 import { I18n } from "../../../i18n/index.js";
 import { Router } from "../../navigation/routerState.js";
 import { ScreenUtils } from "../../navigation/screen.js";
-import { LocalStore } from "../../../core/storage/localStore.js";
-import { Platform } from "../../../platform/index.js";
 
 function text(key, fallback, params = {}) {
   return I18n.t(key, params, { fallback });
@@ -47,16 +46,15 @@ function errorMessage(error) {
       "custom_server_error_invalid_url",
       "Enter a valid HTTP or HTTPS Backend URL."
     ),
-    official_server:
-      ServerConfigurationStore.getActive().isCustom || ServerConfigurationStore.getActive().isLocal
-        ? text(
-            "custom_server_error_official_available",
-            "api.nuvio.tv is the official server. Close this dialog and choose Use official server to switch back."
-          )
-        : text(
-            "custom_server_error_official_active",
-            "api.nuvio.tv is the official server and is already selected."
-          ),
+    official_server: ServerConfigurationStore.getActive().isCustom
+      ? text(
+          "custom_server_error_official_available",
+          "api.nuvio.tv is the official server. Close this dialog and choose Use official server to switch back."
+        )
+      : text(
+          "custom_server_error_official_active",
+          "api.nuvio.tv is the official server and is already selected."
+        ),
     connection_failed: text(
       "custom_server_error_connection",
       "Could not reach the discovery endpoint. Check the URL and server availability."
@@ -145,9 +143,7 @@ export const ServerConnectionScreen = {
     this.discoveryController = null;
     this.restartWatchdog = null;
     this.isMounted = true;
-    this.mode = ["input", "officialReview", "localReview"].includes(initialMode)
-      ? initialMode
-      : "list";
+    this.mode = ["input", "officialReview"].includes(initialMode) ? initialMode : "list";
     this.inputValue =
       this.mode === "input" ? discoveryInputValue(ServerConfigurationStore.getActive()) : "";
     this.discoveredServer = null;
@@ -162,7 +158,6 @@ export const ServerConnectionScreen = {
     const isInput = this.mode === "input" || this.mode === "discovering";
     const isReview = this.mode === "review" && this.discoveredServer;
     const isOfficialReview = this.mode === "officialReview";
-    const isLocalReview = this.mode === "localReview";
     const isSwitching = this.mode === "switching";
     const isDiscovering = this.mode === "discovering";
 
@@ -171,11 +166,9 @@ export const ServerConnectionScreen = {
         <div class="auth-simple-hero">
           <h2 class="auth-simple-title">${escapeHtml(text("custom_server_title", "Connect to custom server"))}</h2>
           <p class="auth-simple-subtitle">${escapeHtml(
-            active.isLocal
-              ? text("server_options_local_active", "Using local mode")
-              : active.isCustom
-                ? text("server_options_custom_active", "Connected to a self-hosted server")
-                : text("server_options_official_active", "Using the official Nuvio server")
+            active.isCustom
+              ? text("server_options_custom_active", "Connected to a self-hosted server")
+              : text("server_options_official_active", "Using the official Nuvio server")
           )}</p>
           <p class="auth-simple-subtitle">${escapeHtml(active.backendUrl)}</p>
         </div>
@@ -184,13 +177,12 @@ export const ServerConnectionScreen = {
             ${escapeHtml(text("server_options_change_custom", "Connect to another server"))}
           </button>
           ${
-            active.isCustom || active.isLocal
+            active.isCustom
               ? `<button type="button" class="auth-simple-card focusable" data-action="official">
                    ${escapeHtml(text("server_options_use_official", "Use official server"))}
                  </button>`
               : ""
           }
-          ${!active.isLocal ? `<button type="button" class="auth-simple-card focusable" data-action="local">${escapeHtml(text("server_options_use_local", "Use local mode"))}</button>` : ""}
           <button type="button" class="auth-simple-card focusable" data-action="back">
             ${escapeHtml(text("auth.qr.back", "Back"))}
           </button>
@@ -308,19 +300,6 @@ export const ServerConnectionScreen = {
       }
 
       ${
-        isLocalReview
-          ? `<div class="settings-dialog-backdrop"><div class="settings-dialog settings-text-dialog server-connection-dialog">
-               <div class="settings-dialog-title">${escapeHtml(text("server_options_use_local", "Use local mode"))}</div>
-               <div class="settings-text-dialog-message">${escapeHtml(text("local_server_description", "You will be signed out and the app will restart. Profiles, addons and viewing history will be stored only on this TV. Existing account data will be cleared."))}</div>
-               ${this.error ? `<div class="settings-text-dialog-status is-error" role="alert">${escapeHtml(this.error)}</div>` : ""}
-               <div class="settings-text-dialog-actions">
-                 ${dialogButton("cancel", text("common.cancel", "Cancel"), { cancel: true })}
-                 ${dialogButton("confirmLocal", text("server_options_use_local", "Use local mode"), { primary: true })}
-               </div>
-             </div></div>`
-          : ""
-      }
-      ${
         isSwitching
           ? `<div class="settings-dialog-backdrop"><div class="settings-dialog server-switching-dialog">
                <div class="settings-dialog-title">${escapeHtml(text("custom_server_switching", "Switching…"))}</div>
@@ -335,7 +314,7 @@ export const ServerConnectionScreen = {
         this.container,
         ".server-connection-dialog [data-action='serverInput']"
       );
-    } else if (isReview || isOfficialReview || isLocalReview) {
+    } else if (isReview || isOfficialReview) {
       ScreenUtils.setInitialFocus(
         this.container,
         ".server-connection-dialog .server-dialog-cancel"
@@ -354,17 +333,11 @@ export const ServerConnectionScreen = {
         const action = node.dataset.action;
         if (action === "connect") this.openInput();
         if (action === "official") this.openOfficialReview();
-        if (action === "local") {
-          this.mode = "localReview";
-          this.error = "";
-          this.render();
-        }
         if (action === "back") this.returnToPrevious();
         if (action === "cancel") this.cancelDialog();
         if (action === "check") void this.checkServer();
         if (action === "trust") void this.switchServer(this.discoveredServer);
         if (action === "confirmOfficial") void this.switchServer(null);
-        if (action === "confirmLocal") void this.switchServer({ isLocal: true });
       };
     });
   },
@@ -441,16 +414,12 @@ export const ServerConnectionScreen = {
 
     let sessionCleared = false;
     try {
-      sessionCleared = await AuthManager.prepareForServerSwitch({ resetLocalData: true });
+      sessionCleared = await AuthManager.prepareForServerSwitch();
     } catch (error) {
       console.warn("Failed to prepare server switch", error);
     }
     if (!sessionCleared) {
-      this.mode = configuration?.isLocal
-        ? "localReview"
-        : configuration
-          ? "review"
-          : "officialReview";
+      this.mode = configuration ? "review" : "officialReview";
       this.error = text(
         "custom_server_session_clear_failed",
         "Could not safely clear the current session. The server was not changed."
@@ -459,22 +428,15 @@ export const ServerConnectionScreen = {
       return;
     }
 
-    const saved = configuration?.isLocal
-      ? ServerConfigurationStore.useLocal()
-      : configuration
-        ? ServerConfigurationStore.saveCustom(configuration)
-        : ServerConfigurationStore.useOfficial();
+    const saved = configuration
+      ? ServerConfigurationStore.saveCustom(configuration)
+      : ServerConfigurationStore.useOfficial();
     if (!saved) {
-      this.mode = configuration?.isLocal
-        ? "localReview"
-        : configuration
-          ? "review"
-          : "officialReview";
+      this.mode = configuration ? "review" : "officialReview";
       this.error = text("custom_server_save_failed", "Could not save the server configuration.");
       this.render();
       return;
     }
-    if (!configuration?.isLocal) LocalStore.remove("skipAuthQrGate");
 
     const reload = globalThis.location?.reload;
     if (typeof reload !== "function") {
@@ -506,11 +468,7 @@ export const ServerConnectionScreen = {
       clearTimeout(this.restartWatchdog);
       this.restartWatchdog = null;
     }
-    this.mode = configuration?.isLocal
-      ? "localReview"
-      : configuration
-        ? "review"
-        : "officialReview";
+    this.mode = configuration ? "review" : "officialReview";
     this.error = text(
       "custom_server_restart_failed",
       "The server was saved, but the app could not restart automatically. Restart it manually."
@@ -538,17 +496,11 @@ export const ServerConnectionScreen = {
     const action = navigationContainer?.querySelector(".focusable.focused")?.dataset?.action;
     if (action === "connect") this.openInput();
     if (action === "official") this.openOfficialReview();
-    if (action === "local") {
-      this.mode = "localReview";
-      this.error = "";
-      this.render();
-    }
     if (action === "back") this.returnToPrevious();
     if (action === "cancel") this.cancelDialog();
     if (action === "check" || action === "serverInput") void this.checkServer();
     if (action === "trust") void this.switchServer(this.discoveredServer);
     if (action === "confirmOfficial") void this.switchServer(null);
-    if (action === "confirmLocal") void this.switchServer({ isLocal: true });
   },
 
   consumeBackRequest() {

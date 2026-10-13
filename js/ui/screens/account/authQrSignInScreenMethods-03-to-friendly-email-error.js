@@ -16,9 +16,6 @@ export function createAuthQrSignInScreenMethods03() {
       if (normalized.includes("email not confirmed")) {
         return I18n.t("account_error_email_not_confirmed");
       }
-      if (normalized.includes("email address not authorized") || normalized.includes("error sending confirmation email")) {
-        return I18n.t("auth_email_delivery_unavailable");
-      }
       if (normalized.includes("user already registered")) {
         return I18n.t("account_error_email_already_registered");
       }
@@ -70,7 +67,7 @@ export function createAuthQrSignInScreenMethods03() {
       }
     },
     handleRefreshAction() {
-      if (!this.useQrLogin || this.isLeaving || this.isStartingQr) return;
+      if (this.isLeaving || this.isStartingQr) return;
       void this.startQr();
     },
     async submitEmailLogin() {
@@ -84,20 +81,9 @@ export function createAuthQrSignInScreenMethods03() {
       }
       this.isEmailSubmitting = true;
       this.emailError = "";
-      this.emailNotice = "";
       this.render();
       try {
-        if (this.isRegistering) {
-          const result = await AuthManager.signUpWithEmail(email, password);
-          if (result.confirmationRequired) {
-            this.emailNotice = I18n.t("auth_email_confirmation_sent");
-            this.isRegistering = false;
-            this.password = "";
-            return;
-          }
-        } else {
-          await AuthManager.signInWithEmail(email, password);
-        }
+        await AuthManager.signInWithEmail(email, password);
         LocalStore.remove(GUEST_QR_BYPASS_KEY);
         LocalStore.set("hasSeenAuthQrOnFirstLaunch", true);
         this.isSignedIn = true;
@@ -168,23 +154,12 @@ export function createAuthQrSignInScreenMethods03() {
       }
       Router.back({ skipConsume: true });
     },
-    toggleEmailMode() {
-      if (this.isEmailSubmitting || !this.serverConfiguration?.isShared) return;
-      this.isRegistering = !this.isRegistering;
-      this.emailError = "";
-      this.emailNotice = "";
-      this.password = "";
-      this.render();
-    },
     getLeftDescription() {
-      if (this.useLocalMode) return I18n.t("auth_local_description");
       if (this.isSignedIn) return I18n.t("auth.qr.leftDescriptionSignedIn");
-      if (this.serverConfiguration?.isShared) return I18n.t("auth_email_shared_hint");
       if (this.useEmailLogin) return I18n.t("auth.email.hint");
       return I18n.t("auth.qr.leftDescriptionSignedOut");
     },
     getCardSubtitle() {
-      if (this.useLocalMode) return I18n.t("server_options_local_active");
       if (this.isSignedIn) return I18n.t("auth.qr.cardSubtitleSignedIn");
       if (this.useEmailLogin) return I18n.t("auth.email.instruction");
       return I18n.t("auth.qr.cardSubtitleSignedOut");
@@ -237,8 +212,6 @@ export function createAuthQrSignInScreenMethods03() {
         this.toggleServerMenu();
       } else if (action === "use-official" || action === "connect-custom") {
         this.openServerConnection(action === "use-official" ? "officialReview" : "input");
-      } else if (action === "use-local") {
-        this.openServerConnection("localReview");
       } else if (action === "login-qr" || action === "login-email") {
         this.toggleLoginMode(action === "login-email");
       } else if (action === "refresh") {
@@ -249,8 +222,6 @@ export function createAuthQrSignInScreenMethods03() {
         await this.handleContinueAction();
       } else if (action === "email-submit" || action === "password-input") {
         await this.submitEmailLogin();
-      } else if (action === "email-mode") {
-        this.toggleEmailMode();
       } else if (action === "email-input") {
         focusNode(this.container.querySelector("#auth-password-input"));
       }
@@ -283,7 +254,6 @@ export function createAuthQrSignInScreenMethods03() {
       }
     },
     cleanup() {
-      this.authMountToken = Number(this.authMountToken || 0) + 1;
       this.isMounted = false;
       this.isLeaving = true;
       this.showSignOutConfirmation = false;

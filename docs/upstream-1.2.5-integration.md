@@ -20,7 +20,7 @@ Versione aggiornata a 1.2.5 in `package.json`, lockfile e `appinfo.json`, senza 
 
 ## Adattamenti al nostro progetto
 
-Conservati il caricamento e la gestione delle immagini entro i limiti VIDAA, le anteprime localizzate, il recupero delle sorgenti, la selezione delle tracce e i flussi di accesso/backend personalizzati. Conservata anche la nostra implementazione MDBList, che dispone già di richieste limitate, cache e supporto degli identificatori aggiuntivi richiesti dalle nuove funzioni.
+Conservati il caricamento e la gestione delle immagini entro i limiti VIDAA, le anteprime localizzate, il recupero delle sorgenti, la selezione delle tracce e gli adattamenti di input. Conservata anche la nostra implementazione MDBList, che dispone già di richieste limitate, cache e supporto degli identificatori aggiuntivi richiesti dalle nuove funzioni.
 
 Durante l'integrazione è emersa una regressione: la gestione upstream della pausa durante il buffering impediva a VIDAA di cancellare il tempo limite di recupero della sorgente quando l'utente metteva in pausa. È stata aggiunta un'eccezione VIDAA e verificata con il test esistente.
 
@@ -34,4 +34,4 @@ Durante l'integrazione è emersa una regressione: la gestione upstream della pau
 
 Le verifiche automatizzate non sostituiscono una prova sulla TV: prestazioni reali, tastiera nativa e riproduzione audio/video vanno confermate sul dispositivo. La conversione DTS/TrueHD è stata importata e controllata nella sintassi, senza una prova di decodifica su webOS.
 
-Le successive correzioni di Account e addon e le relative verifiche sono documentate in [account-addon-network-fix.md](account-addon-network-fix.md).
+Il successivo ripristino dei flussi account ufficiali è documentato in [official-nuvio-accounts.md](official-nuvio-accounts.md).

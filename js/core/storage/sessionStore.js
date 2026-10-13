@@ -1,3 +1,8 @@
+import {
+  bindSessionToActiveBackend,
+  isSessionForActiveBackend
+} from "../auth/accountSessionScope.js";
+
 export const SessionStore = {
   normalizeToken(value) {
     const text = String(value ?? "").trim();
@@ -20,6 +25,7 @@ export const SessionStore = {
   },
 
   get accessToken() {
+    if (!isSessionForActiveBackend()) return null;
     return this.normalizeToken(localStorage.getItem("access_token"));
   },
 
@@ -30,9 +36,11 @@ export const SessionStore = {
       return;
     }
     localStorage.setItem("access_token", normalized);
+    bindSessionToActiveBackend();
   },
 
   get refreshToken() {
+    if (!isSessionForActiveBackend()) return null;
     return this.normalizeToken(localStorage.getItem("refresh_token"));
   },
 
@@ -43,6 +51,7 @@ export const SessionStore = {
       return;
     }
     localStorage.setItem("refresh_token", normalized);
+    bindSessionToActiveBackend();
   },
 
   clear() {

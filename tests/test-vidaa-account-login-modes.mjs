@@ -266,44 +266,6 @@ for (const [name, email, qr, extra] of [
   });
 }
 
-test("VIDAA local menu keeps both custom-server buttons and local/official controls", async () => {
-  const ui = screen();
-  const host = await mount(ui, config(false, false, { isLocal: true, isCustom: false }));
-  ui.toggleServerMenu();
-  const connectButtons = host.querySelectorAll("[data-action='connect-custom']");
-  assert.equal(connectButtons.length, 2);
-  for (const button of connectButtons) button.click();
-  assert.deepEqual(
-    navigations.map((entry) => entry.params.initialMode),
-    ["input", "input"]
-  );
-  assert.ok(host.markup.includes('data-action="use-official"'));
-  assert.ok(!host.markup.includes('data-action="use-local"'));
-  assert.equal(ui.useLocalMode, true);
-  assert.equal(starts.length, 0);
-  assert.equal(focusSelectors[0], "#qr-back-btn");
-  ui.cleanup();
-  const custom = screen();
-  const customHost = await mount(custom);
-  custom.toggleServerMenu();
-  customHost.querySelector("[data-action='use-local']").click();
-  assert.equal(navigations.at(-1).params.initialMode, "localReview");
-  custom.cleanup();
-});
-
-test("shared backend keeps registration and hides server/QR controls", async () => {
-  const ui = screen();
-  const host = await mount(ui, config(true, false, { isShared: true, isCustom: false }));
-  assert.equal(starts.length, 0);
-  assert.ok(!host.markup.includes('data-action="server-menu"'));
-  assert.ok(host.markup.includes('data-action="email-mode"'));
-  host.querySelector("[data-action='email-mode']").click();
-  assert.equal(ui.isRegistering, true);
-  assert.ok(host.markup.includes('autocomplete="new-password"'));
-  assert.ok(!host.markup.includes('data-action="login-qr"'));
-  ui.cleanup();
-});
-
 test("signed-in and busy QR/email requests preserve upstream switch blockers", async () => {
   for (const flag of [
     "isLeaving",

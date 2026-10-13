@@ -12,8 +12,7 @@ export function createAuthQrSignInScreenMethods02() {
     GUEST_QR_BYPASS_KEY,
     escapeHtml,
     formatDuration,
-    parseQrExpiration,
-    ScreenUtils
+    parseQrExpiration
   } = internals;
 
   return {
@@ -36,14 +35,10 @@ export function createAuthQrSignInScreenMethods02() {
       this.container
         .querySelector("[data-action='use-official']")
         ?.addEventListener("click", () => this.openServerConnection("officialReview"));
-      this.container
-        .querySelectorAll("[data-action='connect-custom']")
-        .forEach((node) => node.addEventListener("click", () => this.openServerConnection("input")));
-      this.container.querySelector("[data-action='use-local']")?.addEventListener("click", () => this.openServerConnection("localReview"));
+      this.container.querySelector("[data-action='connect-custom']")?.addEventListener("click", () => this.openServerConnection("input"));
       this.container.querySelector("[data-action='login-qr']")?.addEventListener("click", () => this.toggleLoginMode(false));
       this.container.querySelector("[data-action='login-email']")?.addEventListener("click", () => this.toggleLoginMode(true));
       this.container.querySelector("[data-action='email-submit']")?.addEventListener("click", () => void this.submitEmailLogin());
-      this.container.querySelector("[data-action='email-mode']")?.addEventListener("click", () => this.toggleEmailMode());
       this.container.querySelector("[data-action='cancel-signout']")?.addEventListener("click", () => this.dismissSignOutConfirmation());
       this.container.querySelector("[data-action='confirm-signout']")?.addEventListener("click", () => void this.handleSignOut());
       this.container.querySelector("[data-action='terms']")?.addEventListener("click", () => {
@@ -240,7 +235,13 @@ export function createAuthQrSignInScreenMethods02() {
     startPolling(code, deviceNonce, pollIntervalSeconds = 3) {
       this.stopPollingOnly();
       const mountToken = this.authMountToken;
-      const isCurrent = () => this.isMounted && !this.isLeaving && this.useQrLogin && mountToken === this.authMountToken;
+      const isCurrent = () =>
+        this.isMounted &&
+        !this.isLeaving &&
+        this.useQrLogin &&
+        mountToken === this.authMountToken &&
+        this.qrResult?.code === code &&
+        this.qrResult?.deviceNonce === deviceNonce;
       this.qrPollIntervalSeconds = Math.max(2, Number(pollIntervalSeconds || 3));
       const pollOnce = async () => {
         if (!isCurrent() || this.isPolling) return;

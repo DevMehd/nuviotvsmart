@@ -11,7 +11,8 @@ const defaultFixtures = [
   "test-vidaa-home-window.html",
   "test-vidaa-home-poster-expansion.html",
   "test-vidaa-navigation-stress.html",
-  "test-vidaa-home-row-updates.html"
+  "test-vidaa-home-row-updates.html",
+  "test-vidaa-account-dom.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(defaultFixtures.map((fixture) => fixture.split("?")[0]));
@@ -27,6 +28,7 @@ const mimeTypes = {
   ".mjs": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",

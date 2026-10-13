@@ -13,7 +13,6 @@ globalThis.localStorage = {
 globalThis.sessionStorage = { removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.__NUVIO_ENV__ = {
-  NUVIO_ACCOUNT_BACKEND_MODE: "shared",
   NUVIO_SUPABASE_URL: "https://account.example",
   NUVIO_SUPABASE_ANON_KEY: "sb_publishable_fixture_public_key"
 };
@@ -310,39 +309,6 @@ const cases = {
     assert.equal(calls, 1);
     assert.equal(AuthManager.state, AuthState.AUTHENTICATED);
     assert.ok(SessionStore.refreshToken);
-  },
-  "failed-addon-save-cannot-restore-a-signed-out-account": async () => {
-    signedIn();
-    const { SharedPluginScreen } = await import("../js/ui/screens/plugin/sharedPluginScreen.js");
-    const { LibrarySyncService } = await import("../js/core/profile/librarySyncService.js");
-    const { addonRepository } = await import("../js/data/repository/addonRepository.js");
-    const privateUrl = "https://personal.example/private-config";
-    await addonRepository.addAddon(privateUrl);
-    const originalPush = LibrarySyncService.push;
-    LibrarySyncService.push = async () => {
-      await AuthManager.signOut();
-      return false;
-    };
-    globalThis.fetch = async () =>
-      json({ id: "fixture.addon", name: "Fixture", resources: [], catalogs: [] });
-    const owner = {
-      ...SharedPluginScreen,
-      mounted: true,
-      saving: false,
-      syncing: false,
-      render() {}
-    };
-    try {
-      await bounded(() => owner.change("install", "https://new.example/manifest.json"));
-      assert.equal(AuthManager.state, AuthState.SIGNED_OUT);
-      assert.ok(
-        !addonRepository.getInstalledAddonUrls().includes(privateUrl),
-        "Rollback must not restore the previous user's addons after logout"
-      );
-      assert.equal(localStorage.getItem("profiles"), null);
-    } finally {
-      LibrarySyncService.push = originalPush;
-    }
   },
   "local-account-stats": async () => {
     signedIn();

@@ -162,3 +162,16 @@ export function hasAccountLocalData(storage = globalThis.localStorage) {
     return true;
   }
 }
+
+// Preserve the previous backend's local data before removing it from the
+// active stores. Session credentials are deliberately excluded from backups.
+export function snapshotAccountLocalData(storage = globalThis.localStorage) {
+  const data = Object.create(null);
+  for (let index = 0; index < (storage?.length || 0); index += 1) {
+    const key = storage.key(index);
+    if (!key) continue;
+    const value = storage.getItem(key);
+    if (shouldRemoveLocalStorageKey(key, value)) data[key] = value;
+  }
+  return data;
+}

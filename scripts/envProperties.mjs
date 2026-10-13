@@ -3,7 +3,6 @@ import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 
 export const ENV_PROPERTY_KEYS = [
-  "NUVIO_ACCOUNT_BACKEND_MODE",
   "NUVIO_SUPABASE_URL",
   "NUVIO_SUPABASE_ANON_KEY",
   "NUVIO_SUPABASE_FALLBACK_URL",
@@ -27,7 +26,6 @@ export const ENV_PROPERTY_KEYS = [
 ];
 
 const DEFAULT_ENV_VALUES = {
-  NUVIO_ACCOUNT_BACKEND_MODE: "",
   NUVIO_SUPABASE_URL: "https://api.nuvio.tv",
   NUVIO_SUPABASE_ANON_KEY:
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI",
@@ -43,8 +41,8 @@ const DEFAULT_ENV_VALUES = {
   SUPPORTERS_API_BASE_URL: "https://nuvio.tv/",
   SUPPORT_URL: "https://nuvio.tv/support",
   SPONSOR_NAMES: "ragmehos.",
-  TMDB_API_KEY: "",
-  TRAKT_CLIENT_ID: "",
+  TMDB_API_KEY: "01926d2187b6a5d861eefc750e9df3e3",
+  TRAKT_CLIENT_ID: "5783db7c46a5b22f072d4b224f9bd7dc2cbaba66dbe3515d1feb59e3ca72394c",
   TRAKT_CLIENT_SECRET: "",
   SIMKL_CLIENT_ID: "",
   SIMKL_APP_NAME: "nuvio",
@@ -93,49 +91,26 @@ export function parseProperties(source = "") {
 }
 
 export function normalizeEnvProperties(properties = {}) {
-  properties = {
-    ...properties,
-    NUVIO_ACCOUNT_BACKEND_MODE: String(properties.NUVIO_ACCOUNT_BACKEND_MODE || "")
-      .trim()
-      .toLowerCase()
-  };
   const env = {};
   ENV_PROPERTY_KEYS.forEach((key) => {
     const rawValue = Object.prototype.hasOwnProperty.call(properties, key)
       ? properties[key]
-      : properties.NUVIO_ACCOUNT_BACKEND_MODE === "shared" &&
-          (key === "NUVIO_SUPABASE_URL" || key === "NUVIO_SUPABASE_ANON_KEY")
-        ? ""
-        : DEFAULT_ENV_VALUES[key];
+      : DEFAULT_ENV_VALUES[key];
     const normalizedValue = String(rawValue ?? "");
     const shouldUseDefault =
       (key === "INTRODB_API_URL" ||
         key === "SPONSOR_NAMES" ||
-        ((key === "NUVIO_SUPABASE_URL" || key === "NUVIO_SUPABASE_ANON_KEY") &&
-          properties.NUVIO_ACCOUNT_BACKEND_MODE !== "shared")) &&
+        key === "NUVIO_SUPABASE_URL" ||
+        key === "NUVIO_SUPABASE_ANON_KEY") &&
       !normalizedValue.trim();
     env[key] = shouldUseDefault ? DEFAULT_ENV_VALUES[key] : normalizedValue;
   });
-  const key = env.NUVIO_SUPABASE_ANON_KEY.trim();
-  env.NUVIO_SUPABASE_ANON_KEY = key;
-  let isPublicKey = key.startsWith("sb_publishable_") && key.length > 20;
-  if (key.startsWith("sb_secret_"))
-    throw new Error("The app requires a public Supabase key, never a secret key.");
+  const key = String(env.NUVIO_SUPABASE_ANON_KEY || "").trim();
+  if (key.startsWith("sb_secret_")) throw new Error("The app requires a public Supabase key.");
   if (key.split(".").length === 3) {
-    let payload = null;
-    try {
-      payload = JSON.parse(Buffer.from(key.split(".")[1], "base64url").toString("utf8"));
-    } catch (_) {}
-    if (payload?.role && payload.role !== "anon")
+    const payload = JSON.parse(Buffer.from(key.split(".")[1], "base64url").toString("utf8"));
+    if (payload.role !== "anon")
       throw new Error("The app requires an anon or publishable Supabase key.");
-    isPublicKey = payload?.role === "anon";
-  }
-  if (env.NUVIO_ACCOUNT_BACKEND_MODE === "shared") {
-    if (!isPublicKey) throw new Error("Shared backend requires a valid publishable or anon key.");
-    const url = new URL(env.NUVIO_SUPABASE_URL);
-    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
-      throw new Error("Shared backend requires a public HTTPS URL without credentials.");
-    }
   }
   return env;
 }
@@ -148,7 +123,6 @@ export async function resolveLocalPropertiesSource({ rootDir, sourcePath = "" } 
     candidates.push(path.resolve(process.env.NUVIO_LOCAL_PROPERTIES));
   } else {
     candidates.push(path.join(rootDir, "local.properties"));
-    candidates.push(path.join(rootDir, "supabase", "shared.properties"));
     candidates.push(path.join(rootDir, "local.example.properties"));
   }
 

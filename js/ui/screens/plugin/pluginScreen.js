@@ -2,14 +2,16 @@ import { ScreenUtils } from "../../navigation/screen.js";
 import { Router } from "../../navigation/routerState.js";
 import { AuthManager } from "../../../core/auth/authManager.js";
 import { LibrarySyncService } from "../../../core/profile/librarySyncService.js";
+import { CollectionSyncService } from "../../../core/profile/collectionSyncService.js";
+import { HomeCatalogSettingsSyncService } from "../../../core/profile/homeCatalogSettingsSyncService.js";
+import { ProfileSettingsSyncService } from "../../../core/profile/profileSettingsSyncService.js";
+import { ProfileManager } from "../../../core/profile/profileManager.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
 import { catalogRepository } from "../../../data/repository/catalogRepository.js";
 import { Platform } from "../../../platform/index.js";
 import { QrCodeGenerator } from "../../../core/qr/qrCodeGenerator.js";
 import { ExperienceModeStore } from "../../../data/local/experienceModeStore.js";
 import { I18n } from "../../../i18n/index.js";
-import { ServerConfigurationStore } from "../../../data/local/serverConfigurationStore.js";
-import { SharedPluginScreen } from "./sharedPluginScreen.js";
 
 function t(key, fallback) {
   return I18n.t(key, {}, { fallback });
@@ -39,8 +41,6 @@ export const PluginScreen = {
   async mount() {
     this.container = document.getElementById("plugin");
     ScreenUtils.show(this.container);
-    this.isShared = ServerConfigurationStore.getActive().isShared === true;
-    if (this.isShared) return SharedPluginScreen.mount(this.container);
     this.pluginRouteEnterPending = true;
     this.contentRow = Number.isFinite(this.contentRow) ? this.contentRow : 0;
     this.contentCol = Number.isFinite(this.contentCol) ? this.contentCol : 0;
@@ -100,7 +100,15 @@ export const PluginScreen = {
     this.syncing = true;
     await this.render({ refreshModel: true });
     try {
-      await LibrarySyncService.pull();
+      const profileId = ProfileManager.getActiveProfileId();
+      // The official phone manager edits all three Home inputs. Refresh them
+      // together so returning to Home also reflects collections and ordering.
+      await Promise.all([
+        LibrarySyncService.pull(),
+        CollectionSyncService.pull(profileId),
+        HomeCatalogSettingsSyncService.pull(profileId),
+        ProfileSettingsSyncService.pull(profileId)
+      ]);
     } catch (error) {
       console.warn("Addon refresh failed", error);
     } finally {
@@ -425,7 +433,6 @@ export const PluginScreen = {
   },
 
   consumeBackRequest() {
-    if (this.isShared) return false;
     if (this.qrOverlayOpen) {
       this.closeQrOverlay();
       return true;
@@ -434,7 +441,6 @@ export const PluginScreen = {
   },
 
   async onKeyDown(event) {
-    if (this.isShared) return SharedPluginScreen.onKeyDown(event);
     if (this.qrOverlayOpen) {
       if (Platform.isBackEvent(event)) {
         event?.preventDefault?.();
@@ -482,7 +488,6 @@ export const PluginScreen = {
   },
 
   cleanup() {
-    if (this.isShared) SharedPluginScreen.cleanup();
     if (this.initialRefreshTimer) {
       clearTimeout(this.initialRefreshTimer);
       this.initialRefreshTimer = null;

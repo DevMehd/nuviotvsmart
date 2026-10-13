@@ -4,27 +4,10 @@ function normalizeUrl(value) {
     .replace(/\/+$/, "");
 }
 
-export function createLocalServerConfiguration() {
-  return Object.freeze({
-    isLocal: true,
-    isCustom: false,
-    backendUrl: "",
-    publishableKey: "",
-    capabilities: Object.freeze({ emailPasswordAuth: false, tvLogin: false }),
-    discoveryUrl: "",
-    fallbackBackendUrl: "",
-    tvLoginWebBaseUrl: "",
-    deviceLoginWebBaseUrl: "",
-    avatarPublicBaseUrl: "",
-    isSecure: false,
-    isPublicHost: false
-  });
-}
-
 export function requireAccountBackend(configuration) {
-  if (configuration?.isLocal || !configuration?.backendUrl || !configuration?.publishableKey) {
-    const error = new Error("Connect to a server to use account sync.");
-    error.code = "LOCAL_BACKEND_DISABLED";
+  if (!configuration?.backendUrl || !configuration?.publishableKey) {
+    const error = new Error("Account sync is not configured.");
+    error.code = "ACCOUNT_BACKEND_DISABLED";
     throw error;
   }
   return configuration;
