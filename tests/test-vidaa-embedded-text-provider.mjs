@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import demux from "../services/webos/src/matroskaTextDemux.cjs";
-import { createEmbeddedTextFixture } from "../scripts/create-vidaa-embedded-text-fixture.mjs";
+import { createEmbeddedTextFixture } from "./helpers/vidaaEmbeddedTextFixture.mjs";
 import {
   createVidaaEmbeddedTextProvider,
   vidaaEmbeddedTextProvider,

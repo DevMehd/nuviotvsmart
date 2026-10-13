@@ -8,7 +8,6 @@
     "test": "npm run test:plugins",
     "test:plugins": "npm run build && node ./scripts/test-webos-plugin-forwarding.cjs && node ./tests/test-vidaa-plugin-readiness.mjs && node ./tests/test-vidaa-plugin-browser-transport.mjs && node ./tests/test-vidaa-plugin-management.mjs && node ./tests/test-vidaa-plugin-queue.mjs && node ./tests/test-vidaa-plugin-runtime.mjs && node ./tests/test-vidaa-plugin-redirects.mjs && node ./tests/test-vidaa-plugin-timers.mjs",
     "prepare": "husky || true",
-    "build:on-release": "node ./scripts/release-build-poller.mjs",
     "install:webos": "node ./scripts/ares-install-webos.mjs",
     "inspect:webos": "node ./scripts/ares-inspect-webos.mjs",
     "logs:webos": "node ./scripts/ares-logs-webos.mjs",

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
+// Background addon/avatar lookups are outside this simulated focus/timing suite.
+globalThis.fetch = async () => {
+  throw new Error("Network unavailable in Home loading fixture");
+};
 const { Platform } = await import("../js/platform/index.js");
 const { getTvRuntimePerformanceProfile, resetTvRuntimePerformanceProfile } =
   await import("../js/platform/tvRuntimePerformance.js");

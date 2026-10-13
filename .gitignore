@@ -4,9 +4,10 @@ favicon.svg
 
 nuvio.env.js
 local.properties
-local.example.properties
 node_modules/
 tests/*
+!tests/helpers/
+!tests/helpers/*.mjs
 !tests/test-vidaa-home-patching.html
 !tests/test-vidaa-account-dom.html
 !tests/test-vidaa-home-row-updates.html
@@ -15,10 +16,15 @@ tests/*
 !tests/test-vidaa-navigation-stress.html
 !tests/run-vidaa-home-dom-tests.mjs
 !tests/test-vidaa-*.mjs
+tests/test-vidaa-embedded-text-access.mjs
 
 # Local research notes and one-off diagnostic tools are not app source.
 docs/vidaa-*.md
+docs/official-nuvio-accounts.md
+docs/upstream-1.2.5-integration.md
 docs/fixtures/
+assets/avatars/
+scripts/release-build-poller.mjs
 scripts/vidaa-*-probe.*
 scripts/vidaa-plugin-context-runtime.js
 scripts/vidaa-native-artifact-inspect.py
