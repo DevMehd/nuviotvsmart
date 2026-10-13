@@ -229,7 +229,7 @@ export function getSessionEmail() {
 }
 
 export async function fetchAccountSyncOverview() {
-  const response = await SupabaseApi.rpc("get_sync_overview", {}, true);
+  const response = await SupabaseApi.rpc("get_sync_overview", {}, true, { timeoutMs: 12_000 });
   const source = response && typeof response === "object" && !Array.isArray(response) ? response : {};
   const addons = source.addons && typeof source.addons === "object" ? source.addons : {};
   const plugins = source.plugins && typeof source.plugins === "object" ? source.plugins : {};

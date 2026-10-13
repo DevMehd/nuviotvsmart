@@ -59,9 +59,7 @@ export function createSettingsScreenMethods04() {
           onSelect: async (option) => {
             if (option.id !== "confirm") return;
             await AuthManager.signOut();
-            this.accountSyncOverview = null;
-            this.accountSyncOverviewPromise = null;
-            this.accountSyncOverviewLoaded = false;
+            this.resetAccountSyncOverview();
           }
         });
       });
@@ -112,7 +110,9 @@ export function createSettingsScreenMethods04() {
                     ? this.renderAccountSyncOverview(model.accountSyncOverview)
                     : model.accountSyncOverviewLoading
                       ? this.renderAccountSyncOverviewLoading()
-                      : ""
+                      : model.accountSyncOverviewError
+                        ? this.renderAccountSyncOverviewError()
+                        : ""
                 }
                 ${this.renderAccountSignOutButton()}
               `
@@ -163,6 +163,24 @@ export function createSettingsScreenMethods04() {
             <span>${escapeHtml(t("account_loading_sync", {}, "Loading sync data..."))}</span>
           </div>
         `;
+    },
+    renderAccountSyncOverviewError() {
+      this.actionMap.set("account:sync-retry", () => {
+        this.resetAccountSyncOverview();
+        this.ensureAccountSyncOverview();
+        void this.render({ refreshModel: false });
+      });
+      return `
+        <p class="settings-account-inline-note" role="status">${escapeHtml(
+          t("account_sync_load_failed", {}, "Unable to load sync data. Check your connection and try again.")
+        )}</p>
+        ${this.renderAccountActionButton({
+          focusKey: "account:sync-retry",
+          icon: "refresh",
+          title: t("action_retry", {}, "Retry"),
+          subtitle: ""
+        })}
+      `;
     },
     renderAccountSyncOverview(overview) {
       const statLabels = [

@@ -8,6 +8,9 @@ export function createSettingsScreenMethods15() {
     cleanup() {
       this.isMounted = false;
       this.settingsMountToken = (this.settingsMountToken || 0) + 1;
+      this.authUnsubscribe?.();
+      this.authUnsubscribe = null;
+      this.resetAccountSyncOverview();
       this.memberAccessUnsubscribe?.();
       this.memberAccessUnsubscribe = null;
       this.persistUiState();

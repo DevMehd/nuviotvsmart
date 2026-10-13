@@ -114,10 +114,14 @@ export const SharedPluginScreen = {
                   <input
                     id="shared-addon-url"
                     class="addons-install-surface focusable"
-                    type="url"
+                    type="text"
+                    inputmode="url"
+                    maxlength="65536"
                     value="${escapeHtml(this.url)}"
                     placeholder="https://example.com/manifest.json"
                     autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck="false"
                     ${mutationDisabled ? "disabled" : ""}
                   >
                   <button
@@ -276,13 +280,41 @@ export const SharedPluginScreen = {
         this.ensureFocusedControlVisible(node);
       });
     });
-    this.container.querySelector("input")?.addEventListener("input", (event) => {
-      this.url = event.target.value;
-    });
+    this.bindInstallUrlInput(this.container.querySelector("#shared-addon-url"));
     this.container.querySelectorAll("button[data-action]").forEach((node) => {
       node.addEventListener("click", () => void this.activate(node));
     });
     ScreenUtils.setInitialFocus(this.container, ".focusable:not(:disabled)");
+  },
+
+  bindInstallUrlInput(input) {
+    if (!input) return;
+    // Tell native/mobile keyboards the full capacity instead of relying on
+    // a firmware default. URL validation is performed by normalizeInstallUrl.
+    input.maxLength = 65536;
+    const update = () => {
+      if (input.isConnected === false) return;
+      this.url = input.value;
+    };
+    input.addEventListener("input", update);
+    input.addEventListener("change", update);
+    input.addEventListener("paste", (event) => {
+      if (input.isConnected === false || input.disabled || input.readOnly || event.defaultPrevented)
+        return;
+      const text = event.clipboardData?.getData("text/plain");
+      if (!text) return;
+      const value = input.value;
+      const start = Number.isInteger(input.selectionStart) ? input.selectionStart : 0;
+      const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : value.length;
+      // Preserve complete configured URLs and the current selection. When the
+      // phone exposes no clipboard payload, leave its native update untouched.
+      input.value = value.slice(0, start) + text + value.slice(end);
+      event.preventDefault();
+      try {
+        input.setSelectionRange?.(start + text.length, start + text.length);
+      } catch {}
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
   },
 
   ensureFocusedControlVisible(node) {
@@ -415,6 +447,8 @@ export const SharedPluginScreen = {
 
   async activate(node) {
     if (this.saving) return;
+    const input = this.container.querySelector("#shared-addon-url");
+    if (input) this.url = input.value;
     const action = node.dataset.action;
     if (action === "install") await this.change(action, this.url);
     else if (action === "remove") await this.change(action, node.dataset.url);

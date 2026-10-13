@@ -197,6 +197,10 @@ export function createSettingsScreenMethods12() {
       if (refreshModel || !this.model) {
         this.model = await this.collectModel();
       }
+      // A background model can have started while the overview was pending.
+      // Merge the current account state without waiting for addon manifests.
+      this.ensureAccountSyncOverview();
+      this.updateAccountSyncOverviewModel();
       this.layoutPrefs = this.model.layout;
       this.sidebarExpanded = Boolean(this.layoutPrefs?.modernSidebar && this.sidebarExpanded);
       this.visibleSections = getVisibleSections(this.model);

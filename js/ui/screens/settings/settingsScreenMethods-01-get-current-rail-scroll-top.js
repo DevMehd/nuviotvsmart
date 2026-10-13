@@ -141,6 +141,12 @@ export function createSettingsScreenMethods01() {
       }
       await this.render({ refreshModel: false });
       this.isMounted = true;
+      this.authUnsubscribe?.();
+      this.authUnsubscribe = AuthManager.subscribe(() => {
+        if (!this.isMounted || !this.model) return;
+        this.ensureAccountSyncOverview();
+        void this.render({ refreshModel: false });
+      });
       this.memberAccessUnsubscribe = MemberAccessRepository.subscribe((access) => {
         if (!this.isMounted || !this.model) return;
         const previous = this.model.memberAccess || {};
@@ -275,7 +281,8 @@ export function createSettingsScreenMethods01() {
         fastHorizontalNavigation: isFastHorizontalNavigationEnabled(),
         authState,
         accountSyncOverview: this.accountSyncOverview || null,
-        accountSyncOverviewLoading: Boolean(this.accountSyncOverviewPromise)
+        accountSyncOverviewLoading: Boolean(this.accountSyncOverviewPromise),
+        accountSyncOverviewError: Boolean(this.accountSyncOverviewError)
       };
     },
     collectTraktModel() {
@@ -294,30 +301,61 @@ export function createSettingsScreenMethods01() {
         stats: this.traktStats || null
       };
     },
+    resetAccountSyncOverview() {
+      this.accountSyncOverview = null;
+      this.accountSyncOverviewPromise = null;
+      this.accountSyncOverviewLoaded = false;
+      this.accountSyncOverviewError = false;
+      this.accountSyncOverviewGeneration = AuthManager.sessionGeneration;
+      this.updateAccountSyncOverviewModel();
+    },
+    updateAccountSyncOverviewModel() {
+      if (!this.model) return;
+      Object.assign(this.model, {
+        authState: AuthManager.getAuthState(),
+        accountEmail: getSessionEmail(),
+        accountSyncOverview: this.accountSyncOverview || null,
+        accountSyncOverviewLoading: Boolean(this.accountSyncOverviewPromise),
+        accountSyncOverviewError: Boolean(this.accountSyncOverviewError)
+      });
+    },
     ensureAccountSyncOverview(authState = AuthManager.getAuthState()) {
       if (authState !== "authenticated") {
-        this.accountSyncOverview = null;
-        this.accountSyncOverviewPromise = null;
-        this.accountSyncOverviewLoaded = false;
+        this.resetAccountSyncOverview();
         return;
+      }
+      if (this.accountSyncOverviewGeneration !== AuthManager.sessionGeneration) {
+        this.resetAccountSyncOverview();
       }
       if (this.accountSyncOverviewLoaded || this.accountSyncOverviewPromise) {
         return;
       }
-      this.accountSyncOverviewPromise = fetchAccountSyncOverview()
+      const generation = AuthManager.sessionGeneration;
+      const isCurrent = () => this.accountSyncOverviewPromise === request && generation === AuthManager.sessionGeneration;
+      const request = fetchAccountSyncOverview()
         .then((overview) => {
-          this.accountSyncOverview = overview;
+          if (isCurrent()) this.accountSyncOverview = overview;
         })
         .catch((error) => {
+          if (!isCurrent()) return;
+          this.accountSyncOverviewError = true;
           console.warn("Account sync overview failed", error);
         })
         .finally(() => {
-          this.accountSyncOverviewLoaded = true;
-          this.accountSyncOverviewPromise = null;
-          if (this.container && this.activeSection === "account") {
-            void this.render();
+          if (this.accountSyncOverviewPromise !== request) return;
+          if (generation !== AuthManager.sessionGeneration || !AuthManager.isAuthenticated) {
+            this.resetAccountSyncOverview();
+          } else {
+            this.accountSyncOverviewLoaded = true;
+            this.accountSyncOverviewPromise = null;
+          }
+          this.updateAccountSyncOverviewModel();
+          if (this.isMounted && this.container && this.activeSection === "account") {
+            void this.render({ refreshModel: false });
           }
         });
+      this.accountSyncOverviewPromise = request;
+      this.updateAccountSyncOverviewModel();
     },
     renderNav() {
       return this.visibleSections

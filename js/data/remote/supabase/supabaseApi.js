@@ -31,12 +31,14 @@ function backendUrl() {
 }
 
 export const SupabaseApi = {
-  async rpc(functionName, body = {}, useSession = true) {
+  async rpc(functionName, body = {}, useSession = true, { timeoutMs, signal } = {}) {
     return trackSyncRequest(
       httpRequest(`${backendUrl()}/rest/v1/rpc/${functionName}`, {
         method: "POST",
         headers: buildHeaders({ "Content-Type": "application/json" }, useSession),
         includeSessionAuth: useSession,
+        timeoutMs,
+        signal,
         body: JSON.stringify(body)
       })
     );

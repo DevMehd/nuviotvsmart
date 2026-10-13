@@ -2,6 +2,9 @@
 
 ### Improvements & Fixes
 
+- Settings Account renders sync statistics independently of addon manifest loading, bounds the overview request to 12 seconds, and offers Retry after a failure.
+- Discards previous Account statistics after logout, account changes or Settings cleanup, and prevents background model refreshes from restoring a stale loading state.
+- Addon installation reads the complete live URL after silent mobile keyboard edits. The text field advertises a 65,536-character capacity and preserves full clipboard payloads and change-only commits.
 - Fixed duplicate webOS OK/click activation on the sign-in screen and sign-out confirmation, preventing unintended login-mode changes while preserving text input and consecutive remote actions (@nenad, @WhiteGiso)
 - Preserved active text editing when pointer hover moves across controls, keeping the TV keyboard open until an explicit click or D-pad navigation changes focus (@WhiteGiso)
 - Retained loaded Discover posters across grid and screen updates to prevent visible artwork from blanking during re-renders (@WhiteGiso)
