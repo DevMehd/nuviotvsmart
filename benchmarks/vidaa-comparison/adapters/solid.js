@@ -1,7 +1,9 @@
-import { createSignal, For, createComponent } from "solid-js";
+import { createSignal, createRenderEffect, For, createComponent } from "solid-js";
 import { render } from "solid-js/web";
-import h from "solid-js/h";
 import { style, tag, checkDom } from "../scene.js";
+// Mirrors compiled Solid JSX: one element per keyed row and one render effect
+// that patches style, src and text from the row signal. solid-js/h dynamic
+// props stopped tracking the row signal after the first update in validation.
 export function mount(root) {
   const [items, setItems] = createSignal([]),
     rows = new Map();
@@ -11,16 +13,20 @@ export function mount(root) {
         get each() {
           return items();
         },
-        children: (row) =>
-          h(
-            tag(row.get()),
-            {
-              "data-id": row.id,
-              style: () => style(row.get()),
-              ...(row.get().type === "image" ? { src: () => row.get().src } : {})
-            },
-            () => (row.get().type === "text" ? row.get().text : "")
-          )
+        children: (row) => {
+          const element = document.createElement(tag(row.get()));
+          element.dataset.id = row.id;
+          createRenderEffect(() => {
+            const p = row.get(),
+              css = style(p);
+            if (element.getAttribute("style") !== css) element.setAttribute("style", css);
+            if (p.type === "image") {
+              if (element.getAttribute("src") !== p.src) element.src = p.src;
+            } else if (p.type === "text" && element.textContent !== p.text)
+              element.textContent = p.text;
+          });
+          return element;
+        }
       }),
     root
   );

@@ -27,7 +27,7 @@ const Node = memo(
     Object.keys(a.p).every((k) => a.p[k] === b.p[k])
 );
 export async function mount(root) {
-  let setNodes, ready, committed;
+  let setNodes, ready, committed, current;
   const started = new Promise((r) => (ready = r));
   function Scene() {
     const [nodes, set] = useState([]);
@@ -43,11 +43,16 @@ export async function mount(root) {
   app.render(React.createElement(Scene));
   await started;
   return {
+    // React bails out of a state update with the same array reference, so no
+    // commit or layout effect would ever resolve the promise.
     update: (nodes) =>
-      new Promise((resolve) => {
-        committed = resolve;
-        setNodes(nodes);
-      }),
+      nodes === current
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            current = nodes;
+            committed = resolve;
+            setNodes(nodes);
+          }),
     inspect: (nodes) => checkDom(root, nodes),
     destroy: () => app.unmount()
   };

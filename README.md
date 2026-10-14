@@ -129,8 +129,8 @@ The VIDAA diagnostic also opens a comparison laboratory (`benchmarks/vidaa-compa
 that renders the same synthetic scenes with eight renderers and runs JavaScript and
 C++/WebAssembly kernels. `npm run build:comparison` bundles it for Chromium 111 into
 `dist/comparison/<build-id>/`; `npm run package:vidaa` includes it at `/comparison/`.
-Validate with `node tests/test-vidaa-comparison.mjs` and
-`node tests/run-vidaa-home-dom-tests.mjs test-vidaa-comparison.html`. Rebuild the Wasm
+`npm run test:comparison` runs the protocol/Wasm unit test and validates every renderer
+in headless Chrome (`test-vidaa-comparison.html?engine=<engine>`). Rebuild the Wasm
 only after changing `wasm/kernels.cpp` (`npm run build:comparison:wasm`, needs Emscripten).
 
 VIDAA includes the user-selected Xperience Nard and Elite badge rule snapshots.
