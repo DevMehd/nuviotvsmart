@@ -3072,6 +3072,9 @@
     <string name="perso_space_handoff_off">Stop receiving from the phone</string>
     <string name="perso_space_handoff_on">Receive from the phone</string>
     <string name="perso_space_remote_on">Enable the phone remote</string>
+    <string name="perso_space_server_cloud">Secure server: connected</string>
+    <string name="perso_space_server_fallback">Fallback mode (ntfy)</string>
+    <string name="perso_space_server_connecting">Connecting to the secure server…</string>
     <string name="perso_space_remote_off">Disable the phone remote</string>
     <string name="handoff_from">Sent from %1$s</string>
     <string name="handoff_resume_at">Resume at %1$s</string>

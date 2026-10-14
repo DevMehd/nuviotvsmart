@@ -1,26 +1,28 @@
-// "Continuer sur la TV" receiver: listens on the personal-space hand-off channel (ntfy SSE)
-// and offers to resume what the phone was playing. Protocol v1: Docs/parite-plateformes.fr.md.
+// "Continuer sur la TV" receiver: listens on the personal-space hand-off channel (secure
+// backend, ntfy as fallback) and offers to resume what the phone was playing.
+// Protocol v1: Docs/parite-plateformes.fr.md.
 import { PersoSpace } from "./persoSpace.js";
+import { PersoChannels, ntfyMessageText } from "./persoChannels.js";
 import { Router } from "../../ui/navigation/routerState.js";
 import { showHandoffPrompt } from "../../ui/components/handoffPrompt.js";
 
 const MAX_AGE_MS = 10 * 60 * 1000;
-let source = null;
-let currentTopic = "";
+const CHANNEL = "handoff";
+let currentCode = "";
 const seen = new Set();
 
+/** ntfy SSE event data → hand-off message (kept for the ntfy fallback and its tests). */
 export function parseHandoffEvent(rawData, nowMs = Date.now()) {
-  let event;
-  try {
-    event = JSON.parse(rawData);
-  } catch (error) {
-    return null;
-  }
-  if (!event || event.event !== "message" || typeof event.message !== "string") return null;
+  const text = ntfyMessageText(rawData);
+  return text == null ? null : parseHandoffMessage(text, nowMs);
+}
+
+/** Message JSON text (backend payload or ntfy message) → hand-off message, or null. */
+export function parseHandoffMessage(text, nowMs = Date.now()) {
   let message;
   try {
-    message = JSON.parse(event.message);
-  } catch (error) {
+    message = typeof text === "string" ? JSON.parse(text) : text;
+  } catch (_error) {
     return null;
   }
   if (!message || message.v !== 1 || message.type !== "handoff" || !message.media) return null;
@@ -88,28 +90,32 @@ function openFromHandoff(message) {
 export const TvHandoffReceiver = {
   start() {
     const config = PersoSpace.get();
-    if (!config.spaceCode || !config.receiveHandoff || typeof EventSource === "undefined") {
+    if (!config.spaceCode || !config.receiveHandoff) {
       this.stop();
       return;
     }
-    const topic = PersoSpace.handoffTopic(config.spaceCode);
-    if (source && topic === currentTopic) return;
-    this.stop();
-    currentTopic = topic;
-    source = new EventSource(`${config.server.replace(/\/+$/, "")}/${topic}/sse`);
-    source.onmessage = (event) => {
-      const message = parseHandoffEvent(event.data);
-      if (!message) return;
-      const key = `${message.from}:${message.at}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      showHandoffPrompt(message, () => openFromHandoff(message));
-    };
+    if (currentCode === config.spaceCode && PersoChannels.mode(CHANNEL)) return;
+    currentCode = config.spaceCode;
+    void PersoChannels.connect({
+      channel: CHANNEL,
+      kind: "handoff",
+      code: config.spaceCode,
+      ntfyTopic: PersoSpace.handoffTopic(config.spaceCode),
+      server: config.server,
+      member: { name: config.deviceName || "TV", device: "vidaa" },
+      onMessage: (text) => {
+        const message = parseHandoffMessage(text);
+        if (!message) return;
+        const key = `${message.from}:${message.at}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        showHandoffPrompt(message, () => openFromHandoff(message));
+      }
+    });
   },
   stop() {
-    if (source) source.close();
-    source = null;
-    currentTopic = "";
+    PersoChannels.disconnect(CHANNEL);
+    currentCode = "";
   },
   restart() {
     this.stop();

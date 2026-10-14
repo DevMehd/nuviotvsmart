@@ -3,6 +3,7 @@ import * as internals from "./settingsScreenContext.js";
 import { PersoSpace, randomPersoCode } from "../../../core/perso/persoSpace.js";
 import { TvHandoffReceiver } from "../../../core/perso/tvHandoffReceiver.js";
 import { TvRemoteReceiver } from "../../../core/perso/tvRemoteReceiver.js";
+import { PersoChannels } from "../../../core/perso/persoChannels.js";
 
 export function createSettingsScreenMethods05() {
   const {
@@ -73,9 +74,12 @@ export function createSettingsScreenMethods05() {
         const space = PersoSpace.get();
         this.openOptionDialog({
           title: t("perso_space_title", {}, "Espace perso"),
-          message: space.spaceCode
-            ? t("perso_space_dialog_code", { code: space.spaceCode }, `Code : ${space.spaceCode}. Saisis-le dans Nuvio sur le téléphone (Réglages → Espace perso et appareils).`)
-            : t("perso_space_dialog_empty", {}, "Crée un code ici puis saisis-le sur le téléphone, ou saisis le code du téléphone."),
+          message: [
+            space.spaceCode
+              ? t("perso_space_dialog_code", { code: space.spaceCode }, `Code : ${space.spaceCode}. Saisis-le dans Nuvio sur le téléphone (Réglages → Espace perso et appareils).`)
+              : t("perso_space_dialog_empty", {}, "Crée un code ici puis saisis-le sur le téléphone, ou saisis le code du téléphone."),
+            persoServerStatusLabel(t)
+          ].filter(Boolean).join(" — "),
           options: [
             { id: "new", label: t("perso_space_new", {}, "Créer un nouveau code") },
             { id: "enter", label: t("perso_space_enter", {}, "Saisir le code du téléphone") },
@@ -196,11 +200,14 @@ export function createSettingsScreenMethods05() {
               ${this.renderActionRow({
                 focusKey: "advanced:persoSpace",
                 title: t("perso_space_row", {}, "Continuer depuis le téléphone"),
-                subtitle: t(
-                  "perso_space_row_subtitle",
-                  {},
-                  "Associe la TV au téléphone avec un code pour reprendre ici ce que tu regardes sur le téléphone."
-                ),
+                subtitle: [
+                  t(
+                    "perso_space_row_subtitle",
+                    {},
+                    "Associe la TV au téléphone avec un code pour reprendre ici ce que tu regardes sur le téléphone."
+                  ),
+                  persoServerStatusLabel(t)
+                ].filter(Boolean).join(" · "),
                 value: PersoSpace.get().spaceCode
                   ? PersoSpace.get().spaceCode.replace(/(.{4})(?=.)/g, "$1 ")
                   : t("perso_space_not_paired", {}, "Non associé")
@@ -497,4 +504,18 @@ export function createSettingsScreenMethods05() {
         `;
     }
   };
+}
+
+/** "Serveur sécurisé : connecté" / "Mode secours (ntfy)" for the personal space rows. */
+function persoServerStatusLabel(t) {
+  switch (PersoChannels.status()) {
+    case "cloud":
+      return t("perso_space_server_cloud", {}, "Serveur sécurisé : connecté");
+    case "ntfy":
+      return t("perso_space_server_fallback", {}, "Mode secours (ntfy)");
+    case "connecting":
+      return t("perso_space_server_connecting", {}, "Connexion au serveur sécurisé…");
+    default:
+      return "";
+  }
 }

@@ -2,6 +2,7 @@
 // channel (ntfy SSE) and this TV answers with its playback state. Protocol v1, shared with
 // the Android app (TvRemote.kt) and Docs/parite-plateformes.fr.md, "Télécommande".
 import { PersoSpace } from "./persoSpace.js";
+import { PersoChannels, ntfyMessageText } from "./persoChannels.js";
 import { Router } from "../../ui/navigation/routerState.js";
 
 const STATE_EVERY_MS = 15000;
@@ -19,18 +20,18 @@ export const REMOTE_KEYS = {
   5: { key: "GoBack", keyCode: 8 }
 };
 
+/** ntfy SSE event data → command (kept for the ntfy fallback and its tests). */
 export function parseRemoteEvent(rawData, selfId, nowMs = Date.now()) {
-  let event;
-  try {
-    event = JSON.parse(rawData);
-  } catch (error) {
-    return null;
-  }
-  if (!event || event.event !== "message" || typeof event.message !== "string") return null;
+  const text = ntfyMessageText(rawData);
+  return text == null ? null : parseRemoteMessage(text, selfId, nowMs);
+}
+
+/** Message JSON text (backend payload or ntfy message) → command, or null. */
+export function parseRemoteMessage(text, selfId, nowMs = Date.now()) {
   let message;
   try {
-    message = JSON.parse(event.message);
-  } catch (error) {
+    message = typeof text === "string" ? JSON.parse(text) : text;
+  } catch (_error) {
     return null;
   }
   if (!message || message.v !== 1 || message.type !== "cmd" || typeof message.cmd !== "string") return null;
@@ -141,7 +142,7 @@ export function simulateRemoteKey(key, keyCode, target = document) {
     let event;
     try {
       event = new KeyboardEvent(type, { key, bubbles: true, cancelable: true });
-    } catch (error) {
+    } catch (_error) {
       event = document.createEvent("Event");
       event.initEvent(type, true, true);
       Object.defineProperty(event, "key", { get: () => key });
@@ -212,8 +213,8 @@ function applyPlan(plan) {
   }
 }
 
-let source = null;
-let currentTopic = "";
+const CHANNEL = "remote";
+let currentCode = "";
 let watchTimer = null;
 let lastSignature = "";
 let lastPublishedAt = 0;
@@ -221,11 +222,18 @@ let lastState = null;
 
 function publish(state) {
   const config = PersoSpace.get();
-  if (!currentTopic || typeof fetch !== "function") return;
+  if (!currentCode) return;
   lastSignature = stateSignature(state);
   lastPublishedAt = Date.now();
   lastState = state;
-  fetch(`${config.server.replace(/\/+$/, "")}/${currentTopic}`, { method: "POST", body: JSON.stringify(state) }).catch(() => {});
+  void PersoChannels.publish({
+    kind: "remote",
+    code: currentCode,
+    ntfyTopic: PersoSpace.remoteTopic(currentCode),
+    server: config.server,
+    member: { name: config.deviceName || "TV", device: "vidaa" },
+    payload: JSON.stringify(state)
+  });
 }
 
 function publishNow() {
@@ -242,41 +250,50 @@ function watch() {
   if (changed || due) publish(state);
 }
 
+function handleCommand(text) {
+  const message = parseRemoteMessage(text, PersoSpace.get().deviceId);
+  if (!message) return;
+  const plan = planRemoteCommand(message.cmd, message.value, Boolean(currentPlayer()));
+  if (!plan) return;
+  try {
+    if (plan.action !== "state") applyPlan(plan);
+  } catch (_error) {
+    console.warn("Remote command failed", message.cmd, _error);
+  }
+  // Let the player settle before reporting.
+  setTimeout(publishNow, plan.action === "state" ? 0 : 400);
+}
+
 export const TvRemoteReceiver = {
   start() {
-    const config = PersoSpace.get();
-    if (!config.spaceCode || !config.remoteControl || typeof EventSource === "undefined") {
+    let config = PersoSpace.get();
+    if (!config.spaceCode || !config.remoteControl) {
       this.stop();
       return;
     }
-    if (!config.deviceId) PersoSpace.set({});
-    const topic = PersoSpace.remoteTopic(config.spaceCode);
-    if (source && topic === currentTopic) return;
+    if (!config.deviceId) config = PersoSpace.set({});
+    if (currentCode === config.spaceCode && PersoChannels.mode(CHANNEL)) return;
     this.stop();
-    currentTopic = topic;
-    source = new EventSource(`${config.server.replace(/\/+$/, "")}/${topic}/sse`);
-    source.onopen = () => publishNow();
-    source.onmessage = (event) => {
-      const message = parseRemoteEvent(event.data, PersoSpace.get().deviceId);
-      if (!message) return;
-      const plan = planRemoteCommand(message.cmd, message.value, Boolean(currentPlayer()));
-      if (!plan) return;
-      try {
-        if (plan.action !== "state") applyPlan(plan);
-      } catch (error) {
-        console.warn("Remote command failed", message.cmd, error);
+    currentCode = config.spaceCode;
+    void PersoChannels.connect({
+      channel: CHANNEL,
+      kind: "remote",
+      code: config.spaceCode,
+      ntfyTopic: PersoSpace.remoteTopic(config.spaceCode),
+      server: config.server,
+      member: { name: config.deviceName || "TV", device: "vidaa" },
+      onMessage: handleCommand,
+      onConnection: (connected) => {
+        if (connected) publishNow();
       }
-      // Let the player settle before reporting.
-      setTimeout(publishNow, plan.action === "state" ? 0 : 400);
-    };
+    });
     watchTimer = setInterval(watch, WATCH_EVERY_MS);
   },
   stop() {
-    if (source) source.close();
+    PersoChannels.disconnect(CHANNEL);
     if (watchTimer) clearInterval(watchTimer);
-    source = null;
     watchTimer = null;
-    currentTopic = "";
+    currentCode = "";
     lastSignature = "";
     lastState = null;
   },
