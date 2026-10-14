@@ -2,6 +2,7 @@
 import * as internals from "./settingsScreenContext.js";
 import { PersoSpace, randomPersoCode } from "../../../core/perso/persoSpace.js";
 import { TvHandoffReceiver } from "../../../core/perso/tvHandoffReceiver.js";
+import { TvRemoteReceiver } from "../../../core/perso/tvRemoteReceiver.js";
 
 export function createSettingsScreenMethods05() {
   const {
@@ -84,6 +85,12 @@ export function createSettingsScreenMethods05() {
                 ? t("perso_space_handoff_off", {}, "Ne plus recevoir depuis le téléphone")
                 : t("perso_space_handoff_on", {}, "Recevoir depuis le téléphone")
             },
+            {
+              id: "remote",
+              label: space.remoteControl
+                ? t("perso_space_remote_off", {}, "Désactiver la télécommande depuis le téléphone")
+                : t("perso_space_remote_on", {}, "Activer la télécommande depuis le téléphone")
+            },
             { id: "cancel", labelKey: "action_cancel" }
           ],
           selectedId: space.spaceCode ? "toggle" : "new",
@@ -92,6 +99,10 @@ export function createSettingsScreenMethods05() {
             if (option.id === "new") {
               PersoSpace.set({ spaceCode: randomPersoCode() });
               TvHandoffReceiver.restart();
+              TvRemoteReceiver.restart();
+            } else if (option.id === "remote") {
+              PersoSpace.set({ remoteControl: !space.remoteControl });
+              TvRemoteReceiver.restart();
             } else if (option.id === "toggle") {
               PersoSpace.set({ receiveHandoff: !space.receiveHandoff });
               TvHandoffReceiver.restart();
@@ -105,6 +116,7 @@ export function createSettingsScreenMethods05() {
                   if (code.length < 8) return false;
                   PersoSpace.set({ spaceCode: code, receiveHandoff: true });
                   TvHandoffReceiver.restart();
+                  TvRemoteReceiver.restart();
                   return true;
                 }
               });

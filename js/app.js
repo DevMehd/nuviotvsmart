@@ -17,6 +17,7 @@ import { ProviderCredentialSyncService } from "./core/profile/providerCredential
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
 import { TvHandoffReceiver } from "./core/perso/tvHandoffReceiver.js";
+import { TvRemoteReceiver } from "./core/perso/tvRemoteReceiver.js";
 import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
@@ -633,6 +634,11 @@ async function bootstrapApp() {
     TvHandoffReceiver.start();
   } catch (error) {
     console.warn("TV hand-off receiver unavailable", error);
+  }
+  try {
+    TvRemoteReceiver.start();
+  } catch (error) {
+    console.warn("TV remote receiver unavailable", error);
   }
   AuthManager.subscribe((state) => {
     if (state === AuthState.LOADING) {

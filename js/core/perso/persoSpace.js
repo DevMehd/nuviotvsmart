@@ -49,6 +49,7 @@ export const PersoSpace = {
       deviceId: String(stored.deviceId || ""),
       deviceName: String(stored.deviceName || ""),
       receiveHandoff: stored.receiveHandoff !== false,
+      remoteControl: stored.remoteControl !== false,
       server: String(stored.server || DEFAULT_SYNC_SERVER)
     };
   },
@@ -66,5 +67,8 @@ export const PersoSpace = {
   },
   handoffTopic(code = this.get().spaceCode) {
     return `nuvio-handoff-v1-${fnv1a64Hex(String(code).toUpperCase())}`;
+  },
+  remoteTopic(code = this.get().spaceCode) {
+    return `nuvio-remote-v1-${fnv1a64Hex(String(code).toUpperCase())}`;
   }
 };
