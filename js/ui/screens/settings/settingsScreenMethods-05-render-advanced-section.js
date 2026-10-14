@@ -1,5 +1,7 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./settingsScreenContext.js";
+import { PersoSpace, randomPersoCode } from "../../../core/perso/persoSpace.js";
+import { TvHandoffReceiver } from "../../../core/perso/tvHandoffReceiver.js";
 
 export function createSettingsScreenMethods05() {
   const {
@@ -66,6 +68,50 @@ export function createSettingsScreenMethods05() {
           }
         });
       });
+      this.actionMap.set("advanced:persoSpace", () => {
+        const space = PersoSpace.get();
+        this.openOptionDialog({
+          title: t("perso_space_title", {}, "Espace perso"),
+          message: space.spaceCode
+            ? t("perso_space_dialog_code", { code: space.spaceCode }, `Code : ${space.spaceCode}. Saisis-le dans Nuvio sur le téléphone (Réglages → Espace perso et appareils).`)
+            : t("perso_space_dialog_empty", {}, "Crée un code ici puis saisis-le sur le téléphone, ou saisis le code du téléphone."),
+          options: [
+            { id: "new", label: t("perso_space_new", {}, "Créer un nouveau code") },
+            { id: "enter", label: t("perso_space_enter", {}, "Saisir le code du téléphone") },
+            {
+              id: "toggle",
+              label: space.receiveHandoff
+                ? t("perso_space_handoff_off", {}, "Ne plus recevoir depuis le téléphone")
+                : t("perso_space_handoff_on", {}, "Recevoir depuis le téléphone")
+            },
+            { id: "cancel", labelKey: "action_cancel" }
+          ],
+          selectedId: space.spaceCode ? "toggle" : "new",
+          returnFocusKey: "advanced:persoSpace",
+          onSelect: (option) => {
+            if (option.id === "new") {
+              PersoSpace.set({ spaceCode: randomPersoCode() });
+              TvHandoffReceiver.restart();
+            } else if (option.id === "toggle") {
+              PersoSpace.set({ receiveHandoff: !space.receiveHandoff });
+              TvHandoffReceiver.restart();
+            } else if (option.id === "enter") {
+              this.openTextDialog({
+                title: t("perso_space_enter", {}, "Saisir le code du téléphone"),
+                value: space.spaceCode,
+                returnFocusKey: "advanced:persoSpace",
+                onSubmit: (value) => {
+                  const code = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+                  if (code.length < 8) return false;
+                  PersoSpace.set({ spaceCode: code, receiveHandoff: true });
+                  TvHandoffReceiver.restart();
+                  return true;
+                }
+              });
+            }
+          }
+        });
+      });
       this.actionMap.set("advanced:clearContinueWatchingCache", () => {
         LocalStore.remove(CW_ENRICHMENT_CACHE_KEY);
         LocalStore.remove(CW_DISPLAY_SNAPSHOT_KEY);
@@ -127,6 +173,25 @@ export function createSettingsScreenMethods05() {
                 title: t("advanced_remember_last_profile", {}, "Remember Last Profile"),
                 subtitle: t("advanced_remember_last_profile_subtitle", {}, "Remember last selected profile at startup"),
                 checked: ProfileManager.isRememberLastProfileEnabled()
+              })}
+            </div>
+          </div>
+          <div class="settings-group-heading">
+            <div class="settings-group-title">${escapeHtml(t("perso_space_title", {}, "Espace perso"))}</div>
+          </div>
+          <div class="settings-group-card">
+            <div class="settings-stack">
+              ${this.renderActionRow({
+                focusKey: "advanced:persoSpace",
+                title: t("perso_space_row", {}, "Continuer depuis le téléphone"),
+                subtitle: t(
+                  "perso_space_row_subtitle",
+                  {},
+                  "Associe la TV au téléphone avec un code pour reprendre ici ce que tu regardes sur le téléphone."
+                ),
+                value: PersoSpace.get().spaceCode
+                  ? PersoSpace.get().spaceCode.replace(/(.{4})(?=.)/g, "$1 ")
+                  : t("perso_space_not_paired", {}, "Non associé")
               })}
             </div>
           </div>

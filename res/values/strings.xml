@@ -3061,4 +3061,18 @@
     <string name="mdblist_show_on_hero_subtitle">Show MDBList ratings on hero carousel (modern and classic/grid)</string>
     <string name="mdblist_rating_order_title">Rating Order</string>
     <string name="mdblist_rating_order_subtitle">First 3 enabled and available ratings are shown on the modern hero. Use arrows to reorder.</string>
+    <string name="perso_space_title">Personal space</string>
+    <string name="perso_space_row">Continue from the phone</string>
+    <string name="perso_space_row_subtitle">Pair the TV with the phone using a code to resume here what you watch on the phone.</string>
+    <string name="perso_space_not_paired">Not paired</string>
+    <string name="perso_space_dialog_code">Code: %1$s. Enter it in Nuvio on the phone (Settings → Personal space and devices).</string>
+    <string name="perso_space_dialog_empty">Create a code here and enter it on the phone, or enter the phone's code.</string>
+    <string name="perso_space_new">Create a new code</string>
+    <string name="perso_space_enter">Enter the phone's code</string>
+    <string name="perso_space_handoff_off">Stop receiving from the phone</string>
+    <string name="perso_space_handoff_on">Receive from the phone</string>
+    <string name="handoff_from">Sent from %1$s</string>
+    <string name="handoff_resume_at">Resume at %1$s</string>
+    <string name="handoff_play">Resume here</string>
+    <string name="handoff_dismiss">Ignore</string>
 </resources>

@@ -16,6 +16,7 @@ import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ProviderCredentialSyncService } from "./core/profile/providerCredentialSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
+import { TvHandoffReceiver } from "./core/perso/tvHandoffReceiver.js";
 import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
@@ -628,6 +629,11 @@ async function bootstrapApp() {
 
   markBootStage("Restoring session");
   DeviceSessionRegistration.start();
+  try {
+    TvHandoffReceiver.start();
+  } catch (error) {
+    console.warn("TV hand-off receiver unavailable", error);
+  }
   AuthManager.subscribe((state) => {
     if (state === AuthState.LOADING) {
       StartupSyncService.stop();

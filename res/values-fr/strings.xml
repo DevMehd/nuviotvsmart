@@ -2745,4 +2745,18 @@
     <string name="mdblist_show_on_hero_subtitle">Afficher les notes MDBList dans le bandeau principal (Modern et Classic/Grid)</string>
     <string name="mdblist_rating_order_title">Ordre des notes</string>
     <string name="mdblist_rating_order_subtitle">Le bandeau Modern affiche les 3 premières notes activées et disponibles. Utilisez les flèches pour modifier leur ordre.</string>
+    <string name="perso_space_title">Espace perso</string>
+    <string name="perso_space_row">Continuer depuis le téléphone</string>
+    <string name="perso_space_row_subtitle">Associe la TV au téléphone avec un code pour reprendre ici ce que tu regardes sur le téléphone.</string>
+    <string name="perso_space_not_paired">Non associé</string>
+    <string name="perso_space_dialog_code">Code : %1$s. Saisis-le dans Nuvio sur le téléphone (Réglages → Espace perso et appareils).</string>
+    <string name="perso_space_dialog_empty">Crée un code ici puis saisis-le sur le téléphone, ou saisis le code du téléphone.</string>
+    <string name="perso_space_new">Créer un nouveau code</string>
+    <string name="perso_space_enter">Saisir le code du téléphone</string>
+    <string name="perso_space_handoff_off">Ne plus recevoir depuis le téléphone</string>
+    <string name="perso_space_handoff_on">Recevoir depuis le téléphone</string>
+    <string name="handoff_from">Envoyé depuis %1$s</string>
+    <string name="handoff_resume_at">Reprendre à %1$s</string>
+    <string name="handoff_play">Reprendre ici</string>
+    <string name="handoff_dismiss">Ignorer</string>
 </resources>
