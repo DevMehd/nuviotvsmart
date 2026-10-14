@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { createEmbeddedTextFixture } from "../scripts/create-vidaa-embedded-text-fixture.mjs";
+import { fileURLToPath } from "node:url";
+import { createEmbeddedTextFixture } from "./helpers/vidaaEmbeddedTextFixture.mjs";
 
 // Production demux, repositories and consumers; transport/DOM only are simulated.
 // No listener, real HTTP, Luna bridge, video decoder or VIDAA provider is started.
@@ -60,6 +61,7 @@ function demux(change = () => {}) {
     clearTimeout,
     module: { exports: {} },
     require(name) {
+      if (name === "url") return { URL };
       if (name === "http" || name === "https") return transport;
       if (name === "net") return {};
       if (name === "zlib")
@@ -70,7 +72,7 @@ function demux(change = () => {}) {
         };
       if (name === "./bitmapSubtitleRangeIO.js" || name === "./matroskaTextDemux.cjs") {
         return requireModule(
-          new URL(`../services/webos/src/${name.slice(2)}`, import.meta.url).pathname.slice(1)
+          fileURLToPath(new URL(`../services/webos/src/${name.slice(2)}`, import.meta.url))
         );
       }
       throw new Error(`Unexpected Node dependency: ${name}`);

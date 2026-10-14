@@ -2,7 +2,11 @@ import { readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const directory = new URL("../tests/", import.meta.url);
-const tests = (await readdir(directory)).filter((name) => /^test-vidaa-.+\.mjs$/.test(name)).sort();
+// This manual probe depends on local diagnostic scripts excluded from the repository.
+const localOnlyTests = new Set(["test-vidaa-embedded-text-access.mjs"]);
+const tests = (await readdir(directory))
+  .filter((name) => /^test-vidaa-.+\.mjs$/.test(name) && !localOnlyTests.has(name))
+  .sort();
 for (const test of tests) {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL(test, directory))], {
     stdio: "inherit"

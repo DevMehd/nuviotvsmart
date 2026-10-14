@@ -16,6 +16,8 @@ tests/*
 !tests/test-vidaa-stream-window.html
 !tests/test-vidaa-comparison.html
 !tests/run-vidaa-home-dom-tests.mjs
+!tests/helpers/
+!tests/helpers/*.mjs
 !tests/test-vidaa-*.mjs
 
 # Local research notes and one-off diagnostic tools are not app source.
