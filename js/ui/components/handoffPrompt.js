@@ -9,7 +9,10 @@ function t(key, params, fallback) {
 }
 
 function escapeHtml(value = "") {
-  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  return String(value).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+  );
 }
 
 function formatPosition(ms) {
@@ -24,13 +27,25 @@ function formatPosition(ms) {
 export function showHandoffPrompt(message, onAccept) {
   dismiss();
   const media = message.media || {};
-  const episode = media.seasonNumber != null && media.episodeNumber != null ? ` · S${media.seasonNumber}E${media.episodeNumber}` : "";
+  const episode =
+    media.seasonNumber != null && media.episodeNumber != null
+      ? ` · S${media.seasonNumber}E${media.episodeNumber}`
+      : "";
   const root = document.createElement("div");
   root.className = "perso-handoff-prompt";
-  root.setAttribute("style", [
-    "position:fixed", "inset:0", "z-index:99999", "display:flex", "align-items:center", "justify-content:center",
-    "background:rgba(0,0,0,0.72)", "font-family:inherit"
-  ].join(";"));
+  root.setAttribute(
+    "style",
+    [
+      "position:fixed",
+      "inset:0",
+      "z-index:99999",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "background:rgba(0,0,0,0.72)",
+      "font-family:inherit"
+    ].join(";")
+  );
   const art = message.background || media.poster;
   root.innerHTML = `
     <div style="width:60vw;max-width:980px;border-radius:28px;overflow:hidden;background:#141414;box-shadow:0 30px 80px rgba(0,0,0,.6);color:#fff">

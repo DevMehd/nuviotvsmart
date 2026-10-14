@@ -34,7 +34,8 @@ export function parseRemoteMessage(text, selfId, nowMs = Date.now()) {
   } catch (_error) {
     return null;
   }
-  if (!message || message.v !== 1 || message.type !== "cmd" || typeof message.cmd !== "string") return null;
+  if (!message || message.v !== 1 || message.type !== "cmd" || typeof message.cmd !== "string")
+    return null;
   if (selfId && message.from === selfId) return null;
   const at = Number(message.at);
   if (Number.isFinite(at) && nowMs - at > MAX_AGE_MS) return null;
@@ -55,9 +56,13 @@ export function planRemoteCommand(cmd, value, playerOpen) {
     case "pause":
       return playerOpen ? { action: cmd } : null;
     case "seek":
-      return playerOpen && Number.isFinite(number) ? { action: "seekBy", seconds: number / 1000 } : null;
+      return playerOpen && Number.isFinite(number)
+        ? { action: "seekBy", seconds: number / 1000 }
+        : null;
     case "seekTo":
-      return playerOpen && Number.isFinite(number) ? { action: "seekTo", seconds: Math.max(0, number / 1000) } : null;
+      return playerOpen && Number.isFinite(number)
+        ? { action: "seekTo", seconds: Math.max(0, number / 1000) }
+        : null;
     case "next":
     case "subs":
     case "audio":
@@ -99,8 +104,18 @@ export function buildRemoteState(snapshot, config, nowMs = Date.now()) {
 
 // Publishes again when something a phone shows has changed (not on every clock tick).
 export function stateSignature(state, expectedPositionMs = null) {
-  const jumped = expectedPositionMs != null && Math.abs(Number(state.positionMs || 0) - expectedPositionMs) > 3000;
-  return [state.playing, state.paused, state.title, state.subtitle, state.volume, state.muted, jumped ? state.positionMs : ""].join("|");
+  const jumped =
+    expectedPositionMs != null &&
+    Math.abs(Number(state.positionMs || 0) - expectedPositionMs) > 3000;
+  return [
+    state.playing,
+    state.paused,
+    state.title,
+    state.subtitle,
+    state.volume,
+    state.muted,
+    jumped ? state.positionMs : ""
+  ].join("|");
 }
 
 // ---- Adapter to the live app ----
@@ -111,7 +126,11 @@ function currentPlayer() {
 }
 
 function videoElement(screen) {
-  return screen?.container?.querySelector?.("#videoPlayer") || document.querySelector?.("#videoPlayer") || null;
+  return (
+    screen?.container?.querySelector?.("#videoPlayer") ||
+    document.querySelector?.("#videoPlayer") ||
+    null
+  );
 }
 
 function snapshot() {
@@ -127,10 +146,21 @@ function snapshot() {
   return {
     playing: true,
     paused: Boolean(screen.paused),
-    positionSeconds: typeof screen.getPlaybackCurrentSeconds === "function" ? screen.getPlaybackCurrentSeconds() : video?.currentTime,
-    durationSeconds: typeof screen.getPlaybackDurationSeconds === "function" ? screen.getPlaybackDurationSeconds() : video?.duration,
+    positionSeconds:
+      typeof screen.getPlaybackCurrentSeconds === "function"
+        ? screen.getPlaybackCurrentSeconds()
+        : video?.currentTime,
+    durationSeconds:
+      typeof screen.getPlaybackDurationSeconds === "function"
+        ? screen.getPlaybackDurationSeconds()
+        : video?.duration,
     title: params.playerTitle || params.itemTitle || params.title || "",
-    subtitle: [episodeCode, params.playerEpisodeTitle || params.episodeTitle || ""].filter(Boolean).join(" · ") || params.playerSubtitle || "",
+    subtitle:
+      [episodeCode, params.playerEpisodeTitle || params.episodeTitle || ""]
+        .filter(Boolean)
+        .join(" · ") ||
+      params.playerSubtitle ||
+      "",
     poster: params.playerPosterUrl || params.poster || params.playerBackdropUrl || "",
     volume: video ? video.volume : NaN,
     muted: Boolean(video?.muted)
@@ -180,7 +210,8 @@ function applyPlan(plan) {
       screen?.seekPlaybackSeconds?.(plan.seconds);
       return;
     case "next":
-      if (screen?.resolveNextEpisodeInfo?.()) void screen.playNextEpisode?.({ userInitiated: true });
+      if (screen?.resolveNextEpisodeInfo?.())
+        void screen.playNextEpisode?.({ userInitiated: true });
       return;
     case "subs":
       if (screen?.subtitleDialogVisible) screen.closeSubtitleDialog?.();
@@ -243,7 +274,8 @@ function publishNow() {
 function watch() {
   const state = buildRemoteState(snapshot(), PersoSpace.get());
   let expected = null;
-  if (lastState?.playing && state.playing && !lastState.paused) expected = Number(lastState.positionMs || 0) + (Date.now() - lastPublishedAt);
+  if (lastState?.playing && state.playing && !lastState.paused)
+    expected = Number(lastState.positionMs || 0) + (Date.now() - lastPublishedAt);
   else if (lastState?.playing && state.playing) expected = Number(lastState.positionMs || 0);
   const changed = stateSignature(state, expected) !== lastSignature;
   const due = state.playing && !state.paused && Date.now() - lastPublishedAt >= STATE_EVERY_MS;

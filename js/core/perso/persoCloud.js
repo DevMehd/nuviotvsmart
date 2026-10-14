@@ -64,7 +64,12 @@ export function realtimeJoinMessage(topic, spaceId, token, ref = "1") {
     payload: {
       config: {
         postgres_changes: [
-          { event: "INSERT", schema: "public", table: "perso_events", filter: `space_id=eq.${spaceId}` }
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "perso_events",
+            filter: `space_id=eq.${spaceId}`
+          }
         ]
       },
       access_token: token
@@ -120,7 +125,12 @@ export function createPersoCloud(options = {}) {
 
   async function signUp() {
     try {
-      return await readSession(await request("/auth/v1/signup", { method: "POST", body: JSON.stringify({ data: { app: "nuvio-perso" } }) }));
+      return await readSession(
+        await request("/auth/v1/signup", {
+          method: "POST",
+          body: JSON.stringify({ data: { app: "nuvio-perso" } })
+        })
+      );
     } catch (_error) {
       lastError = "network";
       return null;
@@ -129,7 +139,12 @@ export function createPersoCloud(options = {}) {
 
   async function refresh(refreshToken) {
     try {
-      return await readSession(await request("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: JSON.stringify({ refresh_token: refreshToken }) }));
+      return await readSession(
+        await request("/auth/v1/token?grant_type=refresh_token", {
+          method: "POST",
+          body: JSON.stringify({ refresh_token: refreshToken })
+        })
+      );
     } catch (_error) {
       lastError = "network";
       return null;
@@ -141,7 +156,7 @@ export function createPersoCloud(options = {}) {
     if (session && session.expiresAtMs - now() > 60000) return session.accessToken;
     if (pendingToken) return pendingToken;
     pendingToken = (async () => {
-      const next = (session ? await refresh(session.refreshToken) : null) || await signUp();
+      const next = (session ? await refresh(session.refreshToken) : null) || (await signUp());
       session = next;
       storage.set(SESSION_KEY, next);
       return next?.accessToken || null;
@@ -154,7 +169,9 @@ export function createPersoCloud(options = {}) {
   }
 
   function normalizeCode(code) {
-    return String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return String(code || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
   }
 
   async function spaceId(code, kind, member = {}) {
@@ -166,15 +183,19 @@ export function createPersoCloud(options = {}) {
     const cacheKey = `${url}|${session?.userId}|${kind}|${normalized}`;
     if (spaces[cacheKey]) return spaces[cacheKey];
     try {
-      const response = await request("/rest/v1/rpc/join_space", {
-        method: "POST",
-        body: JSON.stringify({
-          code: normalized,
-          kind,
-          member_name: member.name || "TV",
-          member_device: member.device || "vidaa"
-        })
-      }, token);
+      const response = await request(
+        "/rest/v1/rpc/join_space",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            code: normalized,
+            kind,
+            member_name: member.name || "TV",
+            member_device: member.device || "vidaa"
+          })
+        },
+        token
+      );
       if (!response.ok) {
         lastError = `join_${response.status}`;
         return null;
@@ -200,11 +221,15 @@ export function createPersoCloud(options = {}) {
       return false;
     }
     try {
-      const response = await request("/rest/v1/perso_events", {
-        method: "POST",
-        headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ space_id: id, kind, payload: body, sender: session?.userId || "" })
-      }, token);
+      const response = await request(
+        "/rest/v1/perso_events",
+        {
+          method: "POST",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ space_id: id, kind, payload: body, sender: session?.userId || "" })
+        },
+        token
+      );
       return Boolean(response.ok);
     } catch (_error) {
       return false;
@@ -249,7 +274,14 @@ export function createPersoCloud(options = {}) {
         socket.send(JSON.stringify(realtimeJoinMessage(topic, id, currentToken, String(++ref))));
         heartbeat = setRepeat(() => {
           try {
-            socket.send(JSON.stringify({ topic: "phoenix", event: "heartbeat", payload: {}, ref: String(++ref) }));
+            socket.send(
+              JSON.stringify({
+                topic: "phoenix",
+                event: "heartbeat",
+                payload: {},
+                ref: String(++ref)
+              })
+            );
           } catch (_error) {
             // The close handler reconnects.
           }

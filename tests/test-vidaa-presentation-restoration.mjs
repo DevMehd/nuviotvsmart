@@ -112,12 +112,12 @@ assert.equal(owner.collectionFocusGifPending, null);
 
 const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "utf8");
 const changelog = parsePersonalChangelog(notes, "1.2.5");
-assert.equal(changelog.date, "2026-10-14");
-assert.ok(changelog.notes.includes("Nuvio 1.2.5"));
-assert.ok(changelog.notes.includes("Laboratoire comparatif"));
-assert.ok(changelog.notes.includes("Sources et badges"));
+assert.equal(changelog.date, "2026-10-15");
+assert.ok(changelog.notes.includes("Continuer sur la TV"));
+assert.ok(changelog.notes.includes("Télécommande depuis le téléphone"));
+assert.ok(changelog.notes.includes("Espace perso"));
 assert.ok(
-  !changelog.notes.includes("Parcours automatique"),
+  !changelog.notes.includes("Laboratoire comparatif"),
   "Only the latest entry is included in the TV prompt"
 );
 assert.throws(() => parsePersonalChangelog(notes, "1.2.6"));

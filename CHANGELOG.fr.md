@@ -1,5 +1,12 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-15 — 1.2.5
+
+- Continuer sur la TV : une vidéo lancée sur le téléphone peut reprendre sur la télé, au même moment. La télé propose « Reprendre ici » quand le téléphone lui envoie la lecture.
+- Télécommande depuis le téléphone : lecture, pause, avance et retour, épisode suivant, sous-titres, piste audio, volume et navigation dans les menus, directement depuis l’appli Nuvio du téléphone.
+- Espace perso (Paramètres → Avancé → Espace perso) : un code relie la télé à tes autres appareils. Les échanges passent par un serveur sécurisé réservé à tes appareils, avec un mode de secours automatique s’il ne répond pas.
+- L’écran Espace perso indique si la télé est reliée au serveur sécurisé ou en mode secours.
+
 ## 2026-10-14 — 1.2.5
 
 - Mise à jour du fork vers Nuvio 1.2.5, avec conservation de la connexion au compte Android, du QR code et des protections de lecture VIDAA.

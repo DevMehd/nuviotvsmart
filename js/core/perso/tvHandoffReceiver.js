@@ -40,7 +40,8 @@ export function playerParamsFromHandoff(message) {
     season: media.seasonNumber ?? null,
     episode: media.episodeNumber ?? null,
     playerTitle: media.title || "Nuvio",
-    playerSubtitle: isSeries && media.seasonNumber != null ? `S${media.seasonNumber}E${media.episodeNumber}` : "",
+    playerSubtitle:
+      isSeries && media.seasonNumber != null ? `S${media.seasonNumber}E${media.episodeNumber}` : "",
     playerBackdropUrl: message.background || media.poster || null,
     resumePositionMs: Number(message.positionMs || 0) || 0,
     startFromBeginning: false,
@@ -59,9 +60,10 @@ export function playerParamsFromHandoff(message) {
         url: message.sourceUrl,
         name: message.name || "Nuvio",
         title: media.title,
-        behaviorHints: message.sourceHeaders && Object.keys(message.sourceHeaders).length
-          ? { proxyHeaders: { request: message.sourceHeaders } }
-          : {}
+        behaviorHints:
+          message.sourceHeaders && Object.keys(message.sourceHeaders).length
+            ? { proxyHeaders: { request: message.sourceHeaders } }
+            : {}
       }
     ]
   };

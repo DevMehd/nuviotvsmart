@@ -33,7 +33,8 @@ export function ntfyMessageText(rawData) {
 
 export function createPersoChannels(deps = {}) {
   const cloud = deps.cloud || PersoCloud;
-  const EventSourceImpl = deps.EventSource || (typeof EventSource !== "undefined" ? EventSource : null);
+  const EventSourceImpl =
+    deps.EventSource || (typeof EventSource !== "undefined" ? EventSource : null);
   const fetchImpl = deps.fetch || ((...args) => fetch(...args));
   const setTimer = deps.setTimeout || ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = deps.clearTimeout || ((id) => clearTimeout(id));
@@ -72,7 +73,9 @@ export function createPersoChannels(deps = {}) {
       onChange();
       return;
     }
-    const source = new EventSourceImpl(`${entry.server.replace(/\/+$/, "")}/${entry.ntfyTopic}/sse`);
+    const source = new EventSourceImpl(
+      `${entry.server.replace(/\/+$/, "")}/${entry.ntfyTopic}/sse`
+    );
     source.onopen = () => {
       entry.connected = true;
       onChange();
@@ -91,7 +94,8 @@ export function createPersoChannels(deps = {}) {
     entry.retryTimer = setTimer(async function again() {
       entry.retryTimer = null;
       if (entry.closed || entry.mode !== "ntfy") return;
-      if (!(await tryBackend(entry)) && !entry.closed) entry.retryTimer = setTimer(again, BACKEND_RETRY_MS);
+      if (!(await tryBackend(entry)) && !entry.closed)
+        entry.retryTimer = setTimer(again, BACKEND_RETRY_MS);
     }, BACKEND_RETRY_MS);
     onChange();
   }
@@ -100,7 +104,21 @@ export function createPersoChannels(deps = {}) {
     /** Opens [channel]; [onMessage] receives the JSON text of each message. */
     async connect({ channel, kind, code, ntfyTopic, server, member, onMessage, onConnection }) {
       this.disconnect(channel);
-      const entry = { channel, kind, code, ntfyTopic, server, member, onMessage, onConnection, mode: "connecting", connected: false, closed: false, handle: null, retryTimer: null };
+      const entry = {
+        channel,
+        kind,
+        code,
+        ntfyTopic,
+        server,
+        member,
+        onMessage,
+        onConnection,
+        mode: "connecting",
+        connected: false,
+        closed: false,
+        handle: null,
+        retryTimer: null
+      };
       registry.set(channel, entry);
       onChange();
       if (!(await tryBackend(entry)) && !entry.closed) openNtfy(entry);
@@ -120,10 +138,13 @@ export function createPersoChannels(deps = {}) {
       const text = typeof payload === "string" ? payload : JSON.stringify(payload);
       if (cloud.available) {
         const id = await cloud.spaceId(code, "space", member);
-        if (id && await cloud.sendEvent(id, kind, text)) return "cloud";
+        if (id && (await cloud.sendEvent(id, kind, text))) return "cloud";
       }
       try {
-        await fetchImpl(`${server.replace(/\/+$/, "")}/${ntfyTopic}`, { method: "POST", body: text });
+        await fetchImpl(`${server.replace(/\/+$/, "")}/${ntfyTopic}`, {
+          method: "POST",
+          body: text
+        });
       } catch (_error) {
         // Best effort, like Android.
       }

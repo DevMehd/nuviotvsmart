@@ -55,7 +55,9 @@ export const PersoSpace = {
   },
   set(patch) {
     const next = { ...this.get(), ...patch };
-    next.spaceCode = String(next.spaceCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    next.spaceCode = String(next.spaceCode || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
     if (!next.deviceId) next.deviceId = randomPersoCode(16).toLowerCase();
     LocalStore.set(KEY, next);
     return next;
