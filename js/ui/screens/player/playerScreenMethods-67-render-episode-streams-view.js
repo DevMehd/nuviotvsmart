@@ -1,5 +1,7 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { Environment } from "../../../platform/environment.js";
+import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 
 export function createPlayerScreenMethods67() {
   const {
@@ -94,9 +96,10 @@ export function createPlayerScreenMethods67() {
                       const addonLogoUrl = showAddonLogo
                         ? getPlayerSourceLogoDisplayUrl(stream.addonLogo, () => this.scheduleSourceLogoRender())
                         : "";
-                      const sourceLabel = stream.label || "Stream";
-                      const sourceDescription = stream.description || stream.addonName || "";
-                      const sourceAddonName = stream.addonName || t("nav_addons", {}, "Addon");
+                      const readableText = Environment.isVidaa() || Environment.isWebOS() ? normalizeStreamDisplayText : String;
+                      const sourceLabel = readableText(stream.label || "Stream");
+                      const sourceDescription = readableText(stream.description || stream.addonName || "");
+                      const sourceAddonName = readableText(stream.addonName || t("nav_addons", {}, "Addon"));
                       const sourceSide = showAddonLogo
                         ? `<div class="player-source-side">
                             ${addonLogoUrl ? `<img class="player-source-logo" src="${escapeAttribute(addonLogoUrl)}" alt="" decoding="async" loading="lazy" referrerpolicy="no-referrer" />` : ""}

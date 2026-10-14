@@ -9,6 +9,7 @@ import { sizeBytesFromStreamText } from "./streamTextSizeParser.js";
 import { resolutionFromFields } from "./streamResolution.js";
 
 import { LANGUAGE_LABELS, searchText, qualityFromText } from "./debridStreamPresentationHelpers-01-resolution-labels.js";
+import { normalizeStreamSearchText } from "../streams/streamDisplayText.js";
 
 export function hasToken(text = "", token = "") {
   return new RegExp(
@@ -95,18 +96,83 @@ export function encodeFromText(parsedCodec, search = "") {
   return "UNKNOWN";
 }
 
+const LANGUAGE_ALIASES = {
+  EN: ["eng"],
+  HI: ["hin"],
+  IT: ["ita", "italiano"],
+  ES: ["spa"],
+  FR: ["fre", "fra"],
+  DE: ["ger", "deu"],
+  PT: ["por"],
+  PL: ["pol"],
+  CS: ["cze", "ces"],
+  JA: ["jpn"],
+  KO: ["kor"],
+  ZH: ["chi", "zho"]
+};
+
+// A country's flag does not always identify a language (e.g. India or Canada).
+const LANGUAGE_FLAG_CODES = {
+  GB: "EN",
+  US: "EN",
+  IT: "IT",
+  ES: "ES",
+  FR: "FR",
+  DE: "DE",
+  BR: "PT_BR",
+  PT: "PT",
+  PL: "PL",
+  CZ: "CS",
+  JP: "JA",
+  KR: "KO",
+  CN: "ZH"
+};
+
 export function languageFor(value = "") {
-  const normalized = String(value || "").toLowerCase();
+  const normalized = normalizeStreamSearchText(value).trim().toLowerCase();
+  const flagCode = normalized.match(/^\[([a-z]{2})\]$/)?.[1]?.toUpperCase();
+  if (flagCode && LANGUAGE_FLAG_CODES[flagCode]) return LANGUAGE_FLAG_CODES[flagCode];
   const compact = normalized.replace(/[^a-z0-9]/g, "");
+  const localeCode = normalized.match(/^([a-z]{2,3})[-_]([a-z]{2})$/)?.[1];
   return (
-    Object.entries(LANGUAGE_LABELS).find(([, [code, label]]) => {
+    Object.entries(LANGUAGE_LABELS).find(([key, [code, label]]) => {
       const normalizedCode = String(code || "").toLowerCase();
       const normalizedLabel = String(label || "").toLowerCase();
       return (
-        normalized === normalizedCode || normalized === normalizedLabel || (compact && compact === normalizedCode.replace(/[^a-z0-9]/g, ""))
+        normalized === normalizedCode ||
+        normalized === normalizedLabel ||
+        LANGUAGE_ALIASES[key]?.includes(normalized) ||
+        (compact && compact === normalizedCode.replace(/[^a-z0-9]/g, "")) ||
+        (localeCode && (localeCode === normalizedCode || LANGUAGE_ALIASES[key]?.includes(localeCode)))
       );
     })?.[0] || null
   );
+}
+
+function hasItalianLanguageMarker(text) {
+  if (
+    hasToken(text, "ita") ||
+    hasToken(text, "italian") ||
+    hasToken(text, "italiano") ||
+    hasToken(text, "it-it") ||
+    hasToken(text, "it_it")
+  ) {
+    return true;
+  }
+  if (
+    /(?:\[\s*it\s*\]|\(\s*it\s*\)|(?:^|[\r\n|])\s*it\s*(?:$|[\r\n|])|(?:audio|language|languages|lingua)\s*[:=]\s*it(?:[^a-z0-9]|$))/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+  // Preserve the case here: the movie title "It" is not an Italian marker.
+  const tokens = /(^|[^a-zA-Z0-9])IT(?=[^a-zA-Z0-9]|$)/g;
+  while (tokens.exec(text)) {
+    const followingText = text.slice(tokens.lastIndex);
+    if (!/^[\s.(_-]*(?:19|20)\d{2}(?:[^0-9]|$)/.test(followingText)) return true;
+  }
+  return false;
 }
 
 export function languagesFromText(parsedLanguages = [], search = "") {
@@ -114,8 +180,15 @@ export function languagesFromText(parsedLanguages = [], search = "") {
   if (fromParsed.length) {
     return fromParsed;
   }
+  const text = normalizeStreamSearchText(search);
   const matches = Object.entries(LANGUAGE_LABELS)
-    .filter(([, [code]]) => hasToken(search, code))
+    .filter(([key, [code, label]]) => {
+      if (key === "IT") return hasItalianLanguageMarker(text);
+      if (hasToken(text, code) || hasToken(text, label) || LANGUAGE_ALIASES[key]?.some((alias) => hasToken(text, alias))) return true;
+      return Object.entries(LANGUAGE_FLAG_CODES).some(
+        ([countryCode, language]) => language === key && new RegExp(`\\[${countryCode}\\]`, "i").test(text)
+      );
+    })
     .map(([key]) => key);
   return matches.includes("PT_BR") ? matches.filter((key) => key !== "PT") : matches;
 }
@@ -146,7 +219,7 @@ export function facts(stream = {}) {
   const visualTags = visualTagsFromText(parsed.hdr || [], text);
   const audioTags = audioTagsFromText(parsed.audio || [], text);
   const audioChannels = audioChannelsFromText(parsed.channels || [], text);
-  const languages = languagesFromText(parsed.languages || [], text);
+  const languages = languagesFromText(parsed.languages || [], searchText(stream, { preserveCase: true }));
   const codec = encodeFromText(parsed.codec, text);
   return {
     resolution,

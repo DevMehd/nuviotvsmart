@@ -259,6 +259,10 @@ export function buildCollectionHomeKey(collection = {}) {
 export const CollectionsStore = {
   generateId,
 
+  normalizeCollections(value) {
+    return normalizeState(value).collections;
+  },
+
   getState() {
     return store.get();
   },

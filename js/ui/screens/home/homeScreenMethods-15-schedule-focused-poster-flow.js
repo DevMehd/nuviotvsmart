@@ -1,4 +1,5 @@
 import * as internals from "./homeScreenContext.js";
+import { getVidaaHomeTrackCameraTarget } from "./vidaaHomeTrackCamera.js";
 
 export function createHomeScreenMethods15() {
   const {
@@ -346,7 +347,9 @@ export function createHomeScreenMethods15() {
       const maxScrollLeft = Math.max(0, Number(track.scrollWidth || 0) - Number(track.clientWidth || 0));
       return {
         container: track,
-        value: Math.max(0, Math.min(maxScrollLeft, targetLeft - leftPad))
+        value: Platform.isVidaa()
+          ? getVidaaHomeTrackCameraTarget(track, targetLeft, leftPad, maxScrollLeft)
+          : Math.max(0, Math.min(maxScrollLeft, targetLeft - leftPad))
       };
     }
   };

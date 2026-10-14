@@ -12,6 +12,7 @@ const ADDON_LOGO_TV_CACHE_LIMIT = 12;
 const ADDON_LOGO_CACHE_MAX_LENGTH = 140000;
 const ADDON_LOGO_PRELOAD_CONCURRENCY_TV = 3;
 const ADDON_LOGO_PRELOAD_CONCURRENCY_DEFAULT = 6;
+const ADDON_LOGO_LOAD_TIMEOUT_MS = 6000;
 
 let addonLogoCacheHydrated = false;
 let addonLogoCachePersistTimer = null;
@@ -21,6 +22,7 @@ export function normalizeAddonLogoUrl(value = "") {
 }
 
 export function resetAddonLogoCache() {
+  Array.from(addonLogoCache.values()).forEach((entry) => entry?.cancel?.());
   failedAddonLogoUrls.clear();
   addonLogoCache.clear();
   addonLogoCacheHydrated = false;
@@ -29,6 +31,55 @@ export function resetAddonLogoCache() {
     addonLogoCachePersistTimer = null;
   }
   LocalStore.remove(ADDON_LOGO_CACHE_KEY);
+}
+
+function createAddonLogoLoad(normalized, loadingEntry, resolve, onSettled = null) {
+  let settled = false;
+  const images = [];
+  const settle = (ok) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeoutId);
+    images.forEach((image) => {
+      image.onload = null;
+      image.onerror = null;
+      try {
+        if (typeof image.removeAttribute === "function") image.removeAttribute("src");
+        else image.src = "";
+      } catch (_) {}
+    });
+    resolve(ok);
+    if (typeof onSettled === "function") {
+      try {
+        onSettled();
+      } catch (error) {
+        console.warn("Addon logo completion listener failed", error);
+      }
+    }
+  };
+  const cancel = () => {
+    if (settled) return;
+    // Timeouts are transient: release the loading entry so the next visit can
+    // retry instead of inheriting a stuck Promise or a permanent failed URL.
+    if (addonLogoCache.get(normalized) === loadingEntry) addonLogoCache.delete(normalized);
+    settle(false);
+  };
+  const timeoutId = setTimeout(cancel, ADDON_LOGO_LOAD_TIMEOUT_MS);
+  loadingEntry.cancel = cancel;
+  return {
+    settle,
+    isActive: () => !settled,
+    createImage() {
+      try {
+        const image = new Image();
+        images.push(image);
+        return image;
+      } catch (_) {
+        cancel();
+        return null;
+      }
+    }
+  };
 }
 
 export async function warmAddonLogoPreview(url = "") {
@@ -48,13 +99,16 @@ export async function warmAddonLogoPreview(url = "") {
   const loadingEntry = { status: "loading", updatedAt: Date.now(), promise: null };
   addonLogoCache.set(normalized, loadingEntry);
   const promise = new Promise((resolve) => {
-    const settle = (ok) => resolve(ok);
+    const load = createAddonLogoLoad(normalized, loadingEntry, resolve);
+    const settle = load.settle;
     const fail = () => {
+      if (!load.isActive()) return;
       failedAddonLogoUrls.add(normalized);
       addonLogoCache.set(normalized, { status: "failed", updatedAt: Date.now() });
       settle(false);
     };
     const finishDirect = () => {
+      if (!load.isActive()) return;
       addonLogoCache.set(normalized, {
         status: "direct",
         displayUrl: normalized,
@@ -63,12 +117,15 @@ export async function warmAddonLogoPreview(url = "") {
       settle(true);
     };
     const loadDirect = () => {
-      const directImage = new Image();
+      if (!load.isActive()) return;
+      const directImage = load.createImage();
+      if (!directImage) return;
       directImage.decoding = "async";
       try {
         directImage.referrerPolicy = "no-referrer";
       } catch (_) {}
       directImage.onload = () => {
+        if (!load.isActive()) return;
         (async () => {
           await awaitImageDecoded(directImage);
           finishDirect();
@@ -78,12 +135,14 @@ export async function warmAddonLogoPreview(url = "") {
       directImage.src = normalized;
     };
     const finish = (image = null) => {
+      if (!load.isActive()) return;
       if (image && typeof imageToDataUrl === "function") {
         (async () => {
           try {
             if (!(await awaitImageDecoded(image))) {
               throw new Error("decode-failed");
             }
+            if (!load.isActive()) return;
             const dataUrl = imageToDataUrl(image);
             if (dataUrl) {
               addonLogoCache.set(normalized, {
@@ -102,7 +161,8 @@ export async function warmAddonLogoPreview(url = "") {
       }
       finishDirect();
     };
-    const image = new Image();
+    const image = load.createImage();
+    if (!image) return;
     image.decoding = "async";
     try {
       image.crossOrigin = "anonymous";
@@ -186,18 +246,16 @@ export function requestAddonLogo(url = "", onSettled = null) {
   const loadingEntry = { status: "loading", updatedAt: Date.now(), promise: null };
   addonLogoCache.set(normalized, loadingEntry);
   const promise = new Promise((resolve) => {
-    const settle = (ok) => {
-      if (typeof onSettled === "function") {
-        onSettled();
-      }
-      resolve(ok);
-    };
+    const load = createAddonLogoLoad(normalized, loadingEntry, resolve, onSettled);
+    const settle = load.settle;
     const fail = () => {
+      if (!load.isActive()) return;
       failedAddonLogoUrls.add(normalized);
       addonLogoCache.set(normalized, { status: "failed", updatedAt: Date.now() });
       settle(false);
     };
     const finishDirect = () => {
+      if (!load.isActive()) return;
       addonLogoCache.set(normalized, {
         status: "direct",
         displayUrl: normalized,
@@ -206,12 +264,15 @@ export function requestAddonLogo(url = "", onSettled = null) {
       settle(true);
     };
     const loadDirect = () => {
-      const directImage = new Image();
+      if (!load.isActive()) return;
+      const directImage = load.createImage();
+      if (!directImage) return;
       directImage.decoding = "async";
       try {
         directImage.referrerPolicy = "no-referrer";
       } catch (_) {}
       directImage.onload = () => {
+        if (!load.isActive()) return;
         (async () => {
           await awaitImageDecoded(directImage);
           finishDirect();
@@ -220,18 +281,21 @@ export function requestAddonLogo(url = "", onSettled = null) {
       directImage.onerror = fail;
       directImage.src = normalized;
     };
-    const image = new Image();
+    const image = load.createImage();
+    if (!image) return;
     image.crossOrigin = "anonymous";
     image.decoding = "async";
     try {
       image.referrerPolicy = "no-referrer";
     } catch (_) {}
     image.onload = () => {
+      if (!load.isActive()) return;
       (async () => {
         try {
           if (!(await awaitImageDecoded(image))) {
             throw new Error("decode-failed");
           }
+          if (!load.isActive()) return;
           const dataUrl = imageToDataUrl(image);
           addonLogoCache.set(normalized, {
             status: "ready",

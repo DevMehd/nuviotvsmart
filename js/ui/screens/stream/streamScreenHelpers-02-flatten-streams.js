@@ -68,7 +68,7 @@ import { localizedGenreText } from "../../../i18n/genreLabels.js";
 
 import { matchStreamBadges, normalizeStreamBadgeChipColor, normalizeStreamBadgeRules } from "../../../core/streams/streamBadgeRules.js";
 
-import { normalizeMathematicalAlphanumericSymbols } from "../../../core/streams/streamDisplayText.js";
+import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 
 import { renderLoadingIndicator } from "../../components/loadingIndicator.js";
 
@@ -246,7 +246,7 @@ export function getStreamHeadline(stream = {}) {
     return stream.addonName || "Unknown source";
   }
   const firstLine = String(primary).split(/\r?\n/)[0].trim();
-  const displayLine = Environment.isWebOS() ? normalizeMathematicalAlphanumericSymbols(firstLine) : firstLine;
+  const displayLine = Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText(firstLine) : firstLine;
   return displayLine || stream.addonName || "Unknown source";
 }
 
@@ -279,7 +279,9 @@ export function getStreamDescriptionLines(stream = {}) {
   if (!displayDescription || displayDescription === displayName) {
     return [];
   }
-  return displayDescription
+  const readableDescription =
+    Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText(displayDescription) : displayDescription;
+  return readableDescription
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)

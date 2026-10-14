@@ -948,14 +948,22 @@ html.vidaa-tv .movie-cast-card {
   transition-delay: 0ms !important;
 }
 
-/* Expansion starts only after focus/navigation settles. Match the upstream
-   180ms width motion, but collapse immediately when is-expanded is removed so
-   D-pad geometry is final before the next card is measured. */
+/* Expansion keeps its original flex slot. Only the preview frame grows, so a
+   row-end expansion/collapse cannot change scrollWidth or move its neighbors. */
 html.vidaa-tv .home-screen-shell.home-layout-modern .home-poster-card.focused.is-expanded {
-  transition:
-    flex-basis 180ms ease-out,
-    min-width 180ms ease-out,
-    max-width 180ms ease-out !important;
+  --vidaa-poster-slot-width: var(--home-modern-portrait-poster-width);
+  flex-basis: var(--vidaa-poster-slot-width) !important;
+  min-width: var(--vidaa-poster-slot-width) !important;
+  max-width: var(--vidaa-poster-slot-width) !important;
+  position: relative;
+  z-index: 2;
+  transition: none !important;
+}
+
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .home-poster-card.is-landscape.focused.is-expanded {
+  --vidaa-poster-slot-width: var(--home-landscape-poster-width);
 }
 
 /* Landscape preview changes media, not row height. Removing the shared 18px
@@ -985,6 +993,22 @@ html.vidaa-tv .library-grid-poster,
 html.vidaa-tv .seeall-card-poster-wrap,
 html.vidaa-tv .series-episode-thumb {
   transition: none !important;
+}
+
+/* A row-end preview grows into the viewport instead of past its clipped right
+   edge. Relative left positioning keeps the actual scrollable overflow stable;
+   a transform would include the unshifted expanded box in that overflow too.
+   Removing is-expanded restores the frame immediately, even mid-transition. */
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .home-poster-card.focused.is-expanded
+  .home-poster-frame {
+  width: var(--vidaa-poster-preview-width, 100%);
+  left: var(--vidaa-poster-preview-shift, 0px);
+  transform: none !important;
+  transition:
+    width 180ms ease-out,
+    left 180ms ease-out !important;
 }
 
 html.vidaa-tv .home-screen-shell.home-layout-modern .home-poster-card .content-poster,

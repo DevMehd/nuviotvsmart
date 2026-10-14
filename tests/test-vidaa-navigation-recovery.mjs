@@ -57,6 +57,7 @@ function surface(count = 60) {
     clientWidth: 800,
     scrollWidth: 800,
     scrollLeft: 0,
+    getBoundingClientRect: () => ({ left: 0, right: 800, width: 800 }),
     querySelectorAll() {
       scans++;
       return [{ offsetWidth: 200 }];
@@ -85,7 +86,12 @@ function surface(count = 60) {
     buildNavigationModel() {}
   };
   const focus = (index) => {
-    focused = { isConnected: true, offsetWidth: 200, closest: () => tracks[index] };
+    focused = {
+      isConnected: true,
+      offsetWidth: 200,
+      closest: () => tracks[index],
+      getBoundingClientRect: () => ({ left: 0, right: 200, width: 200 })
+    };
     return focused;
   };
   focus(0);

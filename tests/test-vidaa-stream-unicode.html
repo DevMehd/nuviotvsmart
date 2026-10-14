@@ -1,0 +1,56 @@
+<!doctype html>
+<html class="vidaa-tv">
+  <meta charset="utf-8" />
+  <title>VIDAA stream labels</title>
+  <link rel="stylesheet" href="../css/base.css" />
+  <link rel="stylesheet" href="../css/components.css" />
+  <div id="streams" class="stream-route-list"></div>
+  <pre id="result">Testing...</pre>
+  <script type="module">
+    globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    try {
+      const { StreamScreen, selectAutoPlayStream } =
+        await import("../js/ui/screens/stream/streamScreen.js");
+      const variants = ["𝐈t", "🇮t", "𝘐𝘵", "𝕀𝕋", "ℐ𝒯", "ＩＴ", "🅸🆃", "I\u200bT", "🇮🇹"];
+      const streams = variants.map((label, index) => ({
+        id: `stream-${index}`,
+        name: `Audio: ${label}`,
+        description: `${label}\nCittà 日本語 العربية 👩‍💻`,
+        url: `https://fixture.invalid/${index}`
+      }));
+      const original = JSON.stringify(streams);
+      document.getElementById("streams").innerHTML = streams
+        .map((stream, index) =>
+          StreamScreen.renderStreamCard.call(
+            { isCardActionFocused: () => false },
+            stream,
+            index,
+            false,
+            { showAddonLogo: false }
+          )
+        )
+        .join("");
+      const headings = [...document.querySelectorAll(".stream-route-card-heading")];
+      if (headings.length !== variants.length) throw Error("Missing stream cards");
+      headings.forEach((heading, index) => {
+        if (!/^Audio: (?:It|IT|\[IT\])$/.test(heading.textContent))
+          throw Error(`Unreadable heading ${heading.textContent}`);
+        const selected = selectAutoPlayStream(
+          [{ name: "English", url: "https://fixture.invalid/en" }, streams[index]],
+          {
+            mode: "REGEX_MATCH",
+            regexPattern: "\\bIT\\b"
+          }
+        );
+        if (selected !== streams[index]) throw Error(`Language filter missed ${variants[index]}`);
+      });
+      const text = document.getElementById("streams").textContent;
+      if (!text.includes("Città 日本語 العربية 👩‍💻")) throw Error("Unrelated text changed");
+      if (JSON.stringify(streams) !== original) throw Error("Source metadata changed");
+      document.getElementById("result").textContent =
+        "PASS: production stream cards show readable styled IT/flags and retain original metadata; canonical language regex selects every fixture";
+    } catch (error) {
+      document.getElementById("result").textContent = `FAIL: ${error.stack || error}`;
+    }
+  </script>
+</html>

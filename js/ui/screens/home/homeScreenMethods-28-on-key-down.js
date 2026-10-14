@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { registerHomeDomNodes } from "./homeDomUpdate.js";
+import { captureVidaaHomeTrackAppendInset } from "./vidaaHomeTrackCamera.js";
 
 export function createHomeScreenMethods28() {
   const {
@@ -228,6 +229,7 @@ export function createHomeScreenMethods28() {
         card.dataset.navCol = String(startIndex + index);
         card.dataset.navRowKey = rowKey;
       });
+      if (Platform.isVidaa()) captureVidaaHomeTrackAppendInset(this, track);
       track.appendChild(fragment);
 
       if (navigationRowIndex >= 0 && this.navModel?.rows?.[navigationRowIndex]) {

@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import {
+  isRegexSelectionConfigured,
+  selectAutoPlayStream
+} from "../js/core/streams/streamAutoPlaySelector.js";
 
 const storage = new Map();
 globalThis.localStorage = {
@@ -358,6 +362,125 @@ test("selector settings hydration paints loading before waiting for resume data"
   } finally {
     watchProgressRepository.getResumeByContentId = previousResume;
   }
+});
+
+test("Italian regex selection recognizes styled, fullwidth, flag and format-mark labels", () => {
+  const foreign = { id: "foreign", name: "1080p EN", url: "https://fixture.invalid/english" };
+  for (const label of [
+    "IT",
+    "It",
+    "𝐈t",
+    "🇮t",
+    "𝐈𝐓",
+    "𝘐𝘵",
+    "𝕀𝕥",
+    "ℐ𝓉",
+    "Ｉｔ",
+    "Ⓘⓣ",
+    "🇮🇹",
+    "I\u200bt"
+  ]) {
+    const italian = {
+      id: `italian-${label}`,
+      name: "1080p",
+      description: `Audio ${label}`,
+      url: "https://fixture.invalid/video"
+    };
+    assert.equal(
+      selectAutoPlayStream([foreign, italian], { mode: "REGEX_MATCH", regexPattern: "\\bIT\\b" }),
+      italian,
+      `The Italian source must match its readable label ${label}`
+    );
+    assert.equal(
+      italian.description,
+      `Audio ${label}`,
+      "Matching must not rewrite provider metadata"
+    );
+  }
+});
+
+test("regex literal styled letters and flags match the canonical labels", () => {
+  const italian = { id: "italian", description: "1080p 🇮🇹", url: "https://fixture.invalid/video" };
+  for (const regexPattern of ["🇮🇹", "\\b𝐈𝐓\\b", "\\bＩＴ\\b"]) {
+    assert.equal(isRegexSelectionConfigured(regexPattern), true);
+    assert.equal(selectAutoPlayStream([italian], { mode: "REGEX_MATCH", regexPattern }), italian);
+  }
+  assert.equal(isRegexSelectionConfigured("["), false);
+});
+
+test("canonical matching cannot bypass negative assertions through a raw styled label", () => {
+  const excluded = {
+    id: "excluded",
+    description: "1080p 𝐈𝐓 𝐂𝐀𝐌",
+    url: "https://fixture.invalid/excluded"
+  };
+  const accepted = {
+    id: "accepted",
+    description: "1080p EN",
+    url: "https://fixture.invalid/accepted"
+  };
+  for (const regexPattern of ["^(?!.*IT).*1080p", "^(?!.*(CAM|TS)).*1080p"]) {
+    assert.equal(
+      selectAutoPlayStream([excluded, accepted], { mode: "REGEX_MATCH", regexPattern }),
+      accepted,
+      `Negative assertions must inspect the same canonical text: ${regexPattern}`
+    );
+  }
+  assert.equal(
+    selectAutoPlayStream([excluded, accepted], {
+      mode: "REGEX_MATCH",
+      regexPattern: "^(?!.*𝐈𝐓).*1080p"
+    }),
+    accepted
+  );
+});
+
+test("normalizing source labels preserves URL and hash regex matching exactly", () => {
+  const stream = {
+    id: "identity",
+    description: "1080p EN",
+    url: "https://fixture.invalid/𝐈𝐓/ＩＴ",
+    infoHash: "𝐈𝐓"
+  };
+  assert.equal(
+    selectAutoPlayStream([stream], { mode: "REGEX_MATCH", regexPattern: "\\bIT\\b" }),
+    null,
+    "Styled URL/hash text must not turn into a language label"
+  );
+  assert.equal(
+    selectAutoPlayStream([stream], {
+      mode: "REGEX_MATCH",
+      regexPattern: "https://fixture\\.invalid/"
+    }),
+    stream,
+    "Existing URL regexes must continue to work"
+  );
+  assert.equal(stream.url, "https://fixture.invalid/𝐈𝐓/ＩＴ");
+  assert.equal(stream.infoHash, "𝐈𝐓");
+});
+
+test("FIRST_STREAM and remembered binge groups retain their selection priority", () => {
+  const first = {
+    id: "first",
+    description: "1080p EN",
+    behaviorHints: { bingeGroup: "saved-group" },
+    url: "https://fixture.invalid/first"
+  };
+  const italian = {
+    id: "italian",
+    description: "1080p 𝐈𝐓",
+    url: "https://fixture.invalid/italian"
+  };
+  assert.equal(selectAutoPlayStream([first, italian], { mode: "FIRST_STREAM" }), first);
+  assert.equal(
+    selectAutoPlayStream([first, italian], {
+      mode: "REGEX_MATCH",
+      regexPattern: "\\bIT\\b",
+      preferredBingeGroup: "saved-group",
+      preferBingeGroupInSelection: true
+    }),
+    first
+  );
 });
 
 let failures = 0;

@@ -632,6 +632,12 @@ export function createHomeScreenMethods24() {
             continue;
           }
           image.loading = "eager";
+          if (isVidaa && (image.classList?.contains("content-poster") || image.classList?.contains("home-continue-bg"))) {
+            // Viewport batches include newly appended cards as well as the
+            // initial row. Preserve the same bounded retry and readiness
+            // handling used when a poster is loaded directly by focus.
+            observeVidaaPosterReady(this, image);
+          }
           image.removeAttribute("data-src");
           image.src = currentSrc || src;
           assigned += 1;

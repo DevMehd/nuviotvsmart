@@ -23,6 +23,15 @@ export const MODERN_HOME_CONSTANTS = {
   verticalFastScrollMaxFrameMs: 48
 };
 
+export function getMountedModernRowItemCounts(container) {
+  return new Map(
+    Array.from(container?.querySelectorAll(".home-modern-row .home-track") || []).map((track) => [
+      String(track.dataset.trackRowKey || ""),
+      track.childElementCount
+    ])
+  );
+}
+
 export function renderModernHomeLayout({
   rows = [],
   heroItem = null,
@@ -36,6 +45,7 @@ export function renderModernHomeLayout({
   blurContinueWatchingNextUp = false,
   continueWatchingCardStyle = "card",
   rowItemLimit = 15,
+  mountedItemCounts = null,
   showHeroSection = false,
   showPosterLabels = true,
   showCatalogTypeSuffix = true,
@@ -95,7 +105,10 @@ export function renderModernHomeLayout({
         : 0;
     const visibleItems = isCollectionRow
       ? rowItems
-      : rowItems.slice(0, Math.max(maxItems, focusedItemLimit));
+      : rowItems.slice(
+          0,
+          Math.max(maxItems, focusedItemLimit, Number(mountedItemCounts?.get(rowKey) || 0))
+        );
     const rowTitle = isCollectionRow
       ? String(rowData.collectionTitle || rowData.collection?.title || "Collection")
       : formatCatalogRowTitle(rowData.catalogName, rowData.type, showCatalogTypeSuffix);

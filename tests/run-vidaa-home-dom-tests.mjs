@@ -10,8 +10,11 @@ const defaultFixtures = [
   "test-vidaa-home-patching.html",
   "test-vidaa-home-window.html",
   "test-vidaa-home-poster-expansion.html",
+  "test-vidaa-home-pagination-camera.html",
   "test-vidaa-navigation-stress.html",
   "test-vidaa-home-row-updates.html",
+  "test-vidaa-grid-poster-window.html",
+  "test-vidaa-stream-unicode.html",
   "test-vidaa-account-dom.html",
   "test-vidaa-trailer-dom.html"
 ];

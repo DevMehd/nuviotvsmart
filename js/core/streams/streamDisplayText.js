@@ -1,5 +1,5 @@
 // Some addon formatters use styled mathematical letters for labels such as
-// "4K" and "FullHD". Legacy webOS fonts render each of those symbols as tofu.
+// "4K" and "FullHD". TV fonts can render those symbols as missing-glyph boxes.
 const MATHEMATICAL_ALPHANUMERIC_START = 0x1d400;
 const MATHEMATICAL_ALPHANUMERIC_END = 0x1d7ff;
 
@@ -34,6 +34,134 @@ export function normalizeMathematicalAlphanumericSymbols(value = "") {
       current.codePoint <= MATHEMATICAL_ALPHANUMERIC_END
         ? symbol.normalize("NFKC")
         : symbol;
+    index += current.length;
+  }
+  return normalized;
+}
+
+const REGIONAL_INDICATOR_START = 0x1f1e6;
+const REGIONAL_INDICATOR_END = 0x1f1ff;
+
+function isRegionalIndicator(codePoint) {
+  return codePoint >= REGIONAL_INDICATOR_START && codePoint <= REGIONAL_INDICATOR_END;
+}
+
+function indicatorLetter(codePoint) {
+  return String.fromCharCode(65 + codePoint - REGIONAL_INDICATOR_START);
+}
+
+function plainLabelSymbol(symbol, codePoint) {
+  // Negative circled/squared letters have no NFKC decomposition.
+  if (codePoint >= 0x1f150 && codePoint <= 0x1f169)
+    return String.fromCharCode(65 + codePoint - 0x1f150);
+  if (codePoint >= 0x1f170 && codePoint <= 0x1f189)
+    return String.fromCharCode(65 + codePoint - 0x1f170);
+  if (isRegionalIndicator(codePoint)) return indicatorLetter(codePoint);
+  if (typeof symbol.normalize !== "function") return symbol;
+  if (codePoint >= MATHEMATICAL_ALPHANUMERIC_START && codePoint <= MATHEMATICAL_ALPHANUMERIC_END) {
+    return symbol.normalize("NFKC");
+  }
+  // Restrict compatibility folding to label alphabets. In particular, regex
+  // punctuation, accented titles and unrelated writing systems keep their form.
+  if (
+    (codePoint >= 0x2100 && codePoint <= 0x214f) ||
+    (codePoint >= 0x24b6 && codePoint <= 0x24e9) ||
+    (codePoint >= 0x1f130 && codePoint <= 0x1f149) ||
+    (codePoint >= 0xff10 && codePoint <= 0xff19) ||
+    (codePoint >= 0xff21 && codePoint <= 0xff3a) ||
+    (codePoint >= 0xff41 && codePoint <= 0xff5a)
+  ) {
+    const plain = symbol.normalize("NFKC");
+    if (/^[A-Za-z0-9]$/.test(plain)) return plain;
+  }
+  return symbol;
+}
+
+function normalizeStreamLabel(value) {
+  const text = String(value || "");
+  let normalized = "";
+  for (let index = 0; index < text.length;) {
+    const current = readCodePoint(text, index);
+    if (isRegionalIndicator(current.codePoint) && index + current.length < text.length) {
+      const next = readCodePoint(text, index + current.length);
+      if (isRegionalIndicator(next.codePoint)) {
+        const country = indicatorLetter(current.codePoint) + indicatorLetter(next.codePoint);
+        normalized += `[${country}]`;
+        index += current.length + next.length;
+        if (text.charCodeAt(index) === 0xfe0f) index++;
+        continue;
+      }
+    }
+    const symbol = text.slice(index, index + current.length);
+    normalized += plainLabelSymbol(symbol, current.codePoint);
+    index += current.length;
+  }
+  return normalized
+    .replace(/([A-Za-z0-9])[\u200b-\u200d\u2060\ufeff]+(?=[A-Za-z0-9])/g, "$1")
+    .replace(/([A-Za-z0-9])[\ufe0e\ufe0f]+/g, "$1");
+}
+
+// Presentation only: never write the result into URLs, stream IDs or payloads.
+export function normalizeStreamDisplayText(value = "") {
+  return normalizeStreamLabel(value);
+}
+
+export function normalizeStreamSearchText(value = "") {
+  return normalizeStreamLabel(value);
+}
+
+export function normalizeStreamMatchPattern(value = "") {
+  const text = String(value || "");
+  let normalized = "";
+  for (let index = 0; index < text.length;) {
+    let escaped = false;
+    if (text[index] === "\\" && index + 1 < text.length) {
+      const next = readCodePoint(text, index + 1);
+      // Preserve regex escapes and backreferences. An escaped decorated glyph
+      // is an identity escape, so handle its literal symbol below.
+      if (next.codePoint < 128) {
+        normalized += text.slice(index, index + 2);
+        index += 2;
+        continue;
+      }
+      escaped = true;
+      index++;
+    }
+    const current = readCodePoint(text, index);
+    const symbol = text.slice(index, index + current.length);
+    if (!escaped && symbol === "[") {
+      // Preserve code-point sets/ranges; folding endpoints can widen a range.
+      let end = index + 1;
+      while (end < text.length) {
+        if (text[end] === "\\") end += 2;
+        else if (text[end++] === "]") break;
+      }
+      normalized += text.slice(index, end);
+      index = end;
+      continue;
+    }
+    if (isRegionalIndicator(current.codePoint) && index + current.length < text.length) {
+      const next = readCodePoint(text, index + current.length);
+      if (isRegionalIndicator(next.codePoint)) {
+        const country = indicatorLetter(current.codePoint) + indicatorLetter(next.codePoint);
+        let end = index + current.length + next.length;
+        if (text.charCodeAt(end) === 0xfe0f) end++;
+        const flag = text.slice(index, end);
+        // Keep class syntax intact. A flag outside a class matches both the
+        // readable marker and an unchanged literal flag in an opaque URL.
+        normalized += `(?:${flag}|\\[${country}\\])`;
+        index = end;
+        continue;
+      }
+    }
+    const plain = plainLabelSymbol(symbol, current.codePoint);
+    if (plain !== symbol) {
+      // Non-capturing alternatives retain raw Unicode URL patterns without a
+      // second raw-text match that could bypass a negative language lookahead.
+      normalized += `(?:${symbol}|${plain})`;
+    } else {
+      normalized += `${escaped ? "\\" : ""}${symbol}`;
+    }
     index += current.length;
   }
   return normalized;

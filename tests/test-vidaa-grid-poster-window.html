@@ -1,0 +1,229 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>VIDAA grid poster lifecycle</title>
+<link rel="stylesheet" href="../css/components-52.css" />
+<style>
+  :root {
+    --bg-color: #121212;
+    --text-color: white;
+    --text-secondary: #aaa;
+    --card-bg: #222;
+  }
+  body {
+    margin: 0;
+    background: #121212;
+    color: white;
+    font: 16px monospace;
+  }
+  .fixture {
+    width: 1680px;
+    height: 720px;
+  }
+  .fixture > .seeall-shell,
+  .fixture > .discover-main {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 24px 48px 32px;
+  }
+  #result {
+    white-space: pre-wrap;
+  }
+</style>
+<div id="fixture" class="fixture"></div>
+<pre id="result">Testing actual Catalog and Discover card grids...</pre>
+<script type="module">
+  const result = document.getElementById("result");
+  try {
+    globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    const { Platform } = await import("../js/platform/index.js");
+    Platform.current = null;
+    const { CatalogSeeAllScreen, ScreenUtils } =
+      await import("../js/ui/screens/catalog/catalogSeeAllScreen.js");
+    const { DiscoverScreen } = await import("../js/ui/screens/search/discoverScreen.js");
+    const { scheduleVidaaGridPosterWindow } =
+      await import("../js/ui/components/vidaaGridPosterWindow.js");
+    const { noteVidaaNavigationKeyDown, resetVidaaNavigationActivity } =
+      await import("../js/ui/navigation/vidaaNavigationActivity.js");
+    const container = document.getElementById("fixture");
+    const assert = (condition, message) => {
+      if (!condition) throw Error(message);
+    };
+    const nextFrame = () => new Promise(requestAnimationFrame);
+    const waitFrames = async (count, held = false) => {
+      for (let n = 0; n < count; n++) {
+        if (held) noteVidaaNavigationKeyDown(40);
+        await nextFrame();
+      }
+    };
+    const svg =
+      "data:image/svg+xml," +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="248" height="372"><rect width="248" height="372" fill="teal"/></svg>'
+      );
+    const items = Array.from({ length: 600 }, (_, i) => ({
+      id: `item-${i}`,
+      name: `Title ${i}`,
+      type: "movie",
+      poster: `${svg}#${i}`,
+      year: 2026
+    }));
+    const addListener = window.addEventListener.bind(window);
+    const removeListener = window.removeEventListener.bind(window);
+    const resizeListeners = new Set();
+    window.addEventListener = (name, callback, options) => {
+      if (name === "resize") resizeListeners.add(callback);
+      return addListener(name, callback, options);
+    };
+    window.removeEventListener = (name, callback, options) => {
+      if (name === "resize") resizeListeners.delete(callback);
+      return removeListener(name, callback, options);
+    };
+    result.textContent = "";
+    for (const kind of ["catalog", "discover"]) {
+      container.style.display = "block";
+      container.style.width = "1680px";
+      const owner = {
+        ...(kind === "catalog" ? CatalogSeeAllScreen : DiscoverScreen),
+        container,
+        items,
+        params: { catalogName: "Fixture", type: "movie" },
+        layoutPrefs: { posterLabelsEnabled: true },
+        watchedTitleIds: new Set(),
+        loading: false,
+        hasMore: false,
+        savedScrollTop: 0,
+        rowFocusedIndexByRow: {},
+        catalogOptions: [],
+        focusZone: "content"
+      };
+      const selector = kind === "catalog" ? ".seeall-shell" : ".discover-main";
+      const render = () => {
+        if (kind === "catalog") owner.render();
+        else {
+          const loaded = owner.captureLoadedDiscoverPosters();
+          container.innerHTML = `<main class="discover-main"><div class="seeall-shell discover-seeall-shell"><section class="discover-grid seeall-grid">${owner.renderDiscoverCards({ type: "movie" })}</section></div></main>`;
+          owner.restoreLoadedDiscoverPosters(loaded);
+          ScreenUtils.indexFocusables(container);
+          owner.buildNavigationModel();
+          owner.bindCardEvents();
+          owner.bindShellEvents();
+          container.querySelector(selector).scrollTop = owner.savedScrollTop;
+          owner.scheduleDiscoverPosterHydration();
+          const target = [...container.querySelectorAll(".seeall-card")].find(
+            (card) => card.dataset.focusKey === owner.lastFocusedKey
+          );
+          if (target) {
+            target.classList.add("focused");
+            target.focus({ preventScroll: true });
+          }
+        }
+      };
+      const visibleImages = () => {
+        const viewport = container.querySelector(selector).getBoundingClientRect();
+        return [...container.querySelectorAll(".seeall-card")]
+          .filter((card) => {
+            const rect = card.getBoundingClientRect();
+            return rect.bottom > viewport.top + 1 && rect.top < viewport.bottom - 1;
+          })
+          .map((card) => card.querySelector("img"));
+      };
+      const ready = () =>
+        assert(
+          visibleImages().every(
+            (image) => image.hasAttribute("src") && image.complete && image.naturalWidth > 0
+          ),
+          `${kind}: visible poster missing`
+        );
+      let peakSources = 0;
+      render();
+      await waitFrames(18);
+      ready();
+      assert(resizeListeners.size === 1, `${kind}: exactly one resize listener`);
+      let firstImage = container.querySelector("img");
+      let target;
+      for (const row of [12, 30, 70, 95, 40, 2]) {
+        target = owner.navModel.rows[Math.min(row, owner.navModel.rows.length - 1)][0];
+        container.querySelectorAll(".focused").forEach((card) => card.classList.remove("focused"));
+        target.classList.add("focused");
+        target.focus({ preventScroll: true });
+        const scroller = container.querySelector(selector);
+        scroller.scrollTop +=
+          target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 20;
+        scroller.dispatchEvent(new Event("scroll"));
+        await waitFrames(18);
+        ready();
+        assert(document.activeElement === target, `${kind}: scroll hydration changed focus`);
+        peakSources = Math.max(peakSources, container.querySelectorAll("img[src]").length);
+        assert(peakSources < 100, `${kind}: distant sources accumulated (${peakSources})`);
+        if (row === 12)
+          assert(!firstImage.hasAttribute("src"), `${kind}: distant first image was not released`);
+      }
+      // A real hold must keep the visible row progressing, even when scrolling
+      // keeps invalidating the prefetch batch before any quiet interval exists.
+      for (const row of [18, 25, 38, 51]) {
+        noteVidaaNavigationKeyDown(40);
+        target = owner.navModel.rows[row][0];
+        container.querySelectorAll(".focused").forEach((card) => card.classList.remove("focused"));
+        target.classList.add("focused");
+        target.focus({ preventScroll: true });
+        const scroller = container.querySelector(selector);
+        scroller.scrollTop +=
+          target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 20;
+        scroller.dispatchEvent(new Event("scroll"));
+        await waitFrames(8, true);
+        ready();
+      }
+      resetVidaaNavigationActivity();
+      scheduleVidaaGridPosterWindow(owner, selector);
+      await waitFrames(18);
+      // Rebuild with production markup and poster-transfer methods: the loaded
+      // node and chosen title must survive without a placeholder flash.
+      const loaded = target.querySelector("img");
+      owner.lastFocusedKey = target.dataset.focusKey;
+      owner.savedScrollTop = container.querySelector(selector).scrollTop;
+      owner.pendingRestoreFocus = true;
+      owner.preserveViewportOnNextRender = true;
+      render();
+      target = [...container.querySelectorAll(".seeall-card")].find(
+        (card) => card.dataset.focusKey === owner.lastFocusedKey
+      );
+      assert(target.querySelector("img") === loaded, `${kind}: decoded visible image was replaced`);
+      await waitFrames(18);
+      ready();
+      const previousColumns = owner.navModel.rows[0].length;
+      container.style.width = "1120px";
+      window.dispatchEvent(new Event("resize"));
+      await waitFrames(18);
+      assert(
+        owner.navModel.rows[0].length < previousColumns,
+        `${kind}: navigation rows did not follow resize`
+      );
+      ready();
+      // Retired sources must stay retired even after a late native load event.
+      const retired = firstImage.getAttribute("src");
+      firstImage.dispatchEvent(new Event("load"));
+      assert(firstImage.getAttribute("src") === retired, `${kind}: late event revived an image`);
+      const state = owner.vidaaGridPosterWindow;
+      owner.cleanup();
+      await waitFrames(4);
+      assert(
+        owner.vidaaGridPosterWindow == null && state.frame == null && state.timer == null,
+        `${kind}: pending work survived cleanup`
+      );
+      assert(
+        state.resident.size === 0 && resizeListeners.size === 0,
+        `${kind}: cleanup retained images or resize listener`
+      );
+      result.textContent += `${kind}: 600 posters, peak ${peakSources} sourced images, hold/rebuild/resize/focus/cleanup passed.\n`;
+    }
+    result.textContent +=
+      "PASS: production grid markup and adapters preserve visible posters with bounded residency.";
+    result.dataset.status = "passed";
+  } catch (error) {
+    result.textContent += `\nFAIL: ${error.stack}`;
+    result.dataset.status = "failed";
+  }
+</script>

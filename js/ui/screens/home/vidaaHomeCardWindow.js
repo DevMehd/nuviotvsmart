@@ -4,6 +4,77 @@ import { prefetchVidaaPosterSource } from "./vidaaHomePosterPrefetch.js";
 const ROW_SELECTOR = ".home-row, .home-modern-row, .home-grid-section, .home-row-continue";
 const STYLE_PROPERTIES = ["width", "height", "box-sizing"];
 const ACTIVE_CARD_HEADROOM = 64;
+const WINDOW_MARGIN = 600;
+
+function getCardWindowScan(screen, viewportRect, active, activeOnly) {
+  const rowRects = new Map();
+  if (activeOnly) return { cards: [...active], rowRects, bounded: true };
+
+  const snapshot = screen.homeVidaaCardWindowSnapshot;
+  const model = screen.navModel;
+  const canReuse = Boolean(
+    model &&
+    snapshot?.model === model &&
+    snapshot.rows.every(
+      ({ track, childCount }) => track.isConnected && track.childElementCount === childCount
+    )
+  );
+  if (!canReuse) {
+    const cards = [...screen.container.querySelectorAll(".home-main .home-content-card")];
+    const tracks = new Map();
+    let horizontalRowsOnly = true;
+    for (const card of cards) {
+      const track = card.closest(".home-track");
+      const row = card.closest(ROW_SELECTOR);
+      if (!track || !row) {
+        horizontalRowsOnly = false;
+        break;
+      }
+      if (!tracks.has(track))
+        tracks.set(track, { track, row, cards: [], childCount: track.childElementCount });
+      tracks.get(track).cards.push(card);
+    }
+    screen.homeVidaaCardWindowSnapshot =
+      model && horizontalRowsOnly ? { model, rows: [...tracks.values()] } : null;
+    return { cards, rowRects, bounded: false };
+  }
+
+  // Parked anchors still occupy their original slot. Search each nearby
+  // horizontal row instead of measuring every distant poster after a pause.
+  // Include all active cards so newly restored runways can still be retired.
+  const candidates = new Set(active);
+  const visibleLeft = viewportRect.left - WINDOW_MARGIN;
+  const visibleRight = viewportRect.right + WINDOW_MARGIN;
+  for (const { row, cards } of snapshot.rows) {
+    let rowRect = rowRects.get(row);
+    if (!rowRect) {
+      rowRect = row.getBoundingClientRect();
+      rowRects.set(row, rowRect);
+    }
+    if (
+      rowRect.bottom < viewportRect.top - WINDOW_MARGIN ||
+      rowRect.top > viewportRect.bottom + WINDOW_MARGIN
+    )
+      continue;
+    const reversed =
+      cards.length > 1 &&
+      cards[0].getBoundingClientRect().left > cards[cards.length - 1].getBoundingClientRect().left;
+    const cardAt = (index) => cards[reversed ? cards.length - 1 - index : index];
+    let start = 0;
+    let end = cards.length;
+    while (start < end) {
+      const middle = Math.floor((start + end) / 2);
+      if (cardAt(middle).getBoundingClientRect().right < visibleLeft) start = middle + 1;
+      else end = middle;
+    }
+    for (let index = start; index < cards.length; index += 1) {
+      const card = cardAt(index);
+      if (card.getBoundingClientRect().left > visibleRight) break;
+      candidates.add(card);
+    }
+  }
+  return { cards: [...candidates], rowRects, bounded: true };
+}
 
 function restoreCard(card, record) {
   card.appendChild(record.content);
@@ -39,6 +110,7 @@ export function discardVidaaHomeCards(screen) {
   screen.homeVidaaParkedCards?.clear();
   screen.homeVidaaActiveCards = null;
   screen.homeVidaaCardWindowBaseSize = 0;
+  screen.homeVidaaCardWindowSnapshot = null;
 }
 
 export function restoreAllVidaaHomeCards(screen) {
@@ -151,20 +223,18 @@ export function updateVidaaHomeCardWindow(
   { activeOnly = false } = {}
 ) {
   const parked = screen.homeVidaaParkedCards || (screen.homeVidaaParkedCards = new Map());
-  if (!activeOnly)
+  const changes = [];
+  const active = screen.homeVidaaActiveCards || (screen.homeVidaaActiveCards = new Set());
+  const scan = getCardWindowScan(screen, viewportRect, active, activeOnly);
+  if (!scan.bounded)
     parked.forEach((record, card) => {
       if (!screen.container.contains(card)) {
         restoreCard(card, record);
         parked.delete(card);
       }
     });
-  const rows = new Map();
-  const changes = [];
-  const active = screen.homeVidaaActiveCards || (screen.homeVidaaActiveCards = new Set());
-  const cards = activeOnly
-    ? [...active]
-    : screen.container.querySelectorAll(".home-main .home-content-card");
-  for (const card of cards) {
+  const rows = scan.rowRects;
+  for (const card of scan.cards) {
     if (card.isConnected === false) {
       active.delete(card);
       continue;
@@ -177,14 +247,16 @@ export function updateVidaaHomeCardWindow(
       rect = row.getBoundingClientRect();
       rows.set(row, rect);
     }
-    let near = rect.bottom >= viewportRect.top - 600 && rect.top <= viewportRect.bottom + 600;
+    let near =
+      rect.bottom >= viewportRect.top - WINDOW_MARGIN &&
+      rect.top <= viewportRect.bottom + WINDOW_MARGIN;
     if (near) {
       const cardRect = card.getBoundingClientRect();
       near =
-        cardRect.right >= viewportRect.left - 600 &&
-        cardRect.left <= viewportRect.right + 600 &&
-        cardRect.bottom >= viewportRect.top - 600 &&
-        cardRect.top <= viewportRect.bottom + 600;
+        cardRect.right >= viewportRect.left - WINDOW_MARGIN &&
+        cardRect.left <= viewportRect.right + WINDOW_MARGIN &&
+        cardRect.bottom >= viewportRect.top - WINDOW_MARGIN &&
+        cardRect.top <= viewportRect.bottom + WINDOW_MARGIN;
     }
     if (near && parked.has(card)) changes.push({ card, restore: true });
     else if (

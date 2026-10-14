@@ -310,10 +310,12 @@ export function createDiscoverScreenMethods04() {
       const rowNodes = nav.rows[row] || [];
 
       if (direction === "left") {
-        return this.focusNode(rowNodes[col - 1] || current) || true;
+        const target = rowNodes[col - 1];
+        return target ? this.focusNode(target) || true : true;
       }
       if (direction === "right") {
-        return this.focusNode(rowNodes[col + 1] || current) || true;
+        const target = rowNodes[col + 1];
+        return target ? this.focusNode(target) || true : true;
       }
 
       const delta = direction === "up" ? -1 : 1;

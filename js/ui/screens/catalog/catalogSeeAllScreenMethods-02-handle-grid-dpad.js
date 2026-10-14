@@ -1,5 +1,7 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./catalogSeeAllScreen.js";
+import { Platform } from "../../../platform/index.js";
+import { captureVidaaGridPosters, restoreVidaaGridPosters, scheduleVidaaGridPosterWindow } from "../../components/vidaaGridPosterWindow.js";
 
 export function createCatalogSeeAllScreenMethods02() {
   const {
@@ -217,6 +219,7 @@ export function createCatalogSeeAllScreenMethods02() {
       return true;
     },
     render() {
+      const loadedPosters = Platform.isVidaa() ? captureVidaaGridPosters(this) : null;
       const descriptor = this.params || {};
       const title = descriptor.catalogName || "Catalog";
       // Keep large paged catalogs windowed on constrained TVs. The window
@@ -248,7 +251,7 @@ export function createCatalogSeeAllScreenMethods02() {
                 <div class="seeall-card-poster-wrap">
                   ${
                     item.poster
-                      ? `<img class="seeall-card-poster-image" src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "content")}" loading="lazy" decoding="async" />`
+                      ? `<img class="seeall-card-poster-image" ${Platform.isVidaa() ? "data-src" : "src"}="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "content")}" loading="lazy" decoding="async" />`
                       : `<div class="seeall-card-poster placeholder"></div>`
                   }
                   ${isTitleItemWatched(item, this.watchedTitleIds) ? renderTitleWatchedBadge() : ""}
@@ -293,10 +296,12 @@ export function createCatalogSeeAllScreenMethods02() {
           </div>
         `;
 
+      if (loadedPosters) restoreVidaaGridPosters(this, loadedPosters);
       ScreenUtils.indexFocusables(this.container);
       this.buildNavigationModel();
       this.bindCardEvents();
       this.bindShellEvents();
+      if (Platform.isVidaa()) scheduleVidaaGridPosterWindow(this, ".seeall-shell");
       if (this.pendingRestoreFocus) {
         const scrollMode = this.preserveViewportOnNextRender ? "none" : "center";
         this.pendingRestoreFocus = false;
@@ -313,6 +318,7 @@ export function createCatalogSeeAllScreenMethods02() {
         node.addEventListener("focus", () => {
           this.lastFocusedKey = node.dataset.focusKey || this.lastFocusedKey;
           this.savedScrollTop = this.container?.querySelector(".seeall-shell")?.scrollTop || 0;
+          if (Platform.isVidaa()) scheduleVidaaGridPosterWindow(this, ".seeall-shell");
         });
         node.addEventListener("mouseenter", () => {
           this.lastFocusedKey = node.dataset.focusKey || this.lastFocusedKey;
@@ -329,6 +335,7 @@ export function createCatalogSeeAllScreenMethods02() {
         "scroll",
         () => {
           this.savedScrollTop = Number(shell.scrollTop || 0);
+          if (Platform.isVidaa()) scheduleVidaaGridPosterWindow(this, ".seeall-shell");
           if (this.shouldAutoLoadMoreFromScroll(shell)) {
             if (this.maybeExpandRenderedItems(this.renderedItemsLimit - 1)) {
               this.render();

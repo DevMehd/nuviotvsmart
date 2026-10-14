@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./discoverScreen.js";
+import { disposeVidaaGridPosterWindow } from "../../components/vidaaGridPosterWindow.js";
 
 export function createDiscoverScreenMethods06() {
   const {
@@ -333,6 +334,7 @@ export function createDiscoverScreenMethods06() {
       return false;
     },
     cleanup() {
+      disposeVidaaGridPosterWindow(this);
       this.loadToken = (this.loadToken || 0) + 1;
       resetDpadRepeat(this);
       this.endDiscoverVerticalFastScroll({ land: false });

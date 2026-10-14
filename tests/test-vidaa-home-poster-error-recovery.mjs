@@ -4,6 +4,7 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.document = { documentElement: { classList: { contains: () => false } } };
 const timers = new Map();
+const frames = new Map();
 let timerId = 0;
 globalThis.setTimeout = (callback) => {
   const id = ++timerId;
@@ -12,6 +13,11 @@ globalThis.setTimeout = (callback) => {
 };
 globalThis.clearTimeout = (id) => timers.delete(id);
 globalThis.cancelAnimationFrame = () => {};
+globalThis.requestAnimationFrame = (callback) => {
+  const id = ++timerId;
+  frames.set(id, callback);
+  return id;
+};
 class Poster extends EventTarget {
   constructor(source, fallbacks = []) {
     super();
@@ -19,7 +25,7 @@ class Poster extends EventTarget {
     this.isConnected = true;
     this.attributes = new Map();
     this.requests = [];
-    const values = new Set();
+    const values = new Set(["content-poster"]);
     this.classList = {
       add: (name) => values.add(name),
       remove: (name) => values.delete(name),
@@ -81,6 +87,32 @@ function fixture(fallbacks = []) {
   };
   const hydrate = () => screen.scheduleVidaaHomeLazyImageHydration(node);
   return { image, screen, hydrate };
+}
+
+for (const posterClass of ["content-poster", "home-continue-bg"]) {
+  const { image, screen, hydrate } = fixture();
+  image.classList.remove("content-poster");
+  image.classList.add(posterClass);
+  screen.commitHomeLazyImageSources([{ image, src: image.dataset.src, priority: 1 }]);
+  for (const [id, callback] of frames) {
+    frames.delete(id);
+    callback();
+  }
+  assert.equal(image.dataset.src, undefined);
+  image.error();
+  await flush();
+  assert.equal(
+    image.dataset.src,
+    "https://fixture.invalid/poster.jpg",
+    "A visible poster loaded by the viewport batch must recover like a focused poster"
+  );
+  hydrate();
+  image.loaded();
+  assert.equal(image.requests.length, 2);
+  assert.equal(image.classList.contains("placeholder"), false);
+  console.log(
+    `PASS visible/appended ${posterClass} viewport images recover when subsequently focused`
+  );
 }
 
 {

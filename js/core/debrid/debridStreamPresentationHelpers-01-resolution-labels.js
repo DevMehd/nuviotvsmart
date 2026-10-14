@@ -182,11 +182,11 @@ export function isInactiveResolverStream(stream = {}, settings = {}) {
   return Boolean(isDirectDebrid(stream) && providerId && activeProviderId && providerId !== activeProviderId);
 }
 
-export function searchText(stream = {}) {
+export function searchText(stream = {}, { preserveCase = false } = {}) {
   const resolve = stream.clientResolve || stream.raw?.clientResolve || {};
   const raw = resolve.stream?.raw || {};
   const parsed = raw.parsed || {};
-  return [
+  const text = [
     stream.name,
     stream.debridCacheStatus?.cachedName,
     stream.title,
@@ -208,8 +208,8 @@ export function searchText(stream = {}) {
     ...(parsed.languages || [])
   ]
     .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+    .join(" ");
+  return preserveCase ? text : text.toLowerCase();
 }
 
 export function qualityFromText(text = "") {

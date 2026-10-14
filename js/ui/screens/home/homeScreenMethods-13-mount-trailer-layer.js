@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { reconcileHomeFocusMediaTracking } from "./homeFocusMediaTracking.js";
+import { positionVidaaHomePosterPreview, clearVidaaHomePosterPreviewPosition } from "./vidaaHomePosterExpansion.js";
 
 export function createHomeScreenMethods13() {
   const { Platform, metaRepository, isCollectionFolderItem, resolveTrailerSource, withTimeout, resolveTrailerMetaWithTmdbFallback } =
@@ -187,6 +188,7 @@ export function createHomeScreenMethods13() {
           frame.style.setProperty("transition", "none", "important");
         }
         target.classList.remove("is-expanded", "is-trailer-active", "is-expanded-backdrop-ready");
+        if (Platform.isVidaa()) clearVidaaHomePosterPreviewPosition(target);
         this.homeActivePosterNodes?.delete(target);
         const trailerLayer = target.querySelector(".home-poster-trailer-layer");
         if (this.shouldUseImmediateFocusScroll()) {
@@ -229,13 +231,18 @@ export function createHomeScreenMethods13() {
       if ((this.expandedPosterNode && this.expandedPosterNode !== node) || hasOtherExpandedPosters) {
         this.collapseFocusedPoster(this.expandedPosterNode, { excludeNode: node });
       }
+      if (Platform.isVidaa()) {
+        positionVidaaHomePosterPreview(
+          node,
+          this.container?.querySelector(".home-modern-rows-viewport") || this.container?.querySelector(".home-main")
+        );
+      }
       node.classList.add("is-expanded");
       this.homeActivePosterNodes?.add(node);
       this.hydrateFocusedPosterAssets(node);
       this.expandedPosterNode = node;
-      // VIDAA navigation already anchors the focused card at the track's left
-      // inset. Expansion grows to the right: realigning during its width tween
-      // introduces a second camera movement (especially at the end of a row).
+      // Keep the VIDAA camera stable. At the row end the media expands inward
+      // while the card retains the coordinates used by navigation.
       if (Platform.isVidaa()) {
         return;
       }

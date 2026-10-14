@@ -126,15 +126,18 @@ export function createStreamScreenMethods03() {
 
       const showAddonLogo = StreamBadgeSettingsStore.snapshot().showAddonLogo === true;
       if (restored && this.streams.length && showAddonLogo) {
-        await ensureAddonLogoImageProxyReady();
-        if (token !== this.loadToken || Router.getCurrent() !== "stream") {
-          return;
-        }
-        this.streams = this.applyAddonLogos(this.streams);
-        await preloadAddonLogoImages(this.streams, this.addonLogoLookup);
-        if (token !== this.loadToken || Router.getCurrent() !== "stream") {
-          return;
-        }
+        // The restored list is already usable. Optional image service, network
+        // and decode work must not hold its first paint or restored focus.
+        void (async () => {
+          await ensureAddonLogoImageProxyReady();
+          if (token !== this.loadToken || Router.getCurrent() !== "stream") return;
+          this.streams = this.applyAddonLogos(this.streams);
+          await preloadAddonLogoImages(this.streams, this.addonLogoLookup);
+          if (token !== this.loadToken || Router.getCurrent() !== "stream") return;
+          this.requestRender({ delayMs: 0 });
+        })().catch((error) => {
+          console.warn("Restored stream addon logo warmup failed", error);
+        });
       }
 
       // A restored snapshot already holds visible stream results, so settle

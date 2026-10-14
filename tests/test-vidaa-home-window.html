@@ -205,6 +205,50 @@
         container.querySelectorAll(".vidaa-card-parked").length === 0,
       "Cleanup must release detached fragments"
     );
+    // A quiet-window pass over a long horizontal catalog must read the live
+    // neighborhood, rather than every slot that was already parked.
+    container.innerHTML = `<main class="home-main"><section class="home-row"><div class="home-track">${Array.from({ length: 1000 }, (_, c) => `<article tabindex="0" class="home-content-card" data-nav-row="0" data-nav-col="${c}"><div class="home-poster-frame"></div></article>`).join("")}</div></section></main>`;
+    const longViewport = container.querySelector("main");
+    const longTrack = container.querySelector(".home-track");
+    const longCards = [...longTrack.querySelectorAll("article")];
+    screen.navModel = { rows: [longCards] };
+    let cardGeometryReads = 0;
+    longCards.forEach((card) => {
+      const measure = card.getBoundingClientRect.bind(card);
+      card.getBoundingClientRect = () => {
+        cardGeometryReads++;
+        return measure();
+      };
+    });
+    updateVidaaHomeCardWindow(screen, longViewport.getBoundingClientRect(), longCards[0]);
+    cardGeometryReads = 0;
+    updateVidaaHomeCardWindow(screen, longViewport.getBoundingClientRect(), longCards[0]);
+    assert(cardGeometryReads < 40, "Repeated maintenance must bound layout reads for 1000 posters");
+    const farTarget = longCards[700];
+    restoreVidaaHomeNavigationNeighborhood(screen, farTarget, "right");
+    longTrack.scrollLeft = farTarget.offsetLeft;
+    cardGeometryReads = 0;
+    updateVidaaHomeCardWindow(screen, longViewport.getBoundingClientRect(), farTarget);
+    assert(
+      cardGeometryReads < 70,
+      "A distant jump must discover its window without scanning all posters"
+    );
+    assert(
+      farTarget.querySelector(".home-poster-frame"),
+      "Distant jump must retain the focused subtree"
+    );
+    longTrack.dir = "rtl";
+    longTrack.scrollLeft = 0;
+    restoreVidaaHomeNavigationNeighborhood(screen, longCards[0], "right");
+    cardGeometryReads = 0;
+    updateVidaaHomeCardWindow(screen, longViewport.getBoundingClientRect(), longCards[0]);
+    assert(cardGeometryReads < 70, "RTL rows must keep the same bounded layout work");
+    assert(
+      longCards[6].querySelector(".home-poster-frame"),
+      "RTL physical-order search must restore the nearby window"
+    );
+    assert(!farTarget.querySelector(".home-poster-frame"), "RTL must still retire distant trees");
+    restoreAllVidaaHomeCards(screen);
     // Grid sections span many rows: retaining their section rect alone must not
     // retain every image/card in the section. Card geometry remains authoritative.
     container.innerHTML = `<main class="home-main"><section class="home-grid-section"><div class="home-grid-track">${Array.from({ length: 60 }, (_, c) => `<article tabindex="0" class="home-content-card home-poster-card"><div class="home-poster-frame"><img class="content-poster" src="${imageUrl}"></div><button>${c}</button></article>`).join("")}</div></section></main>`;
