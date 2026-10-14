@@ -12,7 +12,8 @@ const defaultFixtures = [
   "test-vidaa-home-poster-expansion.html",
   "test-vidaa-navigation-stress.html",
   "test-vidaa-home-row-updates.html",
-  "test-vidaa-account-dom.html"
+  "test-vidaa-account-dom.html",
+  "test-vidaa-trailer-dom.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(defaultFixtures.map((fixture) => fixture.split("?")[0]));

@@ -26,7 +26,29 @@ export function createHomeScreenMethods15() {
           instant: true,
           preserveHeroMedia: this.shouldPreserveCollectionHeroMedia(node)
         });
-        this.hydrateCollectionFocusGif(node, true);
+        if (!isVidaa) {
+          this.hydrateCollectionFocusGif(node, true);
+          return;
+        }
+        const flowToken = this.focusedPosterFlowToken;
+        const routeName = this.useHomeFollowLayout ? "folderDetail" : "home";
+        const hydrateWhenSettled = () => {
+          this.focusedPosterTimer = null;
+          if (
+            flowToken !== this.focusedPosterFlowToken ||
+            Router.getCurrent() !== routeName ||
+            this.getCurrentFocusedNode() !== node ||
+            !node?.isConnected ||
+            !node.classList.contains("focused")
+          )
+            return;
+          if (this.isVidaaHomeLoadingBusy() || this.isHomeNavigationSettling?.()) {
+            this.focusedPosterTimer = setTimeout(hydrateWhenSettled, MODERN_HOME_CONSTANTS.verticalScrollSettlePollMs);
+            return;
+          }
+          this.hydrateCollectionFocusGif(node, true);
+        };
+        this.focusedPosterTimer = setTimeout(hydrateWhenSettled, 250);
         return;
       }
       const prefs = this.layoutPrefs || {};

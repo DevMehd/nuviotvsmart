@@ -116,24 +116,23 @@ export function createHomeScreenMethods13() {
 
         let didActivate = false;
         const activate = () => {
-          if (didActivate) {
+          if (didActivate || !video.isConnected || video.parentElement !== container || video.paused || Number(video.readyState || 0) < 2) {
             return;
           }
           didActivate = true;
           container.classList.add("is-active");
           onReady?.();
         };
-        ["playing", "canplay", "loadeddata", "loadedmetadata", "timeupdate"].forEach((eventName) => {
+        ["playing", "timeupdate"].forEach((eventName) => {
           video.addEventListener(eventName, activate, { once: true });
         });
         video.addEventListener(
           "error",
           () => {
-            console.warn("Home inline MP4 hero video failed", {
-              url: String(source.url || ""),
-              code: video.error?.code || 0,
-              message: video.error?.message || ""
-            });
+            if (!video.isConnected || video.parentElement !== container) return;
+            this.clearTrailerLayer(container);
+            this.setHeroTrailerActive(false);
+            container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
           },
           { once: true }
         );
@@ -144,8 +143,11 @@ export function createHomeScreenMethods13() {
         } catch (_) {}
         const playAttempt = video.play?.();
         if (playAttempt?.then) {
-          playAttempt.then(activate).catch((error) => {
-            console.warn("Home inline MP4 hero video autoplay failed", error);
+          playAttempt.then(activate).catch(() => {
+            if (!video.isConnected || video.parentElement !== container) return;
+            this.clearTrailerLayer(container);
+            this.setHeroTrailerActive(false);
+            container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
           });
         } else {
           setTimeout(() => {

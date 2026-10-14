@@ -299,7 +299,6 @@ export function createHomeScreenMethods11() {
       return Boolean(this.resolveCollectionFolderTargetFromNode(node));
     },
     shouldPreserveCollectionHeroMedia(node) {
-      if (Platform.isVidaa()) return false;
       if (!this.isCollectionFolderNode(node)) {
         return false;
       }
@@ -310,7 +309,7 @@ export function createHomeScreenMethods11() {
       if (!(gifNode instanceof HTMLImageElement)) {
         return;
       }
-      if (active && !Platform.isVidaa()) {
+      if (active) {
         const src = String(gifNode.dataset.src || gifNode.getAttribute("src") || "").trim();
         if (src && !gifNode.getAttribute("src")) {
           gifNode.setAttribute("src", src);
@@ -335,7 +334,8 @@ export function createHomeScreenMethods11() {
         this.hydrateCollectionFocusGif(this.activeCollectionFocusGifNode, false);
       }
       if (focusedCollection) {
-        this.hydrateCollectionFocusGif(focusedCollection, true);
+        // VIDAA's focused-poster timer starts the GIF after remote input settles.
+        if (!Platform.isVidaa()) this.hydrateCollectionFocusGif(focusedCollection, true);
         this.activeCollectionFocusGifNode = focusedCollection;
       } else {
         this.activeCollectionFocusGifNode = null;

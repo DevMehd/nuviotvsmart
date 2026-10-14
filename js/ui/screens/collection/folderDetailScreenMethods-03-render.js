@@ -216,6 +216,7 @@ export function createFolderDetailScreenMethods03() {
       HomeScreen.cancelModernCameraFollow.call(this, { stopAnimations: true });
       HomeScreen.teardownModernTrackScrollPagination.call(this);
       HomeScreen.cancelFocusedPosterFlow.call(this);
+      HomeScreen.clearHomeTrailerLayers.call(this);
       const enterClass = ScreenUtils.routeEnterClass(this, this.folderRouteEnterPending, " nuvio-route-slide-enter");
       this.folderRouteEnterPending = false;
       this.expandedPosterNode = null;

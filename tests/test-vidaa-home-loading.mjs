@@ -475,6 +475,71 @@ for (const direction of [39, 40]) {
   assert.equal(mounts, 0);
 }
 
+// Collection GIF work follows the same settled-focus policy as trailers.
+{
+  reset();
+  const state = home();
+  const first = card("first-collection");
+  const final = card("final-collection");
+  const hydrated = [];
+  state.isCollectionFolderNode = () => true;
+  state.shouldPreserveCollectionHeroMedia = () => true;
+  state.hydrateCollectionFocusGif = (node) => hydrated.push(node.hero.id);
+  state.focused = first;
+  noteVidaaNavigationKeyDown(39);
+  state.scheduleFocusedPosterFlow(first);
+  await advance(now + 400);
+  assert.deepEqual(hydrated, [], "Held remote input must not start GIF decoding");
+  state.focused = final;
+  state.scheduleFocusedPosterFlow(final);
+  noteVidaaNavigationKeyUp(39);
+  await advance(now + 800);
+  assert.deepEqual(hydrated, ["final-collection"], "Only settled collection focus starts its GIF");
+}
+
+// Collection follow-layout shares Home's player, while retaining its own route.
+for (const changeDuringLookup of ["none", "route", "language"]) {
+  reset();
+  let route = "folderDetail";
+  Router.getCurrent = () => route;
+  const state = home();
+  state.useHomeFollowLayout = true;
+  state.focused = card("collection-title");
+  state.focusedPosterFlowToken = 1;
+  state.getFocusedPosterFlowConfig = () => ({
+    shouldExpand: false,
+    shouldPreviewTrailer: true,
+    trailerTarget: "hero_media"
+  });
+  state.getFocusedPosterTrailerDelayMs = () => 0;
+  const source = deferred();
+  let lookups = 0;
+  let mounts = 0;
+  state.prefetchFocusedPosterTrailer = () => {
+    lookups++;
+    return source.promise;
+  };
+  state.mountTrailerLayer = () => {
+    mounts++;
+  };
+  const pending = state.activateFocusedPosterFlow(state.focused, 1);
+  await flush();
+  assert.equal(lookups, 1, "Collection trailers must reach the source lookup");
+  const previousSettings = TmdbSettingsStore.get;
+  if (changeDuringLookup === "route") route = "metaDetails";
+  if (changeDuringLookup === "language")
+    TmdbSettingsStore.get = () => ({ enabled: false, language: "it-IT" });
+  source.resolve({ kind: "video", url: "https://example.com/trailer.mp4" });
+  await pending;
+  assert.equal(
+    mounts,
+    changeDuringLookup === "none" ? 1 : 0,
+    "Leaving the collection or changing trailer preferences cancels its preview"
+  );
+  TmdbSettingsStore.get = previousSettings;
+  Router.getCurrent = () => "home";
+}
+
 // A single accepted tap keeps its original media timing; the burst gate must
 // not slow normal navigation or an immediate expansion preference.
 for (const name of ["vidaa", "tizen", "webos", "browser"]) {

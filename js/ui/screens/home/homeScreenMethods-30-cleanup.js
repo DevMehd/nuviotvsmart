@@ -59,6 +59,11 @@ export function createHomeScreenMethods30() {
       this.clearFocusedPosterFlowState();
       this.collapseFocusedPoster();
       this.clearHomeTrailerLayers();
+      if (this.activeCollectionFocusGifNode) {
+        this.hydrateCollectionFocusGif(this.activeCollectionFocusGifNode, false);
+        this.activeCollectionFocusGifNode = null;
+      }
+      this.focusedPosterTrailerSourcePromises = null;
       this.teardownGridStickyHeader();
       this.teardownModernTrackScrollPagination();
       this.teardownContinueWatchingProgressiveRendering();

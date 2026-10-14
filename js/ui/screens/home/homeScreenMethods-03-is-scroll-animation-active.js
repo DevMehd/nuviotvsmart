@@ -176,7 +176,9 @@ export function createHomeScreenMethods03() {
       return Boolean(getTvRuntimePerformanceProfile().isLegacyTvRuntime);
     },
     shouldSuppressAutomaticTrailerPlayback() {
-      return this.isLegacyTvRuntime() && !Platform.isTizen();
+      // VIDAA previews are opt-in per profile and start only after focus settles.
+      // An older browser must not silently override that explicit preference.
+      return this.isLegacyTvRuntime() && !Platform.isTizen() && !Platform.isVidaa();
     },
     getFocusedPosterTrailerDelayMs(trailerTarget = "hero_media") {
       const normalizedTrailerTarget = String(trailerTarget || "hero_media").toLowerCase();
