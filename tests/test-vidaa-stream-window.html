@@ -1,0 +1,176 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>VIDAA source list retention</title>
+<style>
+  .stream-route-list {
+    height: 600px;
+    width: 600px;
+    overflow: auto;
+    overflow-anchor: none;
+  }
+  .stream-route-card-row {
+    height: auto;
+    margin-bottom: 18px;
+  }
+  .stream-route-card {
+    display: block;
+    height: 110px;
+  }
+  .badges {
+    height: 25px;
+  }
+  .badges.ready {
+    height: 65px;
+  }
+</style>
+<pre id="result">RUNNING</pre>
+<div id="fixture"></div>
+<script type="module">
+  import { StreamScreen, StreamBadgeSettingsStore } from "../js/ui/screens/stream/streamScreen.js";
+
+  const result = document.getElementById("result");
+  const container = document.getElementById("fixture");
+  const assert = (condition, message) => {
+    if (!condition) throw Error(message);
+  };
+  const image = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+  let streams = Array.from({ length: 240 }, (_, index) => ({
+    id: `fixture-${index}`,
+    title: `Source ${index}`
+  }));
+  let rendered = 0,
+    hydrated = 0,
+    snapshots = 0;
+  const snapshot = StreamBadgeSettingsStore.snapshot;
+  StreamBadgeSettingsStore.snapshot = function () {
+    snapshots++;
+    return snapshot.call(this);
+  };
+  const screen = {
+    ...StreamScreen,
+    container,
+    streamVirtualized: true,
+    listScrollTop: 0,
+    focusState: { zone: "card", row: 0, action: "play" },
+    getFilteredStreams: () => streams,
+    isLegacyWebOsRoute: () => false,
+    bindAddonLogoFallbacks() {},
+    renderStreamCard(stream, index, enabled, settings, options) {
+      rendered++;
+      return `<div class="stream-route-card-row" data-stream-row="${index}" data-stream-key="${options.streamKey}">
+        <button class="stream-route-card focusable" data-card-action="play" data-stream-row="${index}">${stream.title}</button>
+        <div class="badges"></div></div>`;
+    },
+    hydrateVisibleStreamBadges() {
+      // Model the real two-row hydration budget and a wrapped badge row. The
+      // actual virtualizer, measurements and focus restoration run unmodified.
+      const pending = [...container.querySelectorAll(".badges:not(.ready)")].slice(0, 2);
+      for (const badge of pending) {
+        badge.innerHTML = `<img src="${image}" width="40" height="40">`;
+        badge.classList.add("ready");
+        hydrated++;
+      }
+      if (pending.length) this.requestStreamVirtualMeasure();
+    }
+  };
+  function settle(passes = 24) {
+    for (let index = 0; index < passes; index++) {
+      screen.hydrateVisibleStreamBadges();
+      screen.measureStreamVirtualRows();
+      screen.cancelStreamVirtualizationWork();
+    }
+  }
+  try {
+    container.innerHTML = `<div class="stream-route-list">${screen.renderStreamVirtualMarkup(streams, true, {})}</div>`;
+    const list = container.querySelector(".stream-route-list");
+    screen.hydrateVisibleStreamBadges();
+    const first = screen.getMountedStreamVirtualRow(0);
+    const badgeImage = first.querySelector("img");
+    const button = first.querySelector("button");
+    screen.focusElement(button, { ensureVisible: false });
+    settle();
+    assert(
+      screen.getMountedStreamVirtualRow(0) === first,
+      `height changes recreate rows (${rendered} renders, ${hydrated} hydrations)`
+    );
+    assert(
+      first.querySelector("img") === badgeImage,
+      "hydrated image identity survives measurements"
+    );
+    assert(
+      document.activeElement === button && screen.focusedElement === button,
+      "focus survives height changes"
+    );
+    const quiet = { rendered, hydrated };
+    settle();
+    assert(
+      rendered === quiet.rendered && hydrated === quiet.hydrated,
+      "settled rows perform no further rendering or hydration"
+    );
+    const retained = new Map(
+      [...list.querySelectorAll(".stream-route-card-row")].map((row) => [
+        row.dataset.streamKey,
+        row
+      ])
+    );
+    const beforeSnapshots = snapshots;
+    screen.syncStreamVirtualization(21, { force: true });
+    screen.cancelStreamVirtualizationWork();
+    assert(
+      snapshots - beforeSnapshots <= 1,
+      "badge settings are prepared at most once per window update"
+    );
+    for (const row of list.querySelectorAll(".stream-route-card-row")) {
+      if (retained.has(row.dataset.streamKey))
+        assert(retained.get(row.dataset.streamKey) === row, "overlapping rows survive navigation");
+    }
+    // Replacing a result with the same key must refresh its content and focus.
+    screen.focusState.row = 0;
+    streams = streams.map((stream, index) =>
+      index ? stream : { ...stream, title: "Updated source" }
+    );
+    screen.syncStreamVirtualization(0, { force: true });
+    screen.cancelStreamVirtualizationWork();
+    assert(
+      screen.getMountedStreamVirtualRow(0).textContent.includes("Updated source"),
+      "same-key source updates are not stale"
+    );
+    assert(
+      screen.focusedElement?.isConnected && document.activeElement === screen.focusedElement,
+      "replaced focused row regains focus"
+    );
+    // Simulate a filter/reorder and ensure logical indexes match the results.
+    streams = streams.filter((_, index) => index % 2).reverse();
+    screen.syncStreamVirtualization(0, { force: true });
+    screen.cancelStreamVirtualizationWork();
+    assert(
+      screen.getMountedStreamVirtualRow(0).textContent.includes(streams[0].title),
+      "filter and reorder refresh row indexes"
+    );
+    // Measure late badge growth above a scrolled viewport, preserving its anchor.
+    screen.setListScrollTop(list, 1500);
+    screen.syncStreamVirtualization();
+    settle();
+    const anchor = screen.getMountedStreamVirtualRow(8);
+    const before = anchor.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    screen.getMountedStreamVirtualRow(0).querySelector(".badges").style.height = "115px";
+    screen.measureStreamVirtualRows();
+    screen.cancelStreamVirtualizationWork();
+    assert(
+      Math.abs(anchor.getBoundingClientRect().top - list.getBoundingClientRect().top - before) < 1,
+      "late image height preserves viewport anchor"
+    );
+    assert(
+      list.querySelectorAll(".stream-route-card-row").length < 50,
+      "long list remains bounded"
+    );
+    result.dataset.status = "passed";
+    result.textContent = `PASS: retained source rows, badge images, focus, filter updates and scroll anchor; initial settled renders=${quiet.rendered}, hydrations=${quiet.hydrated}`;
+  } catch (error) {
+    result.dataset.status = "failed";
+    result.textContent = `FAIL: ${error.message}`;
+  } finally {
+    StreamBadgeSettingsStore.snapshot = snapshot;
+    screen.stopStreamVirtualization();
+  }
+</script>

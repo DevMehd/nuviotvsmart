@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Laboratoire Nuvio · 55U6NQ</title>
+    <link rel="stylesheet" href="./lab.css" />
+  </head>
+  <body>
+    <main id="menu">
+      <p class="eyebrow">NUVIO PERSONNEL · LABORATOIRE</p>
+      <h1>Choisir le bon moteur pour ta télé</h1>
+      <p id="environment">Vérification du navigateur…</p>
+      <p>
+        Pose la télécommande pendant les mesures. Garde les mêmes réglages TV et ferme les autres
+        applications. Le parcours complet dure environ 30 minutes. Le mode court vérifie le
+        fonctionnement ; il ne suffit pas pour choisir une migration.
+      </p>
+      <nav>
+        <button id="full">Parcours complet</button><button id="short">Vérification courte</button
+        ><button id="resume">Reprendre</button><button id="download">Télécharger JSON</button
+        ><button id="export">Exporter par QR</button><button id="back">Retour à Nuvio</button>
+      </nav>
+      <p id="status" role="status">
+        Le diagnostic Nuvio habituel reste disponible pour tester les vrais catalogues et la vidéo.
+      </p>
+      <section id="results"></section>
+      <section id="qr" hidden>
+        <canvas width="480" height="480"></canvas>
+        <p id="qr-link"></p>
+        <p>Laisse cette page ouverte pendant la récupération sur ton téléphone.</p>
+      </section>
+      <details>
+        <summary>Ce qui est mesuré et les limites</summary>
+        <p>
+          Mêmes images et données synthétiques, mêmes scènes, même résolution 1920 × 1080. Les
+          durées entre rappels d’image (rAF) ne sont pas des mesures du signal HDMI ni du temps
+          jusqu’aux pixels visibles. Les délais partent d’actions planifiées, pas de la télécommande
+          physique. Le GPU, la mémoire totale et la consommation ne sont pas mesurables précisément
+          ici. Aucun score global.
+        </p>
+        <p>
+          Les moteurs sont compilés pour Chromium 111. La version réellement détectée figure dans
+          l’export. Un navigateur plus récent ou un ordinateur ne remplace pas les mesures sur la
+          TV. Le test C++ concerne trois calculs limités ; il ne simule pas une application native
+          VIDAA.
+        </p>
+      </details>
+    </main>
+    <div id="stage" hidden></div>
+    <aside id="hud" hidden>
+      <span id="progress"></span><button id="pause">Pause après ce passage</button
+      ><button id="stop">Arrêter</button>
+    </aside>
+    <script src="./qrcode.js"></script>
+    <script type="module" src="./controller.js"></script>
+  </body>
+</html>

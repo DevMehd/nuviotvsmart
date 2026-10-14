@@ -119,6 +119,20 @@ Every fresh VIDAA launch shows the latest French entry from `CHANGELOG.fr.md`.
 Update that file for each published change; the build requires its version to
 match `package.json`. See `AGENTS.md` for the personal deployment rules.
 
+Virtual source windows retain unchanged row nodes and decoded badge images.
+Badge height measurements update spacers without rebuilding the mounted list;
+changed sources still refresh their content and restore focus. The regression
+fixture checks row/image identity, filter changes and late-height scroll anchors:
+`node tests/run-vidaa-home-dom-tests.mjs test-vidaa-stream-window.html`.
+
+The VIDAA diagnostic also opens a comparison laboratory (`benchmarks/vidaa-comparison`)
+that renders the same synthetic scenes with eight renderers and runs JavaScript and
+C++/WebAssembly kernels. `npm run build:comparison` bundles it for Chromium 111 into
+`dist/comparison/<build-id>/`; `npm run package:vidaa` includes it at `/comparison/`.
+Validate with `node tests/test-vidaa-comparison.mjs` and
+`node tests/run-vidaa-home-dom-tests.mjs test-vidaa-comparison.html`. Rebuild the Wasm
+only after changing `wasm/kernels.cpp` (`npm run build:comparison:wasm`, needs Emscripten).
+
 VIDAA includes the user-selected Xperience Nard and Elite badge rule snapshots.
 Choose the pack under Settings → Fusion Style → Badge pack for each profile on
 this TV. This local preference survives cloud settings refreshes; existing custom

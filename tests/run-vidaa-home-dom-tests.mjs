@@ -11,10 +11,13 @@ const defaultFixtures = [
   "test-vidaa-home-window.html",
   "test-vidaa-home-poster-expansion.html",
   "test-vidaa-navigation-stress.html",
-  "test-vidaa-home-row-updates.html"
+  "test-vidaa-home-row-updates.html",
+  "test-vidaa-stream-window.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
-const allowedFixtures = new Set(defaultFixtures.map((fixture) => fixture.split("?")[0]));
+const allowedFixtures = new Set(
+  [...defaultFixtures, "test-vidaa-comparison.html"].map((fixture) => fixture.split("?")[0])
+);
 for (const fixture of fixtures) {
   if (!allowedFixtures.has(fixture.split("?")[0]))
     throw Error(`Unknown Home DOM fixture: ${fixture}`);
@@ -31,6 +34,7 @@ const mimeTypes = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".webp": "image/webp",
+  ".ttf": "font/ttf",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".wasm": "application/wasm"

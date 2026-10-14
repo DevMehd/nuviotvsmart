@@ -1,0 +1,121 @@
+@font-face {
+  font-family: Bench;
+  src: url("./fixtures/Roboto-Regular.ttf");
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #101525;
+  color: #f1f4fb;
+  font:
+    26px/1.45 Bench,
+    Arial,
+    sans-serif;
+}
+main {
+  max-width: 1760px;
+  margin: 55px auto;
+  padding: 0 40px;
+}
+h1 {
+  font-size: 52px;
+  margin: 10px 0 20px;
+}
+.eyebrow {
+  color: #ff7abb;
+  letter-spacing: 3px;
+  font-size: 20px;
+}
+nav {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 28px 0;
+}
+button {
+  font: inherit;
+  padding: 14px 24px;
+  background: #29364f;
+  border: 3px solid transparent;
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+}
+button:focus {
+  outline: none;
+  border-color: #ff7abb;
+  background: #4a3457;
+}
+button:disabled {
+  opacity: 0.4;
+}
+#status {
+  color: #a9d9ff;
+}
+#stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+#stage iframe {
+  width: 1920px;
+  height: 1080px;
+  border: 0;
+  transform-origin: top left;
+  pointer-events: none;
+}
+#hud {
+  position: fixed;
+  bottom: 12px;
+  left: 30px;
+  right: 30px;
+  background: #101525ed;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 22px;
+}
+#progress {
+  flex: 1;
+}
+#hud[hidden],
+[hidden] {
+  display: none !important;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 21px;
+}
+td,
+th {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #394763;
+}
+small,
+details {
+  color: #acbbd0;
+  font-size: 22px;
+}
+#qr {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  flex-wrap: wrap;
+}
+#qr canvas {
+  width: 420px;
+  height: 420px;
+}
+#qr-link {
+  overflow-wrap: anywhere;
+  max-width: 800px;
+}
+summary {
+  padding: 18px 0;
+  cursor: pointer;
+}

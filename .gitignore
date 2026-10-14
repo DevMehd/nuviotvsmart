@@ -13,6 +13,8 @@ tests/*
 !tests/test-vidaa-home-poster-expansion.html
 !tests/test-vidaa-navigation-stress.html
 !tests/test-vidaa-hero-motion.html
+!tests/test-vidaa-stream-window.html
+!tests/test-vidaa-comparison.html
 !tests/run-vidaa-home-dom-tests.mjs
 !tests/test-vidaa-*.mjs
 

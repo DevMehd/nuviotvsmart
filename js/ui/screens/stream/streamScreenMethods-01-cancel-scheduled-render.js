@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
+import { reconcileStreamVirtualRows } from "./streamVirtualDom.js";
 
 export function createStreamScreenMethods01() {
   const {
@@ -70,6 +71,7 @@ export function createStreamScreenMethods01() {
       this.streamVirtualPreferredIndex = null;
       this.streamVirtualSyncForce = false;
       this.streamVirtualPendingAnchor = null;
+      this.streamVirtualRowRecords = null;
     },
     shouldUseStreamVirtualization(streams = []) {
       // Keep ordinary-sized Tizen lists on the stable eager path. The Android
@@ -158,8 +160,10 @@ export function createStreamScreenMethods01() {
         preferredIndex
       });
       this.streamVirtualWindow = virtualWindow;
+      this.streamVirtualRowRecords = new Map();
       const cards = [];
       for (let index = virtualWindow.start; index <= virtualWindow.end; index += 1) {
+        this.streamVirtualRowRecords.set(model.keys[index], { stream: streams[index], index });
         cards.push(
           this.renderStreamCard(streams[index], index, streamBadgesEnabled, badgeSettings, {
             streamKey: model.keys[index],
@@ -276,27 +280,44 @@ export function createStreamScreenMethods01() {
         previousWindow.end === virtualWindow.end &&
         Math.abs(previousWindow.topSpacer - virtualWindow.topSpacer) < 0.5 &&
         Math.abs(previousWindow.bottomSpacer - virtualWindow.bottomSpacer) < 0.5;
-      if (!force && sameWindow && windowNode.childElementCount) {
+      const sameRows =
+        sameWindow &&
+        model.keys.slice(virtualWindow.start, virtualWindow.end + 1).every((key, offset) => {
+          const index = virtualWindow.start + offset;
+          const record = this.streamVirtualRowRecords?.get(key);
+          return record?.index === index && record?.stream === streams[index];
+        });
+      if (!force && sameRows && windowNode.childElementCount) {
         return false;
       }
 
       const focused = this.focusedElement;
       const restoreFocusedAction = focused && list.contains(focused) ? String(focused.dataset?.cardAction || "play") : "";
-      windowNode.innerHTML = Array.from({ length: Math.max(0, virtualWindow.end - virtualWindow.start + 1) }, (_, offset) => {
-        const index = virtualWindow.start + offset;
-        return this.renderStreamCard(
-          streams[index],
-          index,
-          DebridSettingsStore.get().streamBadgesEnabled !== false,
-          StreamBadgeSettingsStore.snapshot(),
-          {
+      // A height correction changes spacers, not card contents. Prepare badge
+      // settings only when a new or changed row actually needs rendering.
+      let badgeSettings;
+      let streamBadgesEnabled;
+      const reconciled = reconcileStreamVirtualRows(
+        windowNode,
+        this.streamVirtualRowRecords,
+        streams,
+        model.keys,
+        virtualWindow.start,
+        virtualWindow.end,
+        (index) => {
+          if (!badgeSettings) {
+            badgeSettings = StreamBadgeSettingsStore.snapshot();
+            streamBadgesEnabled = DebridSettingsStore.get().streamBadgesEnabled !== false;
+          }
+          return this.renderStreamCard(streams[index], index, streamBadgesEnabled, badgeSettings, {
             streamKey: model.keys[index],
             virtualized: true,
             virtualRowGap: model.rowGap,
             virtualLast: index === streams.length - 1
-          }
-        );
-      }).join("");
+          });
+        }
+      );
+      this.streamVirtualRowRecords = reconciled.records;
       const topSpacer = track.querySelector('[data-stream-virtual-spacer="top"]');
       const bottomSpacer = track.querySelector('[data-stream-virtual-spacer="bottom"]');
       if (topSpacer) {
@@ -309,17 +330,25 @@ export function createStreamScreenMethods01() {
       windowNode.dataset.streamVirtualStart = String(virtualWindow.start);
       windowNode.dataset.streamVirtualEnd = String(virtualWindow.end);
       this.streamVirtualWindow = virtualWindow;
-      this.streamFocusDomCache = null;
-      this.focusedElement = null;
-      ScreenUtils.indexFocusables(this.container, ".focusable:not([hidden])");
-      this.hydrateVisibleStreamBadges();
-      this.bindAddonLogoFallbacks();
-      this.observeStreamVirtualRows(windowNode);
-      this.requestStreamVirtualMeasure();
+      if (reconciled.changed) {
+        this.streamFocusDomCache = null;
+        if (focused && !this.container.contains(focused)) this.focusedElement = null;
+        ScreenUtils.indexFocusables(this.container, ".focusable:not([hidden])");
+        this.hydrateVisibleStreamBadges();
+        this.bindAddonLogoFallbacks();
+        this.observeStreamVirtualRows(windowNode);
+        this.requestStreamVirtualMeasure();
+      }
 
-      if (restoreFocusedAction) {
+      if (restoreFocusedAction && !this.container.contains(focused)) {
         const restoredRow = this.getMountedStreamVirtualRow(this.focusState?.row);
-        const target = this.resolveCardActionForRow(restoredRow, restoreFocusedAction);
+        const target = this.resolveCardActionForRow(
+          {
+            play: restoredRow?.querySelector('[data-card-action="play"]'),
+            native: restoredRow?.querySelector('[data-card-action="native"]')
+          },
+          restoreFocusedAction
+        );
         if (target) {
           // The logical scroll anchor is restored by the caller after a measured
           // window rebind. Do not run the regular visibility correction here as
@@ -328,11 +357,8 @@ export function createStreamScreenMethods01() {
         }
       }
 
-      // Rebinding the virtual window replaces the focused DOM subtree. Older TV
-      // Chromium builds may apply native scroll anchoring (or focus scrolling)
-      // after that replacement and move the list far beyond the logical row.
-      // Restore the logical position after focus has been restored so the
-      // virtualizer remains an implementation detail, like Android LazyColumn.
+      // Spacers and entering/leaving rows can trigger native scroll anchoring.
+      // The measurement caller then applies any logical anchor correction.
       this.restoreStreamVirtualScrollPosition(list, previousScrollTop);
       return true;
     }

@@ -1,0 +1,19 @@
+{
+  "compiler": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.12 (5488e0871d46d19a3209988190fa6a653126256f)",
+  "flags": [
+    "-O3",
+    "--no-entry",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-sSTANDALONE_WASM=1",
+    "-sMIN_CHROME_VERSION=111",
+    "-sEXPORTED_FUNCTIONS=['_input_ptr','_output_ptr','_run']",
+    "-sINITIAL_MEMORY=2097152",
+    "-sSTACK_SIZE=65536",
+    "-o",
+    "kernels.wasm"
+  ],
+  "sourceSha256": "9d3635c4dd0ca58f2ae6eb1c41b89316489fcaba264b739136f67b80448b7752",
+  "binarySha256": "2b89fe3f7e887e72269ddc6243c470e3e3e6530ffa203331ce8ea32b40e042cc",
+  "features": "scalar Wasm, single thread, no SIMD, no shared memory"
+}

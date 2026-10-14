@@ -182,6 +182,7 @@ export function createStreamScreenMethods09() {
       this.applyFocus();
       this.bindListScrollState();
       if (virtualizedStreamList) {
+        if (!markupUnchanged) this.observeStreamVirtualRows(this.container.querySelector("[data-stream-virtual-window]"));
         this.requestStreamVirtualMeasure();
         this.requestStreamVirtualSync();
       }

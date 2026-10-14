@@ -8,12 +8,38 @@
 // so the link survives cold starts and new instances.
 export const REPORT_ID_PATTERN = /^[a-z2-7]{16,32}$/;
 export const MAX_REPORT_BYTES = 160 * 1024;
+export const MAX_COMPARISON_BYTES = 2 * 1024 * 1024;
+const MAX_STORED_BYTES = 16 * 1024 * 1024;
 export const REPORT_TTL_MS = 30 * 60 * 1000;
 export const MAX_REPORTS = 24;
-const MAX_BODY_BYTES = MAX_REPORT_BYTES + 4096;
+const MAX_BODY_BYTES = MAX_COMPARISON_BYTES + 4096;
 const BLOB_PREFIX = "diagnostics/";
 
 export function validateDiagnosticReport(report) {
+  if (report?.protocol === "vidaa-comparison-1") {
+    return Boolean(
+      report.schema === 1 &&
+      ["short", "full"].includes(report.mode) &&
+      report.environment &&
+      typeof report.environment === "object" &&
+      /^[a-f0-9]{16}$/.test(report.build?.id || "") &&
+      typeof report.createdAt === "string" &&
+      report.createdAt.length <= 40 &&
+      Array.isArray(report.trials) &&
+      report.trials.length <= 40 &&
+      report.trials.every(
+        (trial) =>
+          trial &&
+          typeof trial === "object" &&
+          Array.isArray(trial.scenes) &&
+          trial.scenes.length <= 5
+      ) &&
+      Array.isArray(report.compute) &&
+      report.compute.length <= 250 &&
+      Array.isArray(report.soak) &&
+      report.soak.length <= 2
+    );
+  }
   return Boolean(
     report &&
     typeof report === "object" &&
@@ -68,8 +94,14 @@ export function createDiagnosticReportService({
   function remember(id, text) {
     reports.delete(id);
     reports.set(id, { text, until: now() + REPORT_TTL_MS });
+    let storedBytes = Array.from(reports.values()).reduce(
+      (sum, entry) => sum + Buffer.byteLength(entry.text),
+      0
+    );
     for (const [key, entry] of reports) {
-      if (reports.size <= MAX_REPORTS && entry.until > now()) break;
+      if (reports.size <= MAX_REPORTS && storedBytes <= MAX_STORED_BYTES && entry.until > now())
+        break;
+      storedBytes -= Buffer.byteLength(entry.text);
       reports.delete(key);
     }
   }
@@ -193,7 +225,11 @@ export function createDiagnosticReportService({
     const id = parseReportId(body?.id);
     if (!id || !validateDiagnosticReport(body?.report)) return fail(400, "invalid_report");
     const text = JSON.stringify(body.report);
-    if (Buffer.byteLength(text) > MAX_REPORT_BYTES) return fail(413);
+    if (
+      Buffer.byteLength(text) >
+      (body.report.protocol === "vidaa-comparison-1" ? MAX_COMPARISON_BYTES : MAX_REPORT_BYTES)
+    )
+      return fail(413);
     remember(id, text);
     const durable = await storeDurably(id, text);
     res.statusCode = 200;

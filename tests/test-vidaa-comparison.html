@@ -1,0 +1,58 @@
+<!doctype html><meta charset="utf-8" /><style>
+  body {
+    margin: 0;
+  }
+  iframe {
+    width: 1920px;
+    height: 1080px;
+    border: 0;
+  }
+</style>
+<pre id="result"></pre>
+<script type="module">
+  const result = document.getElementById("result"),
+    engine = new URLSearchParams(location.search).get("engine") || "dom";
+  try {
+    const index = await (await fetch("/dist/comparison/index.html")).text(),
+      id = /[a-f0-9]{16}/.exec(index)[0],
+      base = `/dist/comparison/${id}/`,
+      frame = document.createElement("iframe"),
+      token = "fixture-validation";
+    const data = await new Promise((resolve, reject) => {
+      setTimeout(() => reject(Error("comparison fixture timeout")), 26000);
+      window.addEventListener("message", (event) => {
+        if (
+          event.source !== frame.contentWindow ||
+          event.origin !== location.origin ||
+          event.data.token !== token
+        )
+          return;
+        const data = event.data;
+        if (data.type === "ready")
+          frame.contentWindow.postMessage(
+            { type: "run", token, config: { duration: 700, warmup: 100, frameBudget: 1000 / 60 } },
+            location.origin
+          );
+        if (data.type === "error") reject(Error(data.error));
+        if (data.type === "result") resolve(data.result);
+      });
+      frame.src = `${base}frame.html?engine=${engine}&token=${token}`;
+      document.body.append(frame);
+    });
+    if (data.status !== "valid")
+      throw Error(
+        JSON.stringify(
+          data.scenes.map((s) => ({ scene: s.scene, errors: s.errors, validation: s.validation }))
+        )
+      );
+    if (
+      data.scenes.some((s) => s.completedActions !== s.expectedActions || s.raw.frames.length < 5)
+    )
+      throw Error("missing frame/action measurements");
+    result.dataset.status = "passed";
+    result.textContent = `PASS: ${engine}; all 5 scenes, geometry/text/images validated, raw frames and scheduled input captured. Browser functional validation only.`;
+  } catch (e) {
+    result.dataset.status = "failed";
+    result.textContent = `FAIL: ${engine} ${e.message}`;
+  }
+</script>

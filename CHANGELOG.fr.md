@@ -1,5 +1,13 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-14 — 1.2.4
+
+- Laboratoire comparatif pour la Hisense 55U6NQ : huit moteurs d’affichage, calculs JavaScript et C++/WebAssembly, parcours court ou complet et export du bilan par code QR. Accessible dans le diagnostic avec « Comparer les moteurs ».
+
+- Sources et badges : les liens déjà affichés sont conservés lorsque la liste défile ou que les badges prennent leur place, pour éviter les reconstructions et chargements d’images répétés.
+- Conservation de la sélection et de la position pendant l’ajustement de la hauteur des liens ; restauration du focus lorsqu’un lien est réellement remplacé.
+- Préparation des réglages de badges une seule fois pour les nouveaux liens d’une même zone affichée.
+
 ## 2026-10-13 — 1.2.4
 
 - Nouveau diagnostic guidé en français : accueil, navigation, fiches, sources et lecture vidéo facultative, avec bilan par étape.

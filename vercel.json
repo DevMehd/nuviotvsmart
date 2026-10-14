@@ -61,6 +61,24 @@
           "value": "no-store"
         }
       ]
+    },
+    {
+      "source": "/comparison/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/comparison/:build([a-f0-9]{16})/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ],
   "images": {

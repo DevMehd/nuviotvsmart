@@ -64,6 +64,7 @@ self.addEventListener("fetch", function (e) {
   // Let Vercel cache complete image variant URLs without offline-cache rewriting.
   // Diagnostic report links (/d/<id>) are server responses, never app shell.
   if (
+    requestUrl.pathname.indexOf("/comparison/") === 0 ||
     requestUrl.pathname === "/_vercel/image" ||
     requestUrl.pathname.indexOf("/api/") === 0 ||
     requestUrl.pathname.indexOf("/d/") === 0

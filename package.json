@@ -25,16 +25,19 @@
     "sync": "node ./scripts/sync-wrapper.mjs",
     "sync:tizen": "node ./scripts/sync-wrapper.mjs --tizen",
     "sync:webos": "node ./scripts/sync-wrapper.mjs --webos",
-    "package:vidaa": "npm run build && node ./scripts/package-vidaa.mjs",
+    "package:vidaa": "npm run build && npm run build:comparison && node ./scripts/package-vidaa.mjs",
     "serve:vidaa": "node ./scripts/serve.mjs --vidaa",
     "backend:prepare": "node ./scripts/prepare-shared-backend.mjs",
     "test:vidaa:backend": "node ./tests/test-vidaa-local-backend.mjs && node ./tests/test-vidaa-shared-backend.mjs",
     "test:vidaa": "node ./scripts/test-vidaa.mjs",
-    "test:vidaa:live": "node ./tests/test-vidaa-shared-backend.mjs --live --no-email-confirmation"
+    "test:vidaa:live": "node ./tests/test-vidaa-shared-backend.mjs --live --no-email-confirmation",
+    "build:comparison": "node scripts/build-comparison.mjs",
+    "build:comparison:wasm": "node scripts/build-comparison-wasm.mjs"
   },
   "devDependencies": {
     "@csstools/postcss-global-data": "^4.0.0",
     "@eslint/js": "^9.39.4",
+    "@lightningjs/renderer": "3.7.0",
     "@webos-tools/cli": "^3.2.6",
     "autoprefixer": "^10.6.1",
     "core-js": "3.50.0",
@@ -46,7 +49,12 @@
     "globals": "^16.5.0",
     "husky": "^9.1.7",
     "postcss": "^8.5.28",
-    "prettier": "^3.9.8"
+    "prettier": "^3.9.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "solid-js": "1.9.17",
+    "svelte": "5.57.2",
+    "vue": "3.5.44"
   },
   "overrides": {
     "flatted": "3.4.2"

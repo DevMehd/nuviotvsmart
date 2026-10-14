@@ -368,7 +368,7 @@ export function createVidaaBenchmarkPanel({
     const actions =
       view === "qr"
         ? `<nav class="benchmark-actions">${button("close-export", "Fermer")}${button("export", "Nouveau lien")}</nav>`
-        : `<nav class="benchmark-actions">${button("back", "Retour")}${button("auto", driverState.active ? "Arrêter le parcours" : next ? "Parcours automatique" : "Refaire le parcours automatique")}${button("next", state.active ? "Arrêter l’étape" : next ? `Étape manuelle : ${next.title}` : "Refaire en manuel")}${button("boot", "Mesurer le prochain démarrage")}${button("skip", "Passer la vidéo")}${button("logs", "Journal")}</nav><nav class="benchmark-actions">${button("previous-page", "← Page")}${button("next-page", "Page →")}${button("step", "Changer l’étape affichée")}${button("export", "Exporter JSON (code QR)")}</nav>`;
+        : `<nav class="benchmark-actions">${button("back", "Retour")}${button("auto", driverState.active ? "Arrêter le parcours" : next ? "Parcours automatique" : "Refaire le parcours automatique")}${button("next", state.active ? "Arrêter l’étape" : next ? `Étape manuelle : ${next.title}` : "Refaire en manuel")}${button("boot", "Mesurer le prochain démarrage")}${button("skip", "Passer la vidéo")}${button("logs", "Journal")}</nav><nav class="benchmark-actions">${button("previous-page", "← Page")}${button("next-page", "Page →")}${button("step", "Changer l’étape affichée")}${button("comparison", "Comparer les moteurs")}${button("export", "Exporter JSON (code QR)")}</nav>`;
     const main =
       view === "qr"
         ? renderExportView(exportState)
@@ -448,6 +448,12 @@ export function createVidaaBenchmarkPanel({
     const state = service.getState();
     if (action === "back") {
       await router.back();
+      return;
+    }
+    if (action === "comparison") {
+      if (driver.getState().active) driver.cancel("comparaison des moteurs");
+      if (state.active) service.stop();
+      globalThis.location.assign("/comparison/index.html");
       return;
     }
     if (action === "logs") {
