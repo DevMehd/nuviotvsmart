@@ -90,6 +90,9 @@ export function createHomeScreenMethods05() {
             `<img class="home-hero-logo home-hero-logo-transition-enter" src="${escapeAttribute(display.logo)}" alt="${escapeAttribute(display.title || "logo")}" decoding="async" fetchpriority="high" />`
           );
           const insertedLogo = brandNode.querySelector(".home-hero-logo");
+          // The logo belongs to the rendered hero, unlike temporary transition
+          // ghosts. Let incremental refreshes reuse or remove it.
+          registerHomeDomNodes([insertedLogo]);
           requestAnimationFrame(() => {
             insertedLogo?.classList?.add("is-visible");
             setTimeout(() => insertedLogo?.classList?.remove("home-hero-logo-transition-enter", "is-visible"), heroCrossfadeMs);

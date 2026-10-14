@@ -1,3 +1,14 @@
+## 1.2.5
+
+### Improvements & Fixes
+
+- Fixed duplicate webOS OK/click activation on the sign-in screen and sign-out confirmation, preventing unintended login-mode changes while preserving text input and consecutive remote actions (@nenad, @WhiteGiso)
+- Preserved active text editing when pointer hover moves across controls, keeping the TV keyboard open until an explicit click or D-pad navigation changes focus (@WhiteGiso)
+- Retained loaded Discover posters across grid and screen updates to prevent visible artwork from blanking during re-renders (@WhiteGiso)
+- Fixed Home hero logos inserted during transitions so incremental updates can correctly reuse or remove them (@WhiteGiso)
+- Preserved unset TMDB rating and vote-count filters in collections instead of converting empty values to zero (@WhiteGiso)
+- Reduced repeated stream badge settings reads during virtualized rendering and avoided unnecessary Tizen native-surface lookups on other platforms (@WhiteGiso)
+
 ## 1.2.4
 
 ### Improvements & Fixes

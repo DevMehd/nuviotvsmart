@@ -111,15 +111,16 @@ assert.equal(b.image.getAttribute("src"), undefined, "Home cleanup releases the 
 assert.equal(owner.collectionFocusGifPending, null);
 
 const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "utf8");
-const changelog = parsePersonalChangelog(notes, "1.2.4");
+const changelog = parsePersonalChangelog(notes, "1.2.5");
 assert.equal(changelog.date, "2026-10-14");
+assert.ok(changelog.notes.includes("Nuvio 1.2.5"));
+assert.ok(changelog.notes.includes("Laboratoire comparatif"));
 assert.ok(changelog.notes.includes("Sources et badges"));
-assert.ok(changelog.notes.includes("sélection"));
 assert.ok(
   !changelog.notes.includes("Parcours automatique"),
   "Only the latest entry is included in the TV prompt"
 );
-assert.throws(() => parsePersonalChangelog(notes, "1.2.5"));
+assert.throws(() => parsePersonalChangelog(notes, "1.2.6"));
 console.log(
   "Presentation restoration checks passed: declared badges, safe source labels, bounded GIF lifecycle, preview timing and French changelog."
 );

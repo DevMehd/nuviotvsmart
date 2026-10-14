@@ -1,9 +1,14 @@
 # Nuvio personnel — Historique des modifications
 
-## 2026-10-14 — 1.2.4
+## 2026-10-14 — 1.2.5
 
+- Mise à jour du fork vers Nuvio 1.2.5, avec conservation de la connexion au compte Android, du QR code et des protections de lecture VIDAA.
+- Découverte : les affiches déjà chargées restent visibles quand la grille se redessine, au lieu de disparaître jusqu’au rechargement.
+- Accueil : le logo du titre sélectionné est suivi par les mises à jour incrémentales, pour éviter les logos en double ou orphelins.
+- Collections : les filtres numériques TMDB laissés vides restent désactivés au lieu d’être convertis en zéro.
+- Fin de lecture : l’objet vidéo Samsung n’est plus consulté sur les autres téléviseurs, ce qui évite des recalculs inutiles.
+- Connexion sur webOS : un appui OK suivi d’un clic ne déclenche plus deux fois la même action, et le survol du pointeur n’interrompt plus la saisie au clavier.
 - Laboratoire comparatif pour la Hisense 55U6NQ : huit moteurs d’affichage, calculs JavaScript et C++/WebAssembly, parcours court ou complet et export du bilan par code QR. Accessible dans le diagnostic avec « Comparer les moteurs ».
-
 - Sources et badges : les liens déjà affichés sont conservés lorsque la liste défile ou que les badges prennent leur place, pour éviter les reconstructions et chargements d’images répétés.
 - Conservation de la sélection et de la position pendant l’ajustement de la hauteur des liens ; restauration du focus lorsqu’un lien est réellement remplacé.
 - Préparation des réglages de badges une seule fois pour les nouveaux liens d’une même zone affichée.
