@@ -2,6 +2,9 @@
 
 ## 2026-10-15 — 1.2.5
 
+- Notes personnelles sur la fiche : cinq boutons (👎👎 Détesté, 👎 Pas pour moi, 😐 Correct, 👍 J’aime, 💜 J’adore) à côté de Lecture. OK sur ta note actuelle la retire. Tes notes sont privées et partagées avec ton téléphone.
+- Fin de film ou de saison : la télé te propose de noter, une seule fois (touches 1 à 5, ou flèches puis OK ; Retour pour plus tard).
+- Découverte (menu de gauche) : les recommandations calculées par ton téléphone défilent une par une ; → J’aime, ← Pas pour moi, ↑ J’adore, ↓ passer, OK pour ouvrir la fiche.
 - Export QR du comparatif v2 : capacité du serveur augmentée pour les bilans complets volumineux ; un export refusé peut être réessayé depuis le parcours déjà ouvert, sans relancer les mesures.
 - Comparatif v2 : défilements animés en continu, contrôles de géométrie renforcés et huit répétitions équilibrées pour mieux comparer les moteurs.
 - Comparatif des moteurs : correction du chronomètre de réaction, désormais pris au moment réel du rappel du navigateur ; les bilans v2 distinguent ce délai de la cadence des images. Les scènes valides restent comparables même si une autre scène du passage échoue.

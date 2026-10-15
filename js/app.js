@@ -18,6 +18,7 @@ import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
 import { TvHandoffReceiver } from "./core/perso/tvHandoffReceiver.js";
 import { TvRemoteReceiver } from "./core/perso/tvRemoteReceiver.js";
+import { TitleRatings } from "./core/perso/titleRatings.js";
 import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
@@ -637,6 +638,10 @@ async function bootstrapApp() {
   }
   try {
     TvRemoteReceiver.start();
+    // Personal ratings from the other devices (nuv-035); silent when no personal space.
+    setTimeout(() => {
+      TitleRatings.pull().catch(() => {});
+    }, 8000);
   } catch (error) {
     console.warn("TV remote receiver unavailable", error);
   }

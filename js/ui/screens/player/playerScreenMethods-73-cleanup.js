@@ -1,12 +1,14 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 import { localMediaEmbeddedSubtitleRepository } from "../../../data/repository/localMediaEmbeddedSubtitleRepository.js";
+import { maybeOfferRatingAfterPlayback } from "./persoRatingOffer.js";
 
 export function createPlayerScreenMethods73() {
   const { PlayerController, streamRepository, TrackingScrobbleService, ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS } = internals;
 
   return {
     cleanup() {
+      maybeOfferRatingAfterPlayback(this, PlayerController.video);
       localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
       try {
         this.cancelSourceLoad();

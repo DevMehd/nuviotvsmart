@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
+import { renderPersoRatingButtons } from "./persoRatingButtons.js";
 
 export function createMetaDetailsScreenMethods07() {
   const {
@@ -245,6 +246,7 @@ export function createMetaDetailsScreenMethods07() {
                 </button>
                 ${showWatchedButton ? `<button class="series-circle-btn focusable${this.isMarkedWatched ? " is-selected" : ""}" data-action="toggleWatched" aria-label="${escapeAttribute(this.isMarkedWatched ? t("common.markUnwatched", {}, "Mark Unwatched") : t("common.markWatched", {}, "Mark Watched"))}">${renderWatchedGlyph(this.isMarkedWatched)}</button>` : ""}
                 ${trailerButton}
+                ${renderPersoRatingButtons(this.meta?.type || this.params?.itemType, this.params?.itemId || this.meta?.id)}
               </div>
               ${this.renderResumeIndicator()}
               ${creditLine ? `<p class="series-detail-support">${escapeHtml(creditPrefix)}: ${escapeHtml(creditLine)}</p>` : ""}
