@@ -129,6 +129,44 @@ assert.deepEqual(await nextFrameSample({ raf: (callback) => callback(50), now: (
   callbackTime: 140
 });
 assert.ok(validateDiagnosticReport({ ...report, protocol: "vidaa-comparison-2" }));
+// Full v2 has eight rounds and substantially more evidence than v1. Exercise
+// the unmodified client's JSON envelope above the former 3 MiB transport cap.
+const fullV2 = {
+  ...report,
+  protocol: "vidaa-comparison-2",
+  trials: Array.from({ length: 64 }, (_, i) => ({
+    engine: ENGINES[i % ENGINES.length],
+    round: Math.floor(i / ENGINES.length),
+    scenes: Array.from({ length: 5 }, () => ({
+      raw: { frames: Array(210).fill(16.67), callbackFrames: Array(210).fill(16.68) }
+    }))
+  })),
+  compute: Array.from({ length: 360 }, (_, i) => ({
+    round: Math.floor(i / 45),
+    raw: Array(32).fill(0.1)
+  })),
+  soak: Array.from({ length: 4 }, () => ({ scenes: [] }))
+};
+const fullV2Bytes = 4 * 1024 * 1024 - 1024;
+fullV2.padding = "x".repeat(
+  fullV2Bytes - Buffer.byteLength(JSON.stringify({ ...fullV2, padding: "" }))
+);
+const fullV2Body = JSON.stringify({ id: "abcdefghijklmno2", report: fullV2 });
+assert.equal(Buffer.byteLength(JSON.stringify(fullV2)), fullV2Bytes);
+assert.ok(Buffer.byteLength(fullV2Body) < 4500000, "Envelope fits the hosting platform limit");
+assert.equal((await call("POST", fullV2Body)).status, 200);
+assert.deepEqual(JSON.parse((await call("GET")).text), fullV2, "All evidence survives export");
+assert.equal(
+  (
+    await call("POST", {
+      id: "abcdefghijklmno2",
+      report: { ...fullV2, padding: fullV2.padding + "x".repeat(2048) }
+    })
+  ).status,
+  413,
+  "Oversized reports still have a bounded transport"
+);
+console.log("PASS: full v2 JSON export above 3 MiB, exact round trip and 4 MiB cap.");
 const partial = {
   engine: "lightning-canvas",
   round: 0,

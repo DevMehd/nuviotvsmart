@@ -8,7 +8,10 @@
 // so the link survives cold starts and new instances.
 export const REPORT_ID_PATTERN = /^[a-z2-7]{16,32}$/;
 export const MAX_REPORT_BYTES = 160 * 1024;
-export const MAX_COMPARISON_BYTES = 3 * 1024 * 1024;
+// Full v2 reports retain 64 trials and 360 compute results, including warmup
+// evidence. Keep the JSON envelope below Vercel's 4.5 MB request/response limit.
+// Accept the already-open v2 client without requiring a reload or a new run.
+export const MAX_COMPARISON_BYTES = 4 * 1024 * 1024;
 const MAX_STORED_BYTES = 16 * 1024 * 1024;
 export const REPORT_TTL_MS = 30 * 60 * 1000;
 export const MAX_REPORTS = 24;

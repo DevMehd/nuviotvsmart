@@ -2,6 +2,7 @@
 
 ## 2026-10-15 — 1.2.5
 
+- Export QR du comparatif v2 : capacité du serveur augmentée pour les bilans complets volumineux ; un export refusé peut être réessayé depuis le parcours déjà ouvert, sans relancer les mesures.
 - Comparatif v2 : défilements animés en continu, contrôles de géométrie renforcés et huit répétitions équilibrées pour mieux comparer les moteurs.
 - Comparatif des moteurs : correction du chronomètre de réaction, désormais pris au moment réel du rappel du navigateur ; les bilans v2 distinguent ce délai de la cadence des images. Les scènes valides restent comparables même si une autre scène du passage échoue.
 - Continuer sur la TV : une vidéo lancée sur le téléphone peut reprendre sur la télé, au même moment. La télé propose « Reprendre ici » quand le téléphone lui envoie la lecture.
