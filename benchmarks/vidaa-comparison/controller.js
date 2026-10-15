@@ -15,8 +15,9 @@ import {
   roundMs
 } from "./protocol.js";
 import { runCompute } from "./compute.js";
+import { clockQuantum } from "./timing.js";
 const $ = (id) => document.getElementById(id),
-  STORE = "nuvio-comparison-v1";
+  STORE = "nuvio-comparison-v2";
 const manifest = await (await fetch("./manifest.json")).json();
 let report = null,
   running = false,
@@ -41,7 +42,9 @@ const environment = {
   crossOriginIsolated: globalThis.crossOriginIsolated === true,
   longTasks: PerformanceObserver.supportedEntryTypes?.includes("longtask") || false,
   serviceWorkerControlled: Boolean(navigator.serviceWorker?.controller),
-  physicalTVConfirmed: false
+  targetModel: "Hisense 55U6NQ",
+  modelDetection: "not available in browser",
+  clockQuantumMs: clockQuantum()
 };
 $("environment").textContent =
   `Chromium ${chromium || "non identifié"} · fenêtre ${innerWidth} × ${innerHeight} · cible : Chromium 111 / Hisense 55U6NQ${environment.targetMatches ? "" : " — navigateur différent : résultats non représentatifs de ta télé"}`;
@@ -80,7 +83,7 @@ function showReport() {
     "Passages valides",
     "Cartes : p95 images",
     "Sources : p95 images",
-    "Cartes : p95 réaction"
+    "Cartes : délai callback p95"
   ]) {
     const th = document.createElement("th");
     th.textContent = label;
@@ -105,7 +108,7 @@ function showReport() {
     table.append(row);
   }
   const note = document.createElement("p");
-  note.textContent = `${report.status === "complete" ? "Parcours terminé" : "Résultat partiel"} · ${report.trials.length}/${report.schedule.length} passages · ${report.trials.filter((t) => t.status !== "valid").length} passages invalides · ${report.mode === "short" ? "mode court : vérification uniquement" : "5 répétitions prévues, intervalles de confiance exploratoires dans le JSON"}.`;
+  note.textContent = `${report.status === "complete" ? "Parcours terminé" : "Résultat partiel"} · ${report.trials.length}/${report.schedule.length} passages · ${report.trials.filter((t) => t.status !== "valid").length} passages invalides · ${report.mode === "short" ? "mode court : vérification uniquement" : "8 répétitions prévues, intervalles de confiance exploratoires dans le JSON"}.`;
   const errors = document.createElement("p");
   errors.textContent = [
     ...new Set(
@@ -219,7 +222,11 @@ async function run(mode, resume = false) {
   ui(true);
   try {
     if (!resume) {
-      const seed = SEED;
+      const requestedSeed = new URLSearchParams(location.search).get("seed");
+      const seed =
+        requestedSeed !== null && /^\d{1,10}$/.test(requestedSeed)
+          ? Number(requestedSeed) >>> 0
+          : crypto.getRandomValues(new Uint32Array(1))[0];
       report = {
         schema: 1,
         protocol: PROTOCOL,
@@ -227,6 +234,7 @@ async function run(mode, resume = false) {
         mode,
         config: { ...MODES[mode] },
         seed,
+        dataSeed: SEED,
         build: manifest,
         environment: { ...environment },
         status: "running",
@@ -287,19 +295,25 @@ async function run(mode, resume = false) {
       report.compute = await runCompute({
         samples: Math.ceil(report.config.samples / report.config.rounds),
         rounds: report.config.rounds,
-        seed: report.seed,
+        seed: report.dataSeed,
         stopped: () => stop || paused,
         progress: (mode) => ($("progress").textContent = `Calculs ciblés · ${mode}`)
       });
       report.computeComplete = !stop && !paused;
       save();
     }
-    // Endurance is explicitly separate, not pooled with six-second trials.
+    // Two one-minute trials per engine, in reverse orders; not pooled with short scenes.
     if (!stop && !paused && report.config.soak)
-      for (const engine of ["dom", "lightning-webgl"]) {
-        if (report.soak.some((t) => t.engine === engine)) continue;
+      for (const [index, engine] of [
+        "dom",
+        "lightning-webgl",
+        "lightning-webgl",
+        "dom"
+      ].entries()) {
+        const round = Math.floor(index / 2);
+        if (report.soak.some((t) => t.engine === engine && t.round === round)) continue;
         const result = await trial(
-          { engine, round: 0, position: 0, soak: true },
+          { engine, round, position: index % 2, soak: true },
           {
             ...report.config,
             duration: report.config.soak,

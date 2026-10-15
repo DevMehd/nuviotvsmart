@@ -2,6 +2,8 @@
 
 ## 2026-10-15 — 1.2.5
 
+- Comparatif v2 : défilements animés en continu, contrôles de géométrie renforcés et huit répétitions équilibrées pour mieux comparer les moteurs.
+- Comparatif des moteurs : correction du chronomètre de réaction, désormais pris au moment réel du rappel du navigateur ; les bilans v2 distinguent ce délai de la cadence des images. Les scènes valides restent comparables même si une autre scène du passage échoue.
 - Continuer sur la TV : une vidéo lancée sur le téléphone peut reprendre sur la télé, au même moment. La télé propose « Reprendre ici » quand le téléphone lui envoie la lecture.
 - Télécommande depuis le téléphone : lecture, pause, avance et retour, épisode suivant, sous-titres, piste audio, volume et navigation dans les menus, directement depuis l’appli Nuvio du téléphone.
 - Espace perso (Paramètres → Avancé → Espace perso) : un code relie la télé à tes autres appareils. Les échanges passent par un serveur sécurisé réservé à tes appareils, avec un mode de secours automatique s’il ne répond pas.

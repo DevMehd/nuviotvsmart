@@ -6,3 +6,9 @@
 - The current French changelog entry must appear on every fresh VIDAA application launch, with an OK button to continue. Do not suppress it through the dismissed-upstream-version setting.
 - Validate the changelog, focused behavior tests, VIDAA build and authenticated browser before publishing through the existing Git/Vercel integration.
 - Keep passwords, private addon URLs and API keys out of logs, screenshots, release notes and public build configuration.
+
+## Suivi commun
+
+Lire aussi `../AGENTS.md`, `../parite-plateformes.fr.md` et `../suivi/registre.json`.
+Le mobile est la référence visuelle ; documenter chaque écart et validation par
+plateforme dans le suivi commun. Conserver toutes les règles TV ci-dessus.

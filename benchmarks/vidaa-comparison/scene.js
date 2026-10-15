@@ -125,7 +125,11 @@ export function sceneAt(scene, step) {
       rect("focus", 60 + col * 230, 117 + row * 310, 208, 5, "#ff5cac", { animate: true })
     );
   }
-  return nodes;
+  // Move retained cards/rows continuously on every window shift. New nodes
+  // enter at their destination; all engines use the same bounded window.
+  return nodes.map((node) =>
+    node.id === "base" || node.id === "title" ? node : { ...node, animate: true }
+  );
 }
 export function style(p) {
   return `position:absolute;left:0;top:0;transform:translate(${p.x}px,${p.y}px);width:${p.w}px;height:${p.h}px;opacity:${p.opacity};color:${p.color};background:${p.type === "rect" ? p.color : "transparent"};font:${p.font || 24}px/1.25 Bench;white-space:nowrap;overflow:hidden;${p.animate ? `transition:transform ${ANIMATION}ms linear,opacity ${ANIMATION}ms linear;` : ""}`;
@@ -170,10 +174,28 @@ export function checkDom(root, nodes) {
   nodes.forEach((p, i) => {
     const e = elements[i];
     if (!e) return;
-    if (e.style.transform !== `translate(${p.x}px, ${p.y}px)`) issues.push("geometry");
+    const actualStyle = getComputedStyle(e);
+    const transform = new DOMMatrixReadOnly(actualStyle.transform);
+    if (
+      Math.abs(transform.m41 - p.x) > 0.5 ||
+      Math.abs(transform.m42 - p.y) > 0.5 ||
+      Math.abs(parseFloat(actualStyle.width) - p.w) > 0.5 ||
+      Math.abs(parseFloat(actualStyle.height) - p.h) > 0.5 ||
+      Math.abs(Number(actualStyle.opacity) - p.opacity) > 0.01
+    )
+      issues.push("geometry");
     if (p.type === "text" && e.textContent !== p.text) issues.push("text");
     if (p.type === "image" && (!e.complete || !e.naturalWidth || !e.src.endsWith(p.src)))
       issues.push("image");
   });
-  return { ok: !issues.length, count: elements.length, issues: [...new Set(issues)] };
+  return {
+    ok: !issues.length,
+    count: elements.length,
+    issues: [...new Set(issues)],
+    method: "computed-styles-text-image-state; not pixel comparison"
+  };
+}
+
+export function validationIssues(result) {
+  return result?.ok === true ? [] : result?.issues?.length ? result.issues : ["validation-failed"];
 }

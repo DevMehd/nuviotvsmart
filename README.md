@@ -1,3 +1,5 @@
+> **Nuvio personnel — suivi commun :** [règles](../AGENTS.md), [parité](../parite-plateformes.fr.md), [état par plateforme](../suivi/etat-parite.fr.md), [style de référence](../suivi/style.fr.md).
+
 <div align="center">
 
   <img src="assets/brand/app_logo_wordmark.png" alt="Nuvio" width="300" />
@@ -225,3 +227,6 @@ Special thanks to **[@loggie86](https://github.com/loggie86)** for testing this 
 ## License
 
 [GNU General Public License v3.0](./LICENSE)
+
+The comparison protocol, measurement boundaries and v1/v2 differences are documented
+in [benchmarks/vidaa-comparison/README.md](benchmarks/vidaa-comparison/README.md).

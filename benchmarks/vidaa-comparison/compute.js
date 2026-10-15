@@ -1,21 +1,41 @@
 import { inputData, kernelJS, wasmKernel, equal } from "./kernels.js";
 import { stats, roundMs } from "./protocol.js";
+import {
+  COMPUTE_SIZES,
+  COMPUTE_KERNELS,
+  COMPUTE_TIMING,
+  measureTimerQuantum,
+  measureKernelCall,
+  measureResidentBatch,
+  warmComputeContext
+} from "./computeTiming.js";
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+let nextRequestId = 0;
 function request(worker, data, transfer = []) {
   return new Promise((resolve, reject) => {
+    const requestId = ++nextRequestId,
+      finish = (error, result) => {
+        clearTimeout(timer);
+        worker.onmessage = null;
+        worker.onerror = null;
+        worker.onmessageerror = null;
+        error ? reject(error) : resolve(result);
+      };
     const timer = setTimeout(() => {
       worker.terminate();
-      reject(Error("worker-timeout"));
+      finish(Error(`worker-${data.kind}-timeout`));
     }, 10000);
     worker.onmessage = (e) => {
-      clearTimeout(timer);
-      e.data.error ? reject(Error(e.data.error)) : resolve(e.data);
+      if (e.data?.requestId !== requestId) return;
+      finish(e.data.error ? Error(e.data.error) : null, e.data);
     };
-    worker.onerror = () => {
-      clearTimeout(timer);
-      reject(Error("worker-error"));
-    };
-    worker.postMessage(data, transfer);
+    worker.onerror = () => finish(Error("worker-error"));
+    worker.onmessageerror = () => finish(Error("worker-message-error"));
+    try {
+      worker.postMessage({ ...data, requestId }, transfer);
+    } catch (error) {
+      finish(error);
+    }
   });
 }
 export async function runCompute({ samples, seed, stopped, progress, rounds = 1 }) {
@@ -32,16 +52,22 @@ export async function runCompute({ samples, seed, stopped, progress, rounds = 1 
       const mode = modes[(m + round) % modes.length];
       progress(mode);
       let worker = null,
-        wasm = null;
+        wasm = null,
+        raf = 0,
+        clock,
+        warmup;
       const start = performance.now();
       try {
         if (mode.includes("worker")) {
           worker = new Worker("./compute-worker.js", { type: "module" });
-          await request(worker, { init: true, wasm: mode.startsWith("wasm") });
+          ({ clock } = await request(worker, { kind: "init", wasm: mode.startsWith("wasm") }));
         } else if (mode === "wasm-main") wasm = await wasmKernel();
+        if (!worker) clock = measureTimerQuantum();
         const setupMs = roundMs(performance.now() - start);
-        for (const n of [300, 3000, 30000])
-          for (let kernel = 0; kernel < 3 && !stopped(); kernel++) {
+        if (worker) ({ warmup } = await request(worker, { kind: "warmup", seed }));
+        else warmup = warmComputeContext({ seed, wasm, timerQuantumMs: clock.quantumMs });
+        for (const n of COMPUTE_SIZES)
+          for (let kernel = 0; kernel < COMPUTE_KERNELS.length && !stopped(); kernel++) {
             const raw = [],
               computeOnly = [],
               copy = [],
@@ -49,12 +75,30 @@ export async function runCompute({ samples, seed, stopped, progress, rounds = 1 
               input = inputData(n, seed + kernel),
               expected = new Uint32Array(n),
               out = new Uint32Array(n);
-            let correct = true,
-              raf,
-              last;
+            let correct = warmup.valid,
+              last,
+              residentBatch;
             kernelJS(input, expected, kernel, 7);
-            // Warm every path, then collect end-to-end calls. Worker transfer includes
-            // preparing an owned copy because Nuvio keeps its source catalog.
+            if (worker) {
+              const batch = await request(worker, {
+                kind: "batch",
+                kernel,
+                parameter: 7,
+                input: input.buffer
+              });
+              residentBatch = batch.residentBatch;
+              if (!equal(new Uint32Array(batch.out), expected)) correct = false;
+            } else
+              residentBatch = measureResidentBatch({
+                input,
+                out,
+                expected,
+                kernel,
+                wasm,
+                timerQuantumMs: clock.quantumMs
+              });
+            // Resident throughput is measured outside the single-call frame interval.
+            // Transfer includes an owned copy because Nuvio retains its source catalog.
             let active = false;
             const tick = (now) => {
               if (active && last) frames.push(roundMs(now - last));
@@ -62,7 +106,11 @@ export async function runCompute({ samples, seed, stopped, progress, rounds = 1 
               raf = requestAnimationFrame(tick);
             };
             raf = requestAnimationFrame(tick);
-            for (let i = -3; i < samples && !stopped(); i++) {
+            for (
+              let i = -COMPUTE_TIMING.singleCallWarmupIterations;
+              i < samples && !stopped();
+              i++
+            ) {
               await delay(20);
               active = i >= 0;
               const t = performance.now();
@@ -75,23 +123,17 @@ export async function runCompute({ samples, seed, stopped, progress, rounds = 1 
                 copyMs = performance.now() - a;
                 const reply = await request(
                   worker,
-                  { id: i, kernel, parameter: 7, input: owned.buffer },
+                  { kind: "call", kernel, parameter: 7, input: owned.buffer },
                   transfer ? [owned.buffer] : []
                 );
+                const copiedAt = performance.now();
                 out.set(new Uint32Array(reply.out));
+                copyMs += reply.copy + performance.now() - copiedAt;
                 work = reply.compute;
-              } else if (wasm) {
-                wasm.input.set(input);
-                const c = performance.now();
-                wasm.run(kernel, n, 7);
-                const e = performance.now();
-                out.set(wasm.output.subarray(0, n));
-                work = e - c;
-                copyMs = c - t + performance.now() - e;
               } else {
-                const c = performance.now();
-                kernelJS(input, out, kernel, 7);
-                work = performance.now() - c;
+                const timing = measureKernelCall(input, out, kernel, 7, wasm);
+                work = timing.computeMs;
+                copyMs = timing.copyMs;
               }
               const elapsed = performance.now() - t;
               if (!equal(out, expected)) correct = false;
@@ -103,13 +145,21 @@ export async function runCompute({ samples, seed, stopped, progress, rounds = 1 
             }
             active = false;
             cancelAnimationFrame(raf);
+            raf = 0;
             results.push({
               mode,
               round,
-              kernel: ["prefix-row-heights", "filter-score", "tokenized-badge-flags"][kernel],
+              kernel: COMPUTE_KERNELS[kernel],
               items: n,
-              valid: correct && raw.length === samples,
+              valid: correct && residentBatch.valid && raw.length === samples,
               setupMs,
+              clock,
+              warmup,
+              singleCallWarmupIterations: COMPUTE_TIMING.singleCallWarmupIterations,
+              residentBatch,
+              computeScope: "kernel invocation only; explicit copies excluded in every context",
+              copyScope:
+                "explicit array copies; structured clone and IPC included only in endToEnd",
               endToEnd: stats(raw),
               compute: stats(computeOnly),
               copy: stats(copy),
@@ -119,9 +169,17 @@ export async function runCompute({ samples, seed, stopped, progress, rounds = 1 
               frameIntervals: frames
             });
           }
-      } catch {
-        results.push({ mode, round, valid: false, error: "unavailable-or-compute-failed" });
+      } catch (error) {
+        results.push({
+          mode,
+          round,
+          valid: false,
+          error: error.message?.startsWith("worker-")
+            ? error.message
+            : "unavailable-or-compute-failed"
+        });
       } finally {
+        if (raf) cancelAnimationFrame(raf);
         worker?.terminate();
       }
     }

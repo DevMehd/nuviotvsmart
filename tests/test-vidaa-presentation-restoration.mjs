@@ -116,6 +116,9 @@ assert.equal(changelog.date, "2026-10-15");
 assert.ok(changelog.notes.includes("Continuer sur la TV"));
 assert.ok(changelog.notes.includes("Télécommande depuis le téléphone"));
 assert.ok(changelog.notes.includes("Espace perso"));
+assert.ok(changelog.notes.includes("Comparatif v2"));
+assert.ok(changelog.notes.includes("chronomètre de réaction"));
+assert.ok(!changelog.notes.includes("Mise à jour du fork"));
 assert.ok(
   !changelog.notes.includes("Laboratoire comparatif"),
   "Only the latest entry is included in the TV prompt"

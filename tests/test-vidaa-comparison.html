@@ -12,45 +12,136 @@
 <script type="module">
   const result = document.getElementById("result"),
     engine = new URLSearchParams(location.search).get("engine") || "dom";
+  function check(condition, message) {
+    if (!condition) throw Error(message);
+  }
+  async function testCompute(base) {
+    // Source entry plus the actual bundled Worker/Wasm artifacts used by the lab.
+    const baseElement = document.createElement("base");
+    baseElement.href = base;
+    document.head.append(baseElement);
+    const { runCompute } = await import("/benchmarks/vidaa-comparison/compute.js");
+    const samples = 2,
+      data = await runCompute({ samples, seed: 5506111, stopped: () => false, progress: () => {} }),
+      modes = [
+        "js-main",
+        "js-worker-clone",
+        "js-worker-transfer",
+        "wasm-main",
+        "wasm-worker-transfer"
+      ];
+    check(
+      data.length === 45,
+      `expected 45 CPU records, received ${data.length}: ${JSON.stringify(data.filter((r) => r.error))}`
+    );
+    check(
+      new Set(data.map((r) => `${r.mode}:${r.items}:${r.kernel}`)).size === 45,
+      "duplicate CPU cases"
+    );
+    for (const mode of modes)
+      check(data.filter((r) => r.mode === mode).length === 9, `missing cases: ${mode}`);
+    for (const record of data) {
+      const label = `${record.mode}/${record.items}/${record.kernel}`;
+      check(record.valid, `invalid CPU record: ${label} ${JSON.stringify(record)}`);
+      check(
+        record.round === 0 && record.singleCallWarmupIterations === 3,
+        `warmup/round metadata: ${label}`
+      );
+      check(
+        record.clock.quantumMs > 0 && record.clock.changes > 0,
+        `missing local clock probe: ${label}`
+      );
+      check(
+        record.warmup.valid && record.warmup.cases.length === 9,
+        `missing context warmup: ${label}`
+      );
+      check(
+        new Set(record.warmup.cases.map((r) => `${r.items}:${r.kernel}`)).size === 9,
+        `duplicate context warmup: ${label}`
+      );
+      for (const batch of [record.residentBatch, ...record.warmup.cases]) {
+        check(
+          batch.valid && batch.correct && batch.reachedMinimum && !batch.exceededMaximum,
+          `invalid resident batch: ${label}`
+        );
+        check(
+          batch.iterations > 0 && batch.iterations <= batch.maximumIterations,
+          `iteration bounds: ${label}`
+        );
+        check(
+          batch.durationMs >= batch.minimumMs && batch.durationMs <= batch.maximumMs,
+          `duration bounds: ${label}`
+        );
+        check(batch.timerQuantumMs === record.clock.quantumMs, `wrong context clock: ${label}`);
+        check(
+          Math.abs(batch.perIterationMs - batch.durationMs / batch.iterations) <= 0.000001,
+          `throughput metadata: ${label}`
+        );
+      }
+      for (const values of [record.raw, record.rawCompute, record.rawCopy]) {
+        check(
+          values.length === samples && values.every((v) => Number.isFinite(v) && v >= 0),
+          `single-call measurements: ${label}`
+        );
+      }
+    }
+    result.textContent =
+      "PASS: compute; 45 valid CPU cases across 5 modes, 9 context warmups per mode, local clock probes, bounded resident batches and single-call measurements. Browser functional validation only.";
+  }
   try {
     const index = await (await fetch("/dist/comparison/index.html")).text(),
       id = /[a-f0-9]{16}/.exec(index)[0],
-      base = `/dist/comparison/${id}/`,
-      frame = document.createElement("iframe"),
-      token = "fixture-validation";
-    const data = await new Promise((resolve, reject) => {
-      setTimeout(() => reject(Error("comparison fixture timeout")), 26000);
-      window.addEventListener("message", (event) => {
-        if (
-          event.source !== frame.contentWindow ||
-          event.origin !== location.origin ||
-          event.data.token !== token
-        )
-          return;
-        const data = event.data;
-        if (data.type === "ready")
-          frame.contentWindow.postMessage(
-            { type: "run", token, config: { duration: 700, warmup: 100, frameBudget: 1000 / 60 } },
-            location.origin
-          );
-        if (data.type === "error") reject(Error(data.error));
-        if (data.type === "result") resolve(data.result);
+      base = `/dist/comparison/${id}/`;
+    if (engine === "compute") {
+      await testCompute(base);
+    } else {
+      const frame = document.createElement("iframe"),
+        token = "fixture-validation";
+      const data = await new Promise((resolve, reject) => {
+        setTimeout(() => reject(Error("comparison fixture timeout")), 26000);
+        window.addEventListener("message", (event) => {
+          if (
+            event.source !== frame.contentWindow ||
+            event.origin !== location.origin ||
+            event.data.token !== token
+          )
+            return;
+          const data = event.data;
+          if (data.type === "ready")
+            frame.contentWindow.postMessage(
+              {
+                type: "run",
+                token,
+                config: { duration: 700, warmup: 100, frameBudget: 1000 / 60 }
+              },
+              location.origin
+            );
+          if (data.type === "error") reject(Error(data.error));
+          if (data.type === "result") resolve(data.result);
+        });
+        frame.src = `${base}frame.html?engine=${engine}&token=${token}`;
+        document.body.append(frame);
       });
-      frame.src = `${base}frame.html?engine=${engine}&token=${token}`;
-      document.body.append(frame);
-    });
-    if (data.status !== "valid")
-      throw Error(
-        JSON.stringify(
-          data.scenes.map((s) => ({ scene: s.scene, errors: s.errors, validation: s.validation }))
-        )
-      );
-    if (
-      data.scenes.some((s) => s.completedActions !== s.expectedActions || s.raw.frames.length < 5)
-    )
-      throw Error("missing frame/action measurements");
+      if (data.status !== "valid")
+        throw Error(
+          JSON.stringify(
+            data.scenes.map((s) => ({ scene: s.scene, errors: s.errors, validation: s.validation }))
+          )
+        );
+      if (
+        data.scenes.some((s) => s.completedActions !== s.expectedActions || s.raw.frames.length < 5)
+      )
+        throw Error("missing frame/action measurements");
+      for (const scene of data.scenes) {
+        if (scene.inputMetric !== "scheduled-action-to-raf-callback-performance-now")
+          throw Error("obsolete reaction metric");
+        for (const [due, issued, build, commit, callback] of scene.raw.actions) {
+          if (callback + 0.021 < issued + commit) throw Error("callback precedes commit");
+        }
+      }
+      result.textContent = `PASS: ${engine}; all 5 scenes, geometry/text/images validated, raw frames and scheduled input captured. Browser functional validation only.`;
+    }
     result.dataset.status = "passed";
-    result.textContent = `PASS: ${engine}; all 5 scenes, geometry/text/images validated, raw frames and scheduled input captured. Browser functional validation only.`;
   } catch (e) {
     result.dataset.status = "failed";
     result.textContent = `FAIL: ${engine} ${e.message}`;

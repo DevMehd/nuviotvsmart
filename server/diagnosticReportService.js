@@ -8,7 +8,7 @@
 // so the link survives cold starts and new instances.
 export const REPORT_ID_PATTERN = /^[a-z2-7]{16,32}$/;
 export const MAX_REPORT_BYTES = 160 * 1024;
-export const MAX_COMPARISON_BYTES = 2 * 1024 * 1024;
+export const MAX_COMPARISON_BYTES = 3 * 1024 * 1024;
 const MAX_STORED_BYTES = 16 * 1024 * 1024;
 export const REPORT_TTL_MS = 30 * 60 * 1000;
 export const MAX_REPORTS = 24;
@@ -16,7 +16,8 @@ const MAX_BODY_BYTES = MAX_COMPARISON_BYTES + 4096;
 const BLOB_PREFIX = "diagnostics/";
 
 export function validateDiagnosticReport(report) {
-  if (report?.protocol === "vidaa-comparison-1") {
+  if (["vidaa-comparison-1", "vidaa-comparison-2"].includes(report?.protocol)) {
+    const v2 = report.protocol === "vidaa-comparison-2";
     return Boolean(
       report.schema === 1 &&
       ["short", "full"].includes(report.mode) &&
@@ -26,7 +27,7 @@ export function validateDiagnosticReport(report) {
       typeof report.createdAt === "string" &&
       report.createdAt.length <= 40 &&
       Array.isArray(report.trials) &&
-      report.trials.length <= 40 &&
+      report.trials.length <= (v2 ? 64 : 40) &&
       report.trials.every(
         (trial) =>
           trial &&
@@ -35,9 +36,9 @@ export function validateDiagnosticReport(report) {
           trial.scenes.length <= 5
       ) &&
       Array.isArray(report.compute) &&
-      report.compute.length <= 250 &&
+      report.compute.length <= (v2 ? 400 : 250) &&
       Array.isArray(report.soak) &&
-      report.soak.length <= 2
+      report.soak.length <= (v2 ? 4 : 2)
     );
   }
   return Boolean(
@@ -227,7 +228,9 @@ export function createDiagnosticReportService({
     const text = JSON.stringify(body.report);
     if (
       Buffer.byteLength(text) >
-      (body.report.protocol === "vidaa-comparison-1" ? MAX_COMPARISON_BYTES : MAX_REPORT_BYTES)
+      (["vidaa-comparison-1", "vidaa-comparison-2"].includes(body.report.protocol)
+        ? MAX_COMPARISON_BYTES
+        : MAX_REPORT_BYTES)
     )
       return fail(413);
     remember(id, text);

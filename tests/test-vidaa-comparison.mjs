@@ -11,6 +11,10 @@ import {
 import { sceneAt, checksum } from "../benchmarks/vidaa-comparison/scene.js";
 import { inputData, kernelJS, equal } from "../benchmarks/vidaa-comparison/kernels.js";
 import {
+  measureTimerQuantum,
+  measureResidentBatch
+} from "../benchmarks/vidaa-comparison/computeTiming.js";
+import {
   validateDiagnosticReport,
   createDiagnosticReportService,
   MAX_COMPARISON_BYTES
@@ -33,7 +37,7 @@ assert.deepEqual(pairedInterval([1, 1, 1, 1, 1]), {
   low: 1,
   high: 1,
   n: 5,
-  method: "paired round bootstrap; exploratory with only 5 rounds"
+  method: "paired round bootstrap; exploratory small-sample interval"
 });
 assert.equal(frameStats([16, 50], 1000 / 60).estimatedMissedVsyncs, 2);
 for (const scene of ["idle", "horizontal", "vertical", "sources", "hero"])
@@ -117,4 +121,104 @@ assert.equal(
 );
 console.log(
   "PASS: deterministic schedules, statistics, bounded scenes, 72 JS/Wasm correctness cases, large comparison QR transport and limits."
+);
+
+const { nextFrameSample } = await import("../benchmarks/vidaa-comparison/timing.js");
+assert.deepEqual(await nextFrameSample({ raf: (callback) => callback(50), now: () => 140 }), {
+  frameTimestamp: 50,
+  callbackTime: 140
+});
+assert.ok(validateDiagnosticReport({ ...report, protocol: "vidaa-comparison-2" }));
+const partial = {
+  engine: "lightning-canvas",
+  round: 0,
+  status: "invalid",
+  scenes: [
+    { scene: "sources", valid: true, frame: { p95: 16.67 }, input: { p95: 20 } },
+    { scene: "hero", valid: false, frame: { p95: 60 }, input: { p95: 20 } }
+  ]
+};
+assert.equal(
+  summarize([partial]).find((s) => s.engine === "lightning-canvas" && s.scene === "sources")
+    .validRounds,
+  1
+);
+assert.equal(
+  summarize([partial]).find((s) => s.engine === "lightning-canvas" && s.scene === "hero")
+    .validRounds,
+  0
+);
+console.log("PASS: callback clock regression, protocol v2, valid-scene aggregation.");
+
+const balanced = schedule(8);
+for (const engine of ENGINES)
+  assert.deepEqual(
+    balanced
+      .filter((t) => t.engine === engine)
+      .map((t) => t.position)
+      .sort(),
+    [0, 1, 2, 3, 4, 5, 6, 7]
+  );
+const pairs = [];
+for (let round = 0; round < 8; round++) {
+  const r = balanced.filter((t) => t.round === round);
+  for (let i = 1; i < 8; i++) pairs.push(`${r[i - 1].engine}:${r[i].engine}`);
+}
+assert.equal(new Set(pairs).size, 56);
+const { validationIssues } = await import("../benchmarks/vidaa-comparison/scene.js");
+assert.deepEqual(validationIssues({ ok: false, issues: [] }), ["validation-failed"]);
+for (const scene of ["horizontal", "vertical", "sources"]) {
+  const a = sceneAt(scene, 10),
+    b = sceneAt(scene, 11);
+  assert.ok(
+    b.some((p) => p.animate && a.some((q) => q.id === p.id && (q.x !== p.x || q.y !== p.y)))
+  );
+}
+console.log("PASS: eight balanced positions/pairs, sustained scrolling, strict validation.");
+
+let quantumProbe = 0;
+const quantized = measureTimerQuantum(() => Math.floor(quantumProbe++ / 4) * 0.125);
+assert.equal(quantized.quantumMs, 0.125);
+assert.equal(quantized.changes, 64);
+const frozen = measureTimerQuantum(() => 7);
+assert.equal(frozen.quantumMs, null, "A clock without observed progress is unavailable, not zero");
+assert.equal(frozen.probes, 100000, "A frozen clock probe must terminate");
+const batchInput = inputData(3),
+  batchExpected = kernelJS(batchInput, new Uint32Array(3), 0, 7);
+const batchOptions = {
+  input: batchInput,
+  out: new Uint32Array(3),
+  expected: batchExpected,
+  kernel: 0,
+  timerQuantumMs: 20
+};
+let batchTick = 0;
+const quantizedBatch = measureResidentBatch({
+  ...batchOptions,
+  now: () => Math.floor(batchTick++ / 3) * 20
+});
+assert.equal(quantizedBatch.valid, true);
+assert.equal(quantizedBatch.iterations, 24);
+assert.equal(quantizedBatch.durationMs, 20);
+assert.equal(quantizedBatch.timerQuantumMs, 20);
+const cappedBatch = measureResidentBatch({ ...batchOptions, maximumIterations: 10, now: () => 0 });
+assert.equal(cappedBatch.iterations, 10, "A partial block must respect the iteration cap");
+assert.equal(cappedBatch.correct, true);
+assert.equal(cappedBatch.reachedMinimum, false);
+assert.equal(cappedBatch.valid, false, "Iteration-capped undersampling cannot be valid");
+let slowTick = 0;
+const slowBatch = measureResidentBatch({ ...batchOptions, now: () => slowTick++ * 300 });
+assert.equal(slowBatch.iterations, 8);
+assert.equal(slowBatch.exceededMaximum, true);
+assert.equal(slowBatch.valid, false, "A block that exceeds the duration cap cannot be valid");
+let wrongTick = 0;
+const wrongBatch = measureResidentBatch({
+  ...batchOptions,
+  expected: new Uint32Array(3),
+  now: () => wrongTick++ * 20
+});
+assert.equal(wrongBatch.correct, false);
+assert.equal(wrongBatch.valid, false, "Throughput never overrides output correctness");
+console.log(
+  "PASS: CPU clock quantization, frozen clocks, batch duration/iteration caps and correctness gating."
 );

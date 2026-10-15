@@ -9,7 +9,8 @@ import {
   stats,
   roundMs
 } from "./protocol.js";
-import { sceneAt, preload, checksum } from "./scene.js";
+import { sceneAt, preload, checksum, validationIssues } from "./scene.js";
+import { nextFrameSample } from "./timing.js";
 const loaders = {
   dom: () => import("./adapters/dom.js"),
   react: () => import("./adapters/react.js"),
@@ -25,7 +26,6 @@ const params = new URLSearchParams(location.search),
   token = params.get("token");
 const post = (type, data = {}) => parent.postMessage({ type, token, ...data }, location.origin);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const frame = () => new Promise((r) => requestAnimationFrame(r));
 let cancelled = false,
   adapter,
   images,
@@ -54,6 +54,7 @@ window.addEventListener("unhandledrejection", () => {
 async function measure(scene, config) {
   const sceneErrors = [],
     frames = [],
+    callbackFrames = [],
     dispatch = [],
     commit = [],
     nextFrame = [],
@@ -62,7 +63,8 @@ async function measure(scene, config) {
   let nodes = sceneAt(scene, 0),
     active = false,
     raf = 0,
-    last = 0;
+    last = 0,
+    lastCallback = 0;
   await adapter.update(nodes);
   await wait(Math.max(config.warmup, ANIMATION + 80));
   // Exercise the same short trajectory before every timed scene, not just the
@@ -74,8 +76,15 @@ async function measure(scene, config) {
     }
   await adapter.update(nodes);
   await wait(ANIMATION + 80);
-  const before = adapter.inspect(nodes);
-  if (!before.ok) sceneErrors.push(...before.issues);
+  const readyStart = performance.now();
+  let before = adapter.inspect(nodes);
+  while (!before.ok && performance.now() - readyStart < 5000 && !cancelled) {
+    await nextFrameSample();
+    await wait(20);
+    before = adapter.inspect(nodes);
+  }
+  const settleBeforeMs = roundMs(performance.now() - readyStart);
+  sceneErrors.push(...validationIssues(before));
   let observer = null;
   if (PerformanceObserver.supportedEntryTypes?.includes("longtask")) {
     observer = new PerformanceObserver((list) => {
@@ -86,8 +95,11 @@ async function measure(scene, config) {
   }
   const draw = (now) => {
     if (!active) return;
+    const callbackTime = performance.now();
     if (last) frames.push(roundMs(now - last));
+    if (lastCallback) callbackFrames.push(roundMs(callbackTime - lastCallback));
     last = now;
+    lastCallback = callbackTime;
     raf = requestAnimationFrame(draw);
   };
   const started = performance.now(),
@@ -105,16 +117,17 @@ async function measure(scene, config) {
     const built = performance.now();
     await adapter.update(nodes);
     const committed = performance.now();
-    const next = await frame();
+    const next = await nextFrameSample();
     dispatch.push(roundMs(issued - due));
     commit.push(roundMs(committed - issued));
-    nextFrame.push(roundMs(next - due));
+    nextFrame.push(roundMs(next.callbackTime - due));
     actions.push([
       roundMs(due - started),
       roundMs(issued - started),
       roundMs(built - issued),
       roundMs(committed - issued),
-      roundMs(next - started)
+      roundMs(next.callbackTime - started),
+      roundMs(next.frameTimestamp - started)
     ]);
     // Validation stays outside the timed frame interval; all final nodes are
     // inspected below. No screenshots or DOM geometry reads in the hot loop.
@@ -130,7 +143,7 @@ async function measure(scene, config) {
     observer.disconnect();
   }
   const after = adapter.inspect(nodes);
-  if (!after.ok) sceneErrors.push(...after.issues);
+  sceneErrors.push(...validationIssues(after));
   if (hidden) sceneErrors.push("document-hidden");
   if (resized) sceneErrors.push("viewport-changed");
   if (cancelled) sceneErrors.push("cancelled");
@@ -147,12 +160,22 @@ async function measure(scene, config) {
     input: stats(nextFrame),
     dispatch: stats(dispatch),
     commit: stats(commit),
-    raw: { frames, actions, longTasks },
+    raw: { frames, callbackFrames, actions, longTasks },
+    callbackCadence: frameStats(callbackFrames, config.frameBudget),
+    inputMetric: "scheduled-action-to-raf-callback-performance-now",
+    actionColumns: [
+      "due",
+      "issued",
+      "buildDuration",
+      "commitDuration",
+      "callbackTime",
+      "rafTimelineTime"
+    ],
     longTasksSupported: Boolean(observer),
     blockingMs: roundMs(longTasks.reduce((s, e) => s + Math.max(0, e[1] - 50), 0)),
     memoryBefore,
     memoryAfter: heap(),
-    validation: { before, after, expectedChecksum: checksum(nodes) }
+    validation: { before, after, settleBeforeMs, expectedChecksum: checksum(nodes) }
   };
 }
 async function run(config) {

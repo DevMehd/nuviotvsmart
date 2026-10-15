@@ -50,7 +50,7 @@ export function mount(root, { engine }) {
       const keep = new Set(nodes.map((p) => p.id));
       for (const [id, row] of rows)
         if (!keep.has(id)) {
-          row.animation?.stop();
+          row.animation?.stop(false);
           renderer.destroyNode(row.node);
           rows.delete(id);
         }
@@ -97,12 +97,18 @@ export function mount(root, { engine }) {
           p.animate &&
           (previous.x !== p.x || previous.y !== p.y || previous.opacity !== p.opacity)
         ) {
-          row.animation?.stop();
+          row.animation?.stop(false);
           row.animation = n.animate(
             { x: p.x, y: p.y, alpha: p.opacity },
             { duration: ANIMATION, easing: "linear" }
           );
-          row.animation.start();
+          // Controllers are pooled in Lightning 3.7. Drop the reference before
+          // the completed controller can be reused for another node.
+          const animation = row.animation;
+          animation.on("stopped", () => {
+            if (row.animation === animation) row.animation = null;
+          });
+          animation.start();
         } else if (!row.animation) {
           n.x = p.x;
           n.y = p.y;
@@ -112,7 +118,8 @@ export function mount(root, { engine }) {
       });
     },
     inspect(nodes) {
-      const issues = [];
+      const issues = [],
+        geometry = [];
       if (lost) issues.push("context-lost");
       if (failures.length) issues.push("texture-or-font-error");
       for (const p of nodes) {
@@ -122,13 +129,26 @@ export function mount(root, { engine }) {
           Math.abs(n.x - p.x) > 0.1 ||
           Math.abs(n.y - p.y) > 0.1 ||
           Math.abs(n.alpha - p.opacity) > 0.01
-        )
+        ) {
           issues.push("geometry");
+          if (geometry.length < 6)
+            geometry.push({
+              id: p.id,
+              expected: [p.x, p.y, p.opacity],
+              actual: n ? [n.x, n.y, n.alpha] : null
+            });
+        }
         if (p.type === "text" && n?.text !== p.text) issues.push("text");
         if (p.type === "image" && n?.texture?.state !== "loaded") issues.push("image-not-loaded");
       }
       if (rows.size !== nodes.length) issues.push("node-count");
-      return { ok: !issues.length, count: rows.size, issues: [...new Set(issues)] };
+      return {
+        ok: !issues.length,
+        count: rows.size,
+        issues: [...new Set(issues)],
+        geometry,
+        method: "render-nodes-and-texture-state; not pixel comparison"
+      };
     },
     destroy() {
       renderer.close();
