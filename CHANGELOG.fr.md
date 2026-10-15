@@ -1,5 +1,9 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-16 — 1.2.6
+
+- Envoyer un téléchargement du téléphone à la télé : Nuvio sur la télé lit le fichier depuis le téléphone, en Wi-Fi, avec la piste audio et les sous-titres choisis sur le téléphone (sous-titres du fichier ou téléchargés avec la vidéo). Tu peux toujours en changer depuis la télé.
+
 ## 2026-10-15 — 1.2.5
 
 - Notes personnelles sur la fiche : cinq boutons (👎👎 Détesté, 👎 Pas pour moi, 😐 Correct, 👍 J’aime, 💜 J’adore) à côté de Lecture. OK sur ta note actuelle la retire. Tes notes sont privées et partagées avec ton téléphone.

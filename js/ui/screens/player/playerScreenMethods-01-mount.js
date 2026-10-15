@@ -75,6 +75,9 @@ export function createPlayerScreenMethods01() {
       this.subtitleDelayPreferenceVideoId = this.getSubtitleDelayPreferenceVideoId();
       this.rememberedAudioTrackPreference = TrackPreferencesStore.getAudio(this.trackPreferenceContentId);
       this.rememberedSubtitleTrackPreference = TrackPreferencesStore.getSubtitle(this.trackPreferenceContentId);
+      // Tracks chosen on the phone ("Envoyer à la TV") win over what this title remembers.
+      if (params?.handoffAudio) this.rememberedAudioTrackPreference = { ...params.handoffAudio };
+      if (params?.handoffSubtitle) this.rememberedSubtitleTrackPreference = { ...params.handoffSubtitle };
       if (Environment.isWebOS()) {
         const legacyForceAll = Boolean(PlayerSettingsStore.get().forceDtsTrueHdAudio);
         const audioCompatibility = WebOsAudioCompatibilityStore.get({ legacyForceAll });

@@ -50,16 +50,28 @@ export function playerParamsFromHandoff(message) {
   };
   if (!message.sourceUrl) return null;
   const streamId = `handoff:${media.videoId || media.id}`;
+  // Subtitle files served by the phone next to a downloaded video.
+  const subtitles = (Array.isArray(message.subtitles) ? message.subtitles : [])
+    .filter((subtitle) => subtitle && typeof subtitle.url === "string" && subtitle.url)
+    .map((subtitle, index) => ({
+      id: `handoff-sub-${index}`,
+      url: subtitle.url,
+      lang: subtitle.lang || "unknown",
+      ...(subtitle.name ? { name: subtitle.name } : {})
+    }));
   return {
     ...base,
     streamUrl: message.sourceUrl,
     preferredStreamId: streamId,
+    handoffAudio: audioPreferenceFromHandoff(message.audio),
+    handoffSubtitle: subtitlePreferenceFromHandoff(message.subtitle),
     streamCandidates: [
       {
         id: streamId,
         url: message.sourceUrl,
         name: message.name || "Nuvio",
         title: media.title,
+        ...(subtitles.length ? { subtitles } : {}),
         behaviorHints:
           message.sourceHeaders && Object.keys(message.sourceHeaders).length
             ? { proxyHeaders: { request: message.sourceHeaders } }
@@ -67,6 +79,33 @@ export function playerParamsFromHandoff(message) {
       }
     ]
   };
+}
+
+/** Audio chosen on the phone → remembered-track preference for this playback. */
+export function audioPreferenceFromHandoff(audio) {
+  if (!audio || typeof audio !== "object") return null;
+  const language = typeof audio.language === "string" && audio.language ? audio.language : null;
+  const name = typeof audio.name === "string" && audio.name ? audio.name : null;
+  return language || name ? { language, name, trackId: null } : null;
+}
+
+/** Subtitle chosen on the phone: none, a track of the file, or a file served by the phone. */
+export function subtitlePreferenceFromHandoff(subtitle) {
+  if (!subtitle || typeof subtitle !== "object") return null;
+  const kind = String(subtitle.kind || "").toLowerCase();
+  const language =
+    typeof subtitle.language === "string" && subtitle.language ? subtitle.language : null;
+  if (kind === "off") return { type: "DISABLED" };
+  if (kind === "internal") {
+    const name = typeof subtitle.name === "string" && subtitle.name ? subtitle.name : null;
+    return language || name
+      ? { type: "INTERNAL", language, name, trackId: null, isForced: null }
+      : null;
+  }
+  if (kind === "external" && typeof subtitle.url === "string" && subtitle.url) {
+    return { type: "ADDON", language, addonId: null, addonUrl: subtitle.url, addonName: null };
+  }
+  return null;
 }
 
 function openFromHandoff(message) {
