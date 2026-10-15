@@ -249,6 +249,45 @@ export function createPersoCloud(options = {}) {
     }
   }
 
+  /** Durable per-device document (same table and rules as Android PersoCloud.putDoc). */
+  async function putDoc(id, docKey, device, payload) {
+    const token = await accessToken();
+    if (!token || !id) return false;
+    try {
+      const response = await request(
+        "/rest/v1/perso_docs",
+        {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify([
+            { space_id: id, doc_key: docKey, device, payload, updated_by: session?.userId || "" }
+          ])
+        },
+        token
+      );
+      return Boolean(response.ok);
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  /** Documents of every device for [docKey]: { device: payload }, null on failure. */
+  async function getDocs(id, docKey) {
+    const token = await accessToken();
+    if (!token || !id) return null;
+    const query = `?space_id=eq.${encodeURIComponent(id)}&doc_key=eq.${encodeURIComponent(docKey)}&select=device,payload`;
+    try {
+      const response = await request(`/rest/v1/perso_docs${query}`, {}, token);
+      if (!response.ok) return null;
+      const rows = await response.json();
+      const out = {};
+      for (const row of rows || []) if (row && row.device) out[row.device] = row.payload || {};
+      return out;
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function realtimeUrl() {
     return `${url.replace(/^https:\/\//, "wss://")}/realtime/v1/websocket?apikey=${encodeURIComponent(key)}&vsn=1.0.0`;
   }
@@ -357,6 +396,8 @@ export function createPersoCloud(options = {}) {
     spaceId,
     sendEvent,
     events,
+    putDoc,
+    getDocs,
     subscribe,
     realtimeUrl,
     resetSession() {

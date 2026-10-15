@@ -2764,4 +2764,21 @@
     <string name="handoff_resume_at">Reprendre à %1$s</string>
     <string name="handoff_play">Reprendre ici</string>
     <string name="handoff_dismiss">Ignorer</string>
+    <string name="perso_rating_hated">Détesté</string>
+    <string name="perso_rating_disliked">Pas pour moi</string>
+    <string name="perso_rating_okay">Correct</string>
+    <string name="perso_rating_liked">J\'aime</string>
+    <string name="perso_rating_loved">J\'adore</string>
+    <string name="perso_rating_after">Qu\'as-tu pensé de %1$s ?</string>
+    <string name="perso_rating_hint">Privé : sert à tes recommandations, partagé entre tes appareils. Touches 1 à 5, ou ← → puis OK.</string>
+    <string name="perso_rating_later">Retour : plus tard</string>
+    <string name="perso_rating_close">Retour : fermer</string>
+    <string name="perso_discovery_title">Découverte</string>
+    <string name="perso_discovery_loading">Chargement des découvertes…</string>
+    <string name="perso_discovery_count">%1$s notés</string>
+    <string name="perso_discovery_done">C\'est tout pour l\'instant</string>
+    <string name="perso_discovery_done_hint">Note d\'autres titres sur ton téléphone ou reviens plus tard. Retour pour fermer.</string>
+    <string name="perso_discovery_skip">Pas vu · passer</string>
+    <string name="perso_discovery_open">Voir la fiche</string>
+    <string name="perso_discovery_scale">toutes les notes</string>
 </resources>

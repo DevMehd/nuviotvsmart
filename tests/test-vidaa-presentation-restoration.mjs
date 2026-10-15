@@ -113,6 +113,8 @@ assert.equal(owner.collectionFocusGifPending, null);
 const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "utf8");
 const changelog = parsePersonalChangelog(notes, "1.2.5");
 assert.equal(changelog.date, "2026-10-15");
+assert.ok(changelog.notes.includes("Notes personnelles"));
+assert.ok(changelog.notes.includes("Découverte (menu de gauche)"));
 assert.ok(changelog.notes.includes("Continuer sur la TV"));
 assert.ok(changelog.notes.includes("Télécommande depuis le téléphone"));
 assert.ok(changelog.notes.includes("Espace perso"));

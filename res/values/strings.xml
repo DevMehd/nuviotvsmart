@@ -3080,4 +3080,21 @@
     <string name="handoff_resume_at">Resume at %1$s</string>
     <string name="handoff_play">Resume here</string>
     <string name="handoff_dismiss">Ignore</string>
+    <string name="perso_rating_hated">Hated it</string>
+    <string name="perso_rating_disliked">Not for me</string>
+    <string name="perso_rating_okay">Okay</string>
+    <string name="perso_rating_liked">Liked it</string>
+    <string name="perso_rating_loved">Loved it</string>
+    <string name="perso_rating_after">What did you think of %1$s?</string>
+    <string name="perso_rating_hint">Private: used for your recommendations, shared between your devices. Keys 1 to 5, or ← → then OK.</string>
+    <string name="perso_rating_later">Back: later</string>
+    <string name="perso_rating_close">Back: close</string>
+    <string name="perso_discovery_title">Discover</string>
+    <string name="perso_discovery_loading">Loading discoveries…</string>
+    <string name="perso_discovery_count">%1$s rated</string>
+    <string name="perso_discovery_done">That\'s all for now</string>
+    <string name="perso_discovery_done_hint">Rate more titles on your phone or come back later. Back to close.</string>
+    <string name="perso_discovery_skip">Haven\'t seen it · skip</string>
+    <string name="perso_discovery_open">Open the details</string>
+    <string name="perso_discovery_scale">every rating</string>
 </resources>

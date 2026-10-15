@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 
+import { showDiscovery } from "./persoRatingOverlays.js";
 import { Router } from "../navigation/routerState.js";
 
 import { ProfileManager } from "../../core/profile/profileManager.js";
@@ -69,6 +70,12 @@ export function activateLegacySidebarAction(action, currentRoute = "") {
   }
   if (normalizedAction === "gotoAccount") {
     Router.navigate("profileSelection");
+    return;
+  }
+  if (normalizedAction === "gotoPersoDiscovery") {
+    showDiscovery({
+      openDetail: (card) => Router.navigate("detail", { itemId: card.id, itemType: card.type, fallbackTitle: card.name })
+    });
     return;
   }
 

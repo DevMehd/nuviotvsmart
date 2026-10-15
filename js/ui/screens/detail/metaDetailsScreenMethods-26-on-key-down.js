@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
+import { handlePersoRate } from "./persoRatingButtons.js";
 
 export function createMetaDetailsScreenMethods26() {
   const {
@@ -347,6 +348,16 @@ export function createMetaDetailsScreenMethods26() {
 
       if (action === "openTmdbEntity") {
         this.openTmdbEntityFromNode(current);
+        return;
+      }
+
+      if (action === "persoRate") {
+        handlePersoRate(this.container, current, {
+          type: this.meta?.type || this.params?.itemType,
+          id: this.params?.itemId || this.meta?.id,
+          name: this.meta?.name || "",
+          poster: this.meta?.poster || ""
+        });
         return;
       }
 
