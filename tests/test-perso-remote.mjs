@@ -18,6 +18,8 @@ assert.equal(parseRemoteEvent(wrap(cmd), "tv1", now).cmd, "seek");
 assert.equal(parseRemoteEvent(wrap(cmd), "phone1", now), null, "own messages are ignored");
 assert.equal(parseRemoteEvent(wrap({ ...cmd, type: "state" }), "tv1", now), null, "states from other TVs are ignored");
 assert.equal(parseRemoteEvent(wrap({ ...cmd, v: 2 }), "tv1", now), null);
+const { v: _omitted, ...legacyCmd } = cmd;
+assert.equal(parseRemoteEvent(wrap(legacyCmd), "tv1", now).cmd, "seek", "Nuvio Perso 1.5.0 omitted v");
 assert.equal(parseRemoteEvent(wrap(cmd), "tv1", now + 120_000), null, "stale commands are dropped");
 assert.equal(parseRemoteEvent(JSON.stringify({ event: "keepalive" }), "tv1", now), null);
 assert.equal(parseRemoteEvent("not json", "tv1", now), null);

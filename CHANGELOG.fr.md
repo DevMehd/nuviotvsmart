@@ -1,5 +1,9 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-16 — 1.2.7
+
+- Correction : la télé ignorait les envois du téléphone (« Envoyer à la TV » vers Nuvio, « Continuer sur la TV ») et les commandes de la télécommande du téléphone. Ils sont maintenant reçus.
+
 ## 2026-10-16 — 1.2.6
 
 - Envoyer un téléchargement du téléphone à la télé : Nuvio sur la télé lit le fichier depuis le téléphone, en Wi-Fi, avec la piste audio et les sous-titres choisis sur le téléphone (sous-titres du fichier ou téléchargés avec la vidéo). Tu peux toujours en changer depuis la télé.

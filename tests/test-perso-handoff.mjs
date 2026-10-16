@@ -10,7 +10,7 @@ assert.equal(fnv1a64Hex(""), "cbf29ce484222325");
 assert.equal(fnv1a64Hex("a"), "af63dc4c8601ec8c");
 assert.equal(PersoSpace.handoffTopic("abcd"), "nuvio-handoff-v1-939fe08ba58d4f5d");
 
-const { parseHandoffEvent, playerParamsFromHandoff } = await import("../js/core/perso/tvHandoffReceiver.js");
+const { parseHandoffEvent, parseHandoffMessage, playerParamsFromHandoff } = await import("../js/core/perso/tvHandoffReceiver.js");
 const now = 1_800_000_000_000;
 const message = {
   v: 1, type: "handoff", from: "d1", name: "Pixel", device: "android", at: now - 1000,
@@ -51,5 +51,12 @@ assert.equal(subtitlePreferenceFromHandoff({ kind: "internal", language: "fre", 
 assert.equal(subtitlePreferenceFromHandoff({ kind: "external" }), null);
 assert.equal(audioPreferenceFromHandoff({}), null);
 assert.equal(params.handoffAudio, null, "older phones send no track choice");
+
+// Nuvio Perso 1.5.0 omitted the default "v" and "type" fields.
+const legacy = { ...message, at: now - 500 };
+delete legacy.v;
+delete legacy.type;
+assert.ok(parseHandoffMessage(JSON.stringify(legacy), now), "messages without v/type are accepted");
+assert.equal(parseHandoffMessage(JSON.stringify({ ...legacy, v: 2 }), now), null, "other versions are refused");
 
 console.log("perso hand-off tests passed");

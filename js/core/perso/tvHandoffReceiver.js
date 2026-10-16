@@ -25,7 +25,9 @@ export function parseHandoffMessage(text, nowMs = Date.now()) {
   } catch (_error) {
     return null;
   }
-  if (!message || message.v !== 1 || message.type !== "handoff" || !message.media) return null;
+  // Phones up to Nuvio Perso 1.5.0 left out "v" and "type" (their default values): accept them.
+  if (!message || (message.v != null && message.v !== 1)) return null;
+  if ((message.type != null && message.type !== "handoff") || !message.media) return null;
   if (!Number.isFinite(Number(message.at)) || nowMs - Number(message.at) > MAX_AGE_MS) return null;
   return message;
 }

@@ -34,7 +34,13 @@ export function parseRemoteMessage(text, selfId, nowMs = Date.now()) {
   } catch (_error) {
     return null;
   }
-  if (!message || message.v !== 1 || message.type !== "cmd" || typeof message.cmd !== "string")
+  // Phones up to Nuvio Perso 1.5.0 left out "v" (its default value): accept it.
+  if (
+    !message ||
+    (message.v != null && message.v !== 1) ||
+    message.type !== "cmd" ||
+    typeof message.cmd !== "string"
+  )
     return null;
   if (selfId && message.from === selfId) return null;
   const at = Number(message.at);
