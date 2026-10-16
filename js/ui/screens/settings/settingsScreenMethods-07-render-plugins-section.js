@@ -87,8 +87,7 @@ export function createSettingsScreenMethods07() {
         this.contentFocusKey = "integration:back";
       });
       this.actionMap.set("integration:hub:trakt", () => {
-        this.integrationView = "trakt";
-        this.contentFocusKey = "integration:back";
+        return Router.navigate("trakt");
       });
       this.actionMap.set("integration:hub:animeskip", () => {
         this.integrationView = "animeskip";
@@ -122,7 +121,7 @@ export function createSettingsScreenMethods07() {
                 ${this.renderActionRow({
                   focusKey: "integration:hub:trakt",
                   title: "Trakt",
-                  subtitle: t("trakt_client_settings_subtitle", {}, "Configure app credentials and connect your Trakt account")
+                  subtitle: t("trakt_generate_code", {}, "Generate activation code")
                 })}
               </div>
             </div>

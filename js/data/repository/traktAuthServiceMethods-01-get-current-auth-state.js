@@ -38,7 +38,7 @@ export function createTraktAuthServiceMethods01() {
     },
     async startDeviceAuth() {
       if (!hasRequiredCredentials()) {
-        throw new Error("Configure Trakt Client ID and Client Secret in Settings > Integrations > Trakt");
+        throw new Error("Trakt is unavailable in this app build");
       }
 
       const profileId = activeProfileId();
@@ -92,7 +92,7 @@ export function createTraktAuthServiceMethods01() {
     },
     async pollDeviceToken() {
       if (!hasRequiredCredentials()) {
-        return { type: "failed", message: "Configure Trakt app credentials in Settings > Integrations > Trakt" };
+        return { type: "failed", message: "Trakt is unavailable in this app build" };
       }
       const profileId = activeProfileId();
       const requestContext = createTraktRequestContext(profileId);

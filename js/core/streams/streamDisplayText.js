@@ -2,6 +2,36 @@
 // "4K" and "FullHD". TV fonts can render those symbols as missing-glyph boxes.
 const MATHEMATICAL_ALPHANUMERIC_START = 0x1d400;
 const MATHEMATICAL_ALPHANUMERIC_END = 0x1d7ff;
+// AIOStreams formatters also spell labels with phonetic small capitals.
+// Those letters do not have a compatibility decomposition (e.g. ɪᴛ stays ɪᴛ
+// under NFKC). Keep this limited to the decorated Latin alphabet.
+const LATIN_SMALL_CAPITALS = {
+  ᴀ: "a",
+  ʙ: "b",
+  ᴄ: "c",
+  ᴅ: "d",
+  ᴇ: "e",
+  ꜰ: "f",
+  ɢ: "g",
+  ʜ: "h",
+  ɪ: "i",
+  ᴊ: "j",
+  ᴋ: "k",
+  ʟ: "l",
+  ᴍ: "m",
+  ɴ: "n",
+  ᴏ: "o",
+  ᴘ: "p",
+  "ꞯ": "q",
+  ʀ: "r",
+  ꜱ: "s",
+  ᴛ: "t",
+  ᴜ: "u",
+  ᴠ: "v",
+  ᴡ: "w",
+  ʏ: "y",
+  ᴢ: "z"
+};
 
 function readCodePoint(text, index) {
   const first = text.charCodeAt(index);
@@ -51,6 +81,9 @@ function indicatorLetter(codePoint) {
 }
 
 function plainLabelSymbol(symbol, codePoint) {
+  if (Object.prototype.hasOwnProperty.call(LATIN_SMALL_CAPITALS, symbol)) {
+    return LATIN_SMALL_CAPITALS[symbol];
+  }
   // Negative circled/squared letters have no NFKC decomposition.
   if (codePoint >= 0x1f150 && codePoint <= 0x1f169)
     return String.fromCharCode(65 + codePoint - 0x1f150);
@@ -65,6 +98,13 @@ function plainLabelSymbol(symbol, codePoint) {
   // punctuation, accented titles and unrelated writing systems keep their form.
   if (
     (codePoint >= 0x2100 && codePoint <= 0x214f) ||
+    codePoint === 0x00b2 ||
+    codePoint === 0x00b3 ||
+    codePoint === 0x00b9 ||
+    (codePoint >= 0x02b0 && codePoint <= 0x02ff) ||
+    (codePoint >= 0x1d2c && codePoint <= 0x1d6a) ||
+    (codePoint >= 0x1d9b && codePoint <= 0x1dbf) ||
+    (codePoint >= 0x2070 && codePoint <= 0x209f) ||
     (codePoint >= 0x24b6 && codePoint <= 0x24e9) ||
     (codePoint >= 0x1f130 && codePoint <= 0x1f149) ||
     (codePoint >= 0xff10 && codePoint <= 0xff19) ||

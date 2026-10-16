@@ -151,6 +151,9 @@ export function createPlayerScreenMethods30() {
           : Number(PlayerController.video?.readyState || 0);
       const gateDeadlineExpired =
         Number(this.startupAudioGateDeadline || 0) > 0 && Date.now() >= Number(this.startupAudioGateDeadline || 0);
+      // An expired language-discovery window does not cancel an audio switch
+      // already issued to the decoder. Its existing confirmation owns startup.
+      if (Environment.isVidaa() && this.startupAudioPreferenceApplying) return false;
       if (
         canReleasePlayingNativeStartupAudioGate({
           allowNativePlayback: this.startupAudioGateAllowsNativePlayback,

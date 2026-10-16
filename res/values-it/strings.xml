@@ -734,7 +734,7 @@
     <string name="trakt_code_expires">Il codice scade in %1$s</string>
     <string name="trakt_token_refreshes">Il token di accesso Trakt si rinnoverà tra %1$s</string>
     <string name="trakt_login_instruction">Premi Accedi per avviare l\'autenticazione del dispositivo Trakt. Un codice QR apparirà qui.</string>
-    <string name="trakt_missing_credentials">Inserisci Client ID e Client Secret in Integrazioni &gt; Trakt.</string>
+    <string name="trakt_missing_credentials">Trakt non è disponibile in questa versione dell’app.</string>
     <string name="trakt_watch_progress_title">Avanzamento visione</string>
     <string name="trakt_watch_progress_subtitle">Scegli quale origine usa Riprendi e Continua a guardare</string>
     <string name="trakt_watch_progress_dialog_title">Avanzamento visione</string>
@@ -2954,6 +2954,8 @@
     <string name="settings_integration_back">Torna alle integrazioni</string>
     <string name="player_audio_dts_conversion_warning">L’audio DTS potrebbe non funzionare su questa TV: la ricodifica automatica non è disponibile per questa traccia.</string>
     <string name="player_audio_conversion_warning">L’audio potrebbe non funzionare su questa TV perché la ricodifica automatica non è disponibile per questa traccia.</string>
+    <string name="player_audio_automatic">Audio automatico</string>
+    <string name="player_audio_native_selection_unavailable">Questa TV non espone la selezione di questa traccia.</string>
 
     <string name="mdblist_show_on_hero_title">Usa le valutazioni nell’hero</string>
     <string name="mdblist_show_on_hero_subtitle">Mostra le valutazioni MDBList nell’hero (Modern e Classic/Grid)</string>

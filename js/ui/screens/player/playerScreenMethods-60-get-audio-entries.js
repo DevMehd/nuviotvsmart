@@ -9,6 +9,7 @@ export function createPlayerScreenMethods60() {
     AUDIO_AMPLIFICATION_MAX_DB,
     getAudioTrackSupportState,
     formatAudioTrackDisplay,
+    t,
     clamp
   } = internals;
 
@@ -105,6 +106,10 @@ export function createPlayerScreenMethods60() {
             const audioTracks = projectedTracks ? [] : this.getAudioTracks();
             if (audioTracks.length || this.embeddedAudioTracks.length) {
               entries = this.getMergedAudioTrackEntries(audioTracks);
+              if (Environment.isVidaa() && !audioTracks.length) {
+                const implicitEntry = this.getImplicitAudioEntry();
+                if (implicitEntry) entries.unshift(implicitEntry);
+              }
               if (projectedTracks) {
                 const selectedIndex = conversion.sourceTrackIndex ?? conversion.targetIndex;
                 entries.forEach((entry) => {
@@ -138,6 +143,22 @@ export function createPlayerScreenMethods60() {
         }
       }
 
+      if (Environment.isVidaa()) {
+        const context = {
+          video: PlayerController.video,
+          videoSource: PlayerController.video?.src,
+          engine: PlayerController.playbackEngine,
+          hlsInstance: PlayerController.hlsInstance,
+          dashInstance: PlayerController.dashInstance,
+          playRequestToken: PlayerController.playRequestToken,
+          sourceAttemptToken: this.sourcePlaybackAttemptToken,
+          mountToken: this.playerMountToken,
+          playbackUrl: this.activePlaybackUrl
+        };
+        entries.forEach((entry) => {
+          entry.audioEntryContext = context;
+        });
+      }
       this.trackDialogCache.audioEntries = entries;
       return entries;
     },
@@ -178,7 +199,7 @@ export function createPlayerScreenMethods60() {
       const support = getAudioTrackSupportState(track);
       return {
         id: "audio-implicit-0",
-        label: display.label,
+        label: Environment.isVidaa() ? t("player_audio_automatic", {}, "Automatic audio") : display.label,
         secondary: display.secondary,
         selected: true,
         supported: support.supported,
@@ -219,10 +240,54 @@ export function createPlayerScreenMethods60() {
       }
 
       this.audioFallbackApplying = true;
+      const request = {
+        video: PlayerController.video,
+        source: PlayerController.video?.src,
+        playToken: PlayerController.playRequestToken,
+        engine: PlayerController.playbackEngine,
+        hlsInstance: PlayerController.hlsInstance,
+        dashInstance: PlayerController.dashInstance,
+        sourceAttemptToken: this.sourcePlaybackAttemptToken,
+        mountToken: this.playerMountToken
+      };
+      this.audioFallbackRequest = request;
+      const recordFailure = (applied) => {
+        if (
+          Environment.isVidaa() &&
+          applied === false &&
+          this.audioFallbackRequest === request &&
+          this.audioSelectionToken === request.audioToken &&
+          PlayerController.video === request.video &&
+          PlayerController.video?.src === request.source &&
+          PlayerController.playRequestToken === request.playToken &&
+          PlayerController.playbackEngine === request.engine &&
+          PlayerController.hlsInstance === request.hlsInstance &&
+          PlayerController.dashInstance === request.dashInstance &&
+          this.sourcePlaybackAttemptToken === request.sourceAttemptToken &&
+          this.playerMountToken === request.mountToken
+        ) {
+          this.failedAutomaticAudioFallbackEntryId = supportedEntry.id || "";
+        }
+      };
+      const finish = () => {
+        if (this.audioFallbackRequest === request) {
+          this.audioFallbackRequest = null;
+          this.audioFallbackApplying = false;
+        }
+      };
       try {
-        this.applyAudioTrack(supportedEntryIndex, { automaticFallback: true });
-      } finally {
-        this.audioFallbackApplying = false;
+        // Native setters can confirm asynchronously. Keep ownership across
+        // their change events so a disabled intermediate state cannot re-enter.
+        const result = this.applyAudioTrack(supportedEntryIndex, { automaticFallback: true });
+        request.audioToken = this.audioSelectionToken;
+        void Promise.resolve(result)
+          .catch(() => false)
+          .then(recordFailure)
+          .finally(finish);
+      } catch (_) {
+        request.audioToken = this.audioSelectionToken;
+        recordFailure(false);
+        finish();
       }
       return true;
     },

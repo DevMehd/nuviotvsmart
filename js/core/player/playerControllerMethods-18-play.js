@@ -289,10 +289,16 @@ export function createPlayerControllerMethods18() {
           warningLabel: "Native HLS playback start rejected",
           playToken,
           beforePlay: () => this.waitForNativeMediaId(),
-          onRejected: (error) => {
+          onRejected: async (error) => {
             if (!this.isUnsupportedSourceError(error)) {
               return false;
             }
+            // Native VIDAA starts deliberately leave MSE libraries unloaded.
+            // Load the existing HLS fallback only after an explicit unsupported
+            // source rejection, and retire it if another source won meanwhile.
+            await this.ensureAdaptiveLibrariesForSource(sourceType, "hls.js");
+            if (!this.isPlaybackRequestActive(playToken, playbackUrl)) return true;
+            this.rememberPlaybackEngineAttempt(requestedUrl, "hls.js");
             const fallbackStarted = this.playWithHlsJs(playbackUrl, requestHeaders, playToken);
             if (fallbackStarted) {
               this.isPlaying = true;

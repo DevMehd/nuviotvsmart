@@ -223,7 +223,7 @@ export function createPlayerScreenMethods51() {
       }
       return null;
     },
-    requestVidaaStartupAudioOption(option) {
+    requestVidaaStartupAudioOption(option, { automaticFallback = false } = {}) {
       // Keep ownership until the existing async selector settles. A change
       // event emitted by that selector must not start a duplicate request.
       const request = {
@@ -231,7 +231,8 @@ export function createPlayerScreenMethods51() {
         video: PlayerController.video,
         playToken: PlayerController.playRequestToken,
         preference: this.getAudioTrackPreference(option.entry),
-        remembered: Boolean(this.rememberedAudioTrackPreference)
+        remembered: Boolean(this.rememberedAudioTrackPreference),
+        automaticFallback: Boolean(automaticFallback)
       };
       this.startupVidaaAudioRequest = request;
       this.startupAudioPreferenceApplying = true;
@@ -241,7 +242,7 @@ export function createPlayerScreenMethods51() {
         PlayerController.playRequestToken === request.playToken;
       let result;
       try {
-        result = this.applyAudioTrack(option.entryIndex);
+        result = this.applyAudioTrack(option.entryIndex, { automaticFallback });
       } catch (_) {
         result = false;
       }
@@ -271,6 +272,19 @@ export function createPlayerScreenMethods51() {
           // Resolve the identity again: a native list can change order while the
           // request is pending. An old array index is not an audio preference.
           const currentOption = resolveAppliedOption();
+          if (request.automaticFallback) {
+            // The bounded fallback is terminal, but its native request still
+            // owns startup until confirmation settles. A failed request leaves
+            // the runtime's default output in place and must not loop forever.
+            this.startupAudioFallbackApplied = true;
+            this.startupAudioPreferenceApplied = true;
+            this.failedAutomaticAudioFallbackEntryId = currentOption ? "" : option.entry.id || "";
+            this.clearStartupAudioPreferenceRetry();
+            this.renderControlButtons();
+            if (this.audioDialogVisible) this.renderAudioDialog();
+            this.scheduleLoadingCompletionCheck(0);
+            return;
+          }
           const targetIndex = this.getStartupPreferredAudioLanguageTargets().findIndex((target) =>
             this.matchesStartupAudioTarget(currentOption, target)
           );

@@ -217,6 +217,9 @@ if (typeof globalThis.addEventListener === "function") {
 }
 
 async function shouldShowProfileSelection() {
+  // Login/restoration can start with only the device's fallback profile. Pull
+  // the account profile list before deciding whether the picker can be skipped.
+  await ProfileSyncService.pull();
   const [profiles, pinStates] = await Promise.all([
     ProfileManager.getProfiles(),
     ProfileSyncService.pullProfileLockStates()
@@ -295,8 +298,10 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
 }
 
 async function routeAfterAuthentication() {
+  const sessionGeneration = AuthManager.sessionGeneration;
   loginTrace("authenticated route begin", { currentRoute: Router.getCurrent() || "" });
   const profileRoute = await shouldShowProfileSelection();
+  if (!AuthManager.isAuthenticated || sessionGeneration !== AuthManager.sessionGeneration) return;
   loginTrace("authenticated route profile decision", { show: profileRoute.show === true });
   if (profileRoute.show) {
     await Router.navigate("profileSelection", {

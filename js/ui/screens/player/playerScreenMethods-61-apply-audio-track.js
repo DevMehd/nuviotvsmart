@@ -3,6 +3,7 @@ import * as internals from "./playerScreenContext.js";
 import {
   nativeAudioTrackSelectionMatches,
   applyNativeAudioTrackFlags,
+  createNativeAudioSelectionRollback,
   confirmNativeTrackSelection
 } from "../../../core/player/playerControllerMethods-02-is-likely-direct-file-url.js";
 import { beginVidaaTrackSwitch } from "./vidaaTrackSwitchGuard.js";
@@ -16,6 +17,11 @@ export function createPlayerScreenMethods61() {
     AUDIO_AMPLIFICATION_MAX_DB,
     t,
     isUnsupportedWebOsAudioTrack,
+    cleanDisplayText,
+    getUsableAudioTrackLanguageValue,
+    normalizeTrackLanguageCode,
+    getAuthoritativeAudioCodecValue,
+    formatAudioCodecName,
     clamp,
     escapeHtml
   } = internals;
@@ -27,6 +33,23 @@ export function createPlayerScreenMethods61() {
       if (!selectedEntry) {
         return;
       }
+      const entryContext = Environment.isVidaa() ? selectedEntry.audioEntryContext : null;
+      if (
+        entryContext &&
+        (entryContext.video !== PlayerController.video ||
+          entryContext.videoSource !== PlayerController.video?.src ||
+          entryContext.engine !== PlayerController.playbackEngine ||
+          entryContext.hlsInstance !== PlayerController.hlsInstance ||
+          entryContext.dashInstance !== PlayerController.dashInstance ||
+          entryContext.playRequestToken !== PlayerController.playRequestToken ||
+          entryContext.sourceAttemptToken !== this.sourcePlaybackAttemptToken ||
+          entryContext.mountToken !== this.playerMountToken ||
+          entryContext.playbackUrl !== this.activePlaybackUrl)
+      ) {
+        this.invalidateTrackDialogCaches();
+        this.renderAudioDialog();
+        return false;
+      }
       if (this.isAudioEntryPending(selectedEntry)) {
         return;
       }
@@ -37,13 +60,21 @@ export function createPlayerScreenMethods61() {
       const playRequestToken = PlayerController.playRequestToken;
       const mountToken = this.playerMountToken;
       const playbackUrl = this.activePlaybackUrl;
+      const engine = PlayerController.playbackEngine;
+      const hlsInstance = PlayerController.hlsInstance;
+      const dashInstance = PlayerController.dashInstance;
+      const sourceAttemptToken = this.sourcePlaybackAttemptToken;
       const isCurrentSelection = () =>
         this.audioSelectionToken === selectionToken &&
         this.playerMountToken === mountToken &&
         this.activePlaybackUrl === playbackUrl &&
         PlayerController.video === video &&
         video?.src === videoSource &&
-        PlayerController.playRequestToken === playRequestToken;
+        PlayerController.playRequestToken === playRequestToken &&
+        PlayerController.playbackEngine === engine &&
+        PlayerController.hlsInstance === hlsInstance &&
+        PlayerController.dashInstance === dashInstance &&
+        this.sourcePlaybackAttemptToken === sourceAttemptToken;
       if (!automaticFallback) {
         this.failedAutomaticAudioFallbackEntryId = "";
       }
@@ -128,6 +159,7 @@ export function createPlayerScreenMethods61() {
       }
 
       if (Number.isFinite(selectedEntry.embeddedAudioTrackIndex)) {
+        if (Environment.isVidaa()) return false;
         const embeddedTrack = this.getEmbeddedAudioTrackByEmbeddedIndex(selectedEntry.embeddedAudioTrackIndex);
         let applied = false;
         if (Environment.isTizen() && typeof PlayerController.isUsingAvPlay === "function" && PlayerController.isUsingAvPlay()) {
@@ -186,25 +218,41 @@ export function createPlayerScreenMethods61() {
       }
 
       const audioTracks = this.getAudioTracks();
-      const nativeTrackIndex = Number(selectedEntry.audioTrackIndex);
-      if (!audioTracks.length || !Number.isInteger(nativeTrackIndex) || nativeTrackIndex < 0 || nativeTrackIndex >= audioTracks.length) {
-        return;
+      const entryTrackIndex = Number(selectedEntry.audioTrackIndex);
+      if (!audioTracks.length || !Number.isInteger(entryTrackIndex) || entryTrackIndex < 0) {
+        return false;
       }
-      this.requestedAudioTrackIndex = nativeTrackIndex;
       const resolveVidaaIdentity = Environment.isVidaa();
-      const nativeTrack = audioTracks[nativeTrackIndex];
-      const nativePreference = resolveVidaaIdentity ? this.getAudioTrackPreference(selectedEntry) : null;
+      // The dialog can still show a snapshot when firmware reorders/replaces
+      // AudioTrackList before dispatching change. Its old ordinal is not identity.
+      const nativeTrack = selectedEntry.nativeAudioTrack || audioTracks[entryTrackIndex];
+      const describeNativeTrack = (track) => ({
+        id: cleanDisplayText(track?.id ?? track?.trackId),
+        language: normalizeTrackLanguageCode(getUsableAudioTrackLanguageValue(track)),
+        label: cleanDisplayText(track?.label || track?.name),
+        codec: formatAudioCodecName(getAuthoritativeAudioCodecValue(track))
+      });
+      const nativeIdentity = resolveVidaaIdentity ? describeNativeTrack(nativeTrack) : null;
       const resolveNativeTrackIndex = () => {
-        if (!resolveVidaaIdentity) return nativeTrackIndex;
+        if (!resolveVidaaIdentity) return entryTrackIndex < audioTracks.length ? entryTrackIndex : -1;
         const currentTracks = this.getAudioTracks();
         const objectIndex = currentTracks.indexOf(nativeTrack);
         if (objectIndex >= 0) return objectIndex;
-        // A replacement list may contain new objects for the same language/ID.
-        this.invalidateTrackDialogCaches();
-        const option = this.findRememberedAudioOption(nativePreference);
-        const currentIndex = option?.entry?.audioTrackIndex;
-        return Number.isInteger(currentIndex) && currentIndex >= 0 && currentIndex < currentTracks.length ? currentIndex : -1;
+        if (!nativeIdentity || !Object.values(nativeIdentity).some(Boolean)) return -1;
+        const matches = currentTracks.filter((track) => {
+          const identity = describeNativeTrack(track);
+          return Object.entries(nativeIdentity).every(([key, value]) => !value || identity[key] === value);
+        });
+        return matches.length === 1 ? currentTracks.indexOf(matches[0]) : -1;
       };
+      const nativeTrackIndex = resolveNativeTrackIndex();
+      if (nativeTrackIndex < 0) {
+        this.syncTrackState();
+        this.renderControlButtons();
+        this.renderAudioDialog();
+        return false;
+      }
+      this.requestedAudioTrackIndex = nativeTrackIndex;
       const selectionMatches = () => nativeAudioTrackSelectionMatches(this.getAudioTracks(), resolveNativeTrackIndex());
       const usingWebOsNativeAudio = Environment.isWebOS() && PlayerController.isUsingNativePlayback?.();
       // Remember the user's desired language independently of backend success.
@@ -282,6 +330,13 @@ export function createPlayerScreenMethods61() {
         this.renderAudioDialog();
         return false;
       }
+      const rollback = resolveVidaaIdentity
+        ? createNativeAudioSelectionRollback(fallbackTracks, {
+            preferEnabled: true,
+            isCurrent: isCurrentSelection,
+            getTracks: () => this.getAudioTracks()
+          })
+        : null;
       applyNativeAudioTrackFlags(fallbackTracks, fallbackTrackIndex, {
         preferEnabled: resolveVidaaIdentity,
         isCurrent: isCurrentSelection
@@ -289,6 +344,7 @@ export function createPlayerScreenMethods61() {
       const applied = await confirmNativeTrackSelection(selectionMatches, isCurrentSelection);
       if (!isCurrentSelection()) return false;
       if (!applied) {
+        rollback?.(this.getAudioTracks());
         this.syncTrackState();
         this.renderControlButtons();
         this.renderAudioDialog();
@@ -390,10 +446,15 @@ export function createPlayerScreenMethods61() {
                         {},
                         "Audio may not work on this TV because automatic conversion is unavailable for this track."
                       )
-                    : entry.unsupportedReason === "tizen-dash-audio"
-                      ? t("player_audio_tizen_dash_unsupported", {}, "Changing DASH audio tracks is not supported on this TV.")
-                      : t("player.audio.unsupportedCodec", {}, "Codec not supported by this device");
-                  const label = disabled ? `${entry.label || ""} · ${t("player.audio.unsupported", {}, "Unsupported")}` : entry.label || "";
+                    : entry.unsupportedReason === "native-track-unavailable"
+                      ? t("player_audio_native_selection_unavailable", {}, "This TV does not expose this track for selection.")
+                      : entry.unsupportedReason === "tizen-dash-audio"
+                        ? t("player_audio_tizen_dash_unsupported", {}, "Changing DASH audio tracks is not supported on this TV.")
+                        : t("player.audio.unsupportedCodec", {}, "Codec not supported by this device");
+                  const label =
+                    disabled && entry.unsupportedReason !== "native-track-unavailable"
+                      ? `${entry.label || ""} · ${t("player.audio.unsupported", {}, "Unsupported")}`
+                      : entry.label || "";
                   const secondary =
                     disabled || conversionFailed ? [entry.secondary, unsupportedText].filter(Boolean).join(" · ") : entry.secondary || "";
                   return `

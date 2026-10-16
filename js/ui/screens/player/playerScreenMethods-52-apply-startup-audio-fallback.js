@@ -24,6 +24,7 @@ export function createPlayerScreenMethods52() {
 
   return {
     applyStartupAudioFallback() {
+      if (Environment.isVidaa() && this.startupAudioPreferenceApplying) return false;
       this.clearStartupAudioPreferenceRetry();
       this.startupAudioFallbackApplied = true;
       const fallbackOption = selectStartupAudioFallbackOption(this.collectAudioOptionItems());
@@ -33,6 +34,7 @@ export function createPlayerScreenMethods52() {
       }
 
       if (!fallbackOption.selected) {
+        if (Environment.isVidaa()) return this.requestVidaaStartupAudioOption(fallbackOption, { automaticFallback: true });
         this.startupAudioPreferenceApplying = true;
         try {
           this.applyAudioTrack(fallbackOption.entryIndex, { automaticFallback: true });

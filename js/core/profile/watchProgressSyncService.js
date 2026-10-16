@@ -19,8 +19,7 @@ const MIN_PROGRESS_SYNC_DURATION_MS = 60000;
 const MAX_AMBIGUOUS_SECONDS_PROGRESS_VALUE = 8 * 60 * 60;
 const MAX_REASONABLE_PROGRESS_DURATION_MS = 24 * 60 * 60 * 1000;
 
-let activePushPromise = null;
-let pushAgainRequested = false;
+const activePushesByProfile = new Map();
 const pushStateByProfile = new Map();
 let lastPullStatus = "idle";
 let lastPullHadUnsynced = false;
@@ -745,22 +744,27 @@ export const WatchProgressSyncService = {
     if (isSyncBackoffActive()) {
       return false;
     }
-    if (activePushPromise) {
-      pushAgainRequested = true;
-      return activePushPromise;
-    }
     const resolvedProfileId = resolveProfileId(profileId);
-    activePushPromise = (async () => {
+    const activePush = activePushesByProfile.get(resolvedProfileId);
+    if (activePush) {
+      activePush.pushAgainRequested = true;
+      return activePush.promise;
+    }
+    const state = { pushAgainRequested: false, promise: null };
+    state.promise = (async () => {
       let lastResult = false;
       do {
-        pushAgainRequested = false;
+        state.pushAgainRequested = false;
         lastResult = await pushOnce(resolvedProfileId);
-      } while (pushAgainRequested);
+      } while (state.pushAgainRequested);
       return lastResult;
     })().finally(() => {
-      activePushPromise = null;
+      if (activePushesByProfile.get(resolvedProfileId) === state) {
+        activePushesByProfile.delete(resolvedProfileId);
+      }
     });
-    return activePushPromise;
+    activePushesByProfile.set(resolvedProfileId, state);
+    return state.promise;
   },
 
   async deleteItems(items = [], profileId = null) {

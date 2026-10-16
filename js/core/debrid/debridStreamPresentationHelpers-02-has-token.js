@@ -8,7 +8,7 @@ import { sizeBytesFromStreamText } from "./streamTextSizeParser.js";
 
 import { resolutionFromFields } from "./streamResolution.js";
 
-import { LANGUAGE_LABELS, searchText, qualityFromText } from "./debridStreamPresentationHelpers-01-resolution-labels.js";
+import { LANGUAGE_LABELS, searchText, searchTextParts, qualityFromText } from "./debridStreamPresentationHelpers-01-resolution-labels.js";
 import { normalizeStreamSearchText } from "../streams/streamDisplayText.js";
 
 export function hasToken(text = "", token = "") {
@@ -149,13 +149,25 @@ export function languageFor(value = "") {
   );
 }
 
-function hasItalianLanguageMarker(text) {
+function hasItalianLanguageMarker(text, fields = [text]) {
   if (
     hasToken(text, "ita") ||
     hasToken(text, "italian") ||
     hasToken(text, "italiano") ||
     hasToken(text, "it-it") ||
     hasToken(text, "it_it")
+  ) {
+    return true;
+  }
+  // Addons can use lower-case or small-cap codes on an explicit audio line.
+  // A bare "it" elsewhere may be part of a film title or ordinary prose.
+  if (
+    fields.some((field) =>
+      field.split(/\r?\n/).some((line) => {
+        const audioLabel = /^\s*(?:[✓✔☑]|(?:🗣|🔊|🎧)\ufe0f?|(?:audio|languages?|lingua)\s*[:=])\s*/i.exec(line);
+        return audioLabel && hasToken(line.slice(audioLabel[0].length), "it");
+      })
+    )
   ) {
     return true;
   }
@@ -175,15 +187,33 @@ function hasItalianLanguageMarker(text) {
   return false;
 }
 
+function withoutSubtitleLanguageLabels(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) =>
+      line.replace(
+        /(^|[^a-z0-9])(?:sub(?:titles?)?s?|sottotitoli)\s*(?:\([^)]*\)|\[[^\]]*\]|[:=][\s\S]*?(?=(?:audio|languages?|lingua)\s*[:=]|$))/gi,
+        "$1"
+      )
+    )
+    .join("\n");
+}
+
 export function languagesFromText(parsedLanguages = [], search = "") {
   const fromParsed = (Array.isArray(parsedLanguages) ? parsedLanguages : []).map(languageFor).filter(Boolean);
   if (fromParsed.length) {
     return fromParsed;
   }
-  const text = normalizeStreamSearchText(search);
+  // Stream language preferences concern audio. A formatted SUB (...) list can
+  // advertise Italian captions on an English-only source; its markers must
+  // not make that source pass an Italian audio filter after Unicode folding.
+  // Strip each presentation field separately. A trailing "Subtitles: ..."
+  // description must never consume the independent filename that follows it.
+  const fields = (Array.isArray(search) ? search : [search]).map((part) => withoutSubtitleLanguageLabels(normalizeStreamSearchText(part)));
+  const text = fields.join(" ");
   const matches = Object.entries(LANGUAGE_LABELS)
     .filter(([key, [code, label]]) => {
-      if (key === "IT") return hasItalianLanguageMarker(text);
+      if (key === "IT") return hasItalianLanguageMarker(text, fields);
       if (hasToken(text, code) || hasToken(text, label) || LANGUAGE_ALIASES[key]?.some((alias) => hasToken(text, alias))) return true;
       return Object.entries(LANGUAGE_FLAG_CODES).some(
         ([countryCode, language]) => language === key && new RegExp(`\\[${countryCode}\\]`, "i").test(text)
@@ -219,7 +249,7 @@ export function facts(stream = {}) {
   const visualTags = visualTagsFromText(parsed.hdr || [], text);
   const audioTags = audioTagsFromText(parsed.audio || [], text);
   const audioChannels = audioChannelsFromText(parsed.channels || [], text);
-  const languages = languagesFromText(parsed.languages || [], searchText(stream, { preserveCase: true }));
+  const languages = languagesFromText(parsed.languages || [], searchTextParts(stream));
   const codec = encodeFromText(parsed.codec, text);
   return {
     resolution,

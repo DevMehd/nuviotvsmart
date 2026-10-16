@@ -227,7 +227,7 @@ export function requestJson(
       throwIfAborted(requestSignal);
       assertTraktRequestContext(context);
       if (!String(requestClientId || "").trim()) {
-        throw new Error("Configure Trakt Client ID in Settings > Integrations > Trakt");
+        throw new Error("Trakt is unavailable in this app build");
       }
       const headers = {
         "Content-Type": "application/json",

@@ -81,6 +81,45 @@ export function applyNativeAudioTrackFlags(tracks, targetIndex, { preferEnabled 
   if (tracks[targetIndex]) setSelected(tracks[targetIndex], true);
 }
 
+// Native setters can accept disabling the old output while rejecting the new
+// one. Keep the previous output available when a VIDAA switch cannot confirm,
+// without writing to a replacement list or a superseding playback request.
+export function createNativeAudioSelectionRollback(tracks, { preferEnabled = false, isCurrent = () => true, getTracks = null } = {}) {
+  const snapshot = tracks.map((track) => {
+    let flags = [];
+    try {
+      const names = preferEnabled && typeof track.enabled === "boolean" ? ["enabled"] : ["enabled", "selected"];
+      flags = names.filter((name) => typeof track[name] === "boolean").map((name) => [name, track[name]]);
+    } catch (_) {
+      // An unreadable native snapshot cannot be restored reliably.
+    }
+    return { track, flags };
+  });
+  return (currentTracks) => {
+    const canRestore = () => {
+      if (!isCurrent()) return false;
+      const activeTracks = typeof getTracks === "function" ? getTracks() : currentTracks;
+      return activeTracks?.length === snapshot.length && snapshot.every(({ track }) => activeTracks.includes(track));
+    };
+    if (!canRestore()) return false;
+    // Restore the previously enabled output before disabling any other flags.
+    for (const enabled of [true, false]) {
+      for (const { track, flags } of snapshot) {
+        for (const [name, value] of flags) {
+          if (!canRestore()) return false;
+          if (value !== enabled) continue;
+          try {
+            if (track[name] !== value) track[name] = value;
+          } catch (_) {
+            // A firmware rejection must remain a failed selection.
+          }
+        }
+      }
+    }
+    return true;
+  };
+}
+
 export function nativeTextTrackSelectionMatches(tracks, targetIndex) {
   try {
     return (

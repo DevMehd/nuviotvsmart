@@ -17,12 +17,21 @@ const { createPlayerScreenMethods63 } =
   await import("../js/ui/screens/player/playerScreenMethods-63-get-source-request-key.js");
 const { createPlayerScreenMethods67 } =
   await import("../js/ui/screens/player/playerScreenMethods-67-render-episode-streams-view.js");
+const { formatPlaybackSourceName, resolvePlaybackSourceName } =
+  await import("../js/ui/screens/player/playbackDisplayText.js");
 
 for (const [decorated, readable] of [
   ["𝐈𝐓 𝘐𝘵 𝕀𝕥 ℐ𝒯 ＩＴ ⒾⓉ 🄸🅃 🅸🆃 🅘🅣", "IT It It IT IT IT IT IT IT"],
   ["𝐈t 🇮t I\u200bT I\u200dT I\u2060T", "It It IT IT IT"],
   ["🇮🇹🇬🇧 🇯🇵", "[IT][GB] [JP]"],
   ["🅸️🆃️ 𝟜𝕂", "IT 4K"],
+  [
+    "✓ ɪᴛ · ᴇɴ · sᴜʙ (ᴇɴ · ᴇɴᶠᵒʳᶜᵉᵈ · ᴇɴᶜᶜ · ᴇs · ɪᴛ · ɪᴛᶠᵒʳᶜᵉᵈ · ʀᴜ)",
+    "✓ it · en · sub (en · enforced · encc · es · it · itforced · ru)"
+  ],
+  ["Teach You A Lesson s₀₁·ᴇ₁₀", "Teach You A Lesson s01·e10"],
+  ["ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡxʏᴢ", "abcdefghijklmnopqrstuvwxyz"],
+  ["éàèìòù 1⁺2⁻3 ¼ ² ₄", "éàèìòù 1⁺2⁻3 ¼ 2 4"],
   ["Città 日本語 العربية 👩‍💻", "Città 日本語 العربية 👩‍💻"],
   ["�T \ud835", "�T \ud835"]
 ]) {
@@ -37,6 +46,7 @@ const flagPattern = new RegExp(normalizeStreamMatchPattern("^🇮🇹$"));
 assert.equal(flagPattern.test(normalizeStreamSearchText("🇮🇹")), true);
 assert.equal(flagPattern.test("I"), false, "A flag must not become a character class");
 assert.equal(new RegExp(normalizeStreamMatchPattern("\\🇮🇹")).test("[IT]"), true);
+assert.equal(new RegExp(normalizeStreamMatchPattern("\\bɪᴛ\\b")).test("audio it"), true);
 const flagClass = new RegExp(normalizeStreamMatchPattern("[🇮🇹]"));
 for (const ordinary of ["I", "T", "[", "]"]) assert.equal(flagClass.test(ordinary), false);
 assert.equal(normalizeStreamMatchPattern("[𝐀-𝐙]"), "[𝐀-𝐙]");
@@ -69,6 +79,21 @@ const source = {
 };
 const original = structuredClone(source);
 assert.equal(getStreamHeadline(source), "Source It");
+assert.equal(getStreamHeadline({ addonName: "𝐀𝐝𝐝𝐨𝐧 🇮🇹" }), "Addon [IT]");
+assert.equal(formatPlaybackSourceName("𝐅𝐇𝐃\\n🇮🇹\nCittà • 1080p"), "FHD · [IT] · Città • 1080p");
+assert.equal(resolvePlaybackSourceName(source), "Source It");
+assert.equal(resolvePlaybackSourceName({ addonName: "𝐀𝐝𝐝𝐨𝐧 🇮🇹" }), "Addon [IT]");
+assert.equal(resolvePlaybackSourceName({ ...source, isSynthetic: true }), "");
+// Sanitized metadata from the same AIOStreams episode used for the TV check.
+const aioMetadata = {
+  name: "1080P",
+  description: "Teach You A Lesson s₀₁·ᴇ₁₀\n✓ ɪᴛ · ᴇɴ · sᴜʙ (ᴇɴ · ɪᴛᶠᵒʳᶜᵉᵈ)"
+};
+assert.deepEqual(getStreamDescriptionLines(aioMetadata), [
+  "Teach You A Lesson s01·e10",
+  "✓ it · en · sub (en · itforced)"
+]);
+assert.equal(resolvePlaybackSourceName({ name: "AIO ɪᴛ · s₀₁·ᴇ₁₀" }), "AIO it · s01·e10");
 assert.deepEqual(getStreamDescriptionLines(source), [
   "Audio: IT",
   "[IT] / English",

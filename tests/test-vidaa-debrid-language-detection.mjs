@@ -67,6 +67,55 @@ assert.deepEqual(
 assert.deepEqual(languagesFromText([], "Example\nIt\n1080p"), ["IT"]);
 assert.deepEqual(languagesFromText([], "🇮🇹🇬🇧"), ["EN", "IT"]);
 
+// Public labels from the same AIOStreams episode response. The URL and file
+// identity are irrelevant to language inference and are deliberately absent.
+for (const [label, expected] of [
+  ["✓ ɪᴛ · ᴇɴ · sᴜʙ (ᴇɴ · ᴇɴᶠᵒʳᶜᵉᵈ · ɪᴛ · ɪᴛᶠᵒʳᶜᵉᵈ)", ["EN", "IT"]],
+  ["✓ ɪᴛ", ["IT"]],
+  ["✓ ᴇɴ · sᴜʙ (ᴇɴᶠᵒʳᶜᵉᵈ · ᴇɴ · ᴇs · ɪᴛ · ʀᴜ)", ["EN"]],
+  ["✓ sᴜʙ (ᴇɴᶜᶜ · ᴇs · ɪᴛ · ʀᴜ)", []],
+  ["Audio: it\nSubtitles: English", ["IT"]],
+  ["Audio: English\nSubtitles: Italian", ["EN"]],
+  ["Subtitles: Italian | Audio: English", ["EN"]],
+  ["Audio: English | Subs [IT]", ["EN"]],
+  ["🗣️ en · it · Sub (Italian)", ["EN", "IT"]],
+  ["Suburbia.2026.ITA.1080p", ["IT"]]
+]) {
+  assert.deepEqual(languagesFromText([], label), expected, `Audio and subtitle labels: ${label}`);
+  assert.deepEqual(facts({ description: label }).languages, expected, `Source facts: ${label}`);
+}
+assert.deepEqual(
+  facts({
+    description: "✓ sᴜʙ (ɪᴛ)",
+    behaviorHints: { filename: "Example.S01E10.ITA-KOR-ENG.MULTI.1080p.mkv" }
+  }).languages,
+  ["EN", "IT", "KO", "MULTI"],
+  "Filename audio markers survive a separate subtitle-only display label"
+);
+assert.deepEqual(
+  facts({
+    description: "Subtitles: Italian",
+    behaviorHints: { filename: "Example.S01E10.ITA-KOR-ENG.MULTI.1080p.mkv" }
+  }).languages,
+  ["EN", "IT", "KO", "MULTI"],
+  "An open-ended subtitle description cannot consume the independent filename"
+);
+assert.deepEqual(
+  facts({ name: "1080p", description: "✓ ɪᴛ" }).languages,
+  ["IT"],
+  "An audio line stays explicit when a preceding source name exists"
+);
+assert.deepEqual(
+  facts({ name: "It", description: "1080p" }).languages,
+  [],
+  "Field boundaries must not turn the movie title It into a language label"
+);
+assert.deepEqual(
+  languagesFromText(["English"], "✓ ɪᴛ · sᴜʙ (ᴇɴ)"),
+  ["EN"],
+  "Structured audio languages retain precedence over formatted labels"
+);
+
 for (const [flag, language] of [
   ["🇬🇧", "EN"],
   ["🇺🇸", "EN"],

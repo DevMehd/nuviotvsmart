@@ -1178,7 +1178,7 @@
     <string name="trakt_code_expires">Code expires in %1$s</string>
     <string name="trakt_token_refreshes">Trakt access token refreshes in %1$s</string>
     <string name="trakt_login_instruction">Press Login to start Trakt device authentication. A QR code will appear here.</string>
-    <string name="trakt_missing_credentials">Set your Client ID and Client Secret in Integrations &gt; Trakt.</string>
+    <string name="trakt_missing_credentials">Trakt is unavailable in this app build.</string>
     <string name="trakt_watch_progress_title">Watch Progress</string>
     <string name="trakt_watch_progress_subtitle">Choose which progress source powers resume and continue watching</string>
     <string name="trakt_watch_progress_dialog_title">Watch Progress</string>
@@ -3040,6 +3040,8 @@
     <string name="settings_integration_back">Back to integrations</string>
     <string name="player_audio_dts_conversion_warning">DTS audio may not work on this TV because automatic conversion is unavailable for this track.</string>
     <string name="player_audio_conversion_warning">Audio may not work on this TV because automatic conversion is unavailable for this track.</string>
+    <string name="player_audio_automatic">Automatic audio</string>
+    <string name="player_audio_native_selection_unavailable">This TV does not expose this track for selection.</string>
 
     <string name="mdblist_show_on_hero_title">Use Ratings on Hero</string>
     <string name="mdblist_show_on_hero_subtitle">Show MDBList ratings on hero carousel (modern and classic/grid)</string>

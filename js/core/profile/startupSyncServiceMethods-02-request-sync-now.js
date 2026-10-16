@@ -57,7 +57,6 @@ export function createStartupSyncServiceMethods02() {
     sleep,
     normalizeProfileId,
     currentSyncKey,
-    canUsePersistedWarmSync,
     runSurface,
     notifySyncPullCompleted
   } = internals;
@@ -82,7 +81,14 @@ export function createStartupSyncServiceMethods02() {
         return false;
       }
       const generation = this.runGeneration;
+      const profileId = ProfileManager.getActiveProfileId();
+      const key = currentSyncKey(profileId);
       if (this.inFlightPromise && this.inFlightGeneration === generation) {
+        if (this.inFlightKey !== key) {
+          await this.inFlightPromise.catch(() => false);
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) return false;
+          return this.requestSyncNow({ force, includeProfileSettings, allowWarmRepeat, pushAfterPull, notifyPullCompleted });
+        }
         this.queuePendingSyncRequest({
           force,
           includeProfileSettings,
@@ -96,11 +102,15 @@ export function createStartupSyncServiceMethods02() {
         return false;
       }
 
-      const profileId = ProfileManager.getActiveProfileId();
-      const key = currentSyncKey(profileId);
       const now = Date.now();
       const coversProfileSettings = !includeProfileSettings || this.lastPulledIncludedProfileSettings === true;
-      if (force && this.lastPulledKey === key && coversProfileSettings && now - this.lastPulledAtMs < FORCE_RESYNC_MIN_INTERVAL_MS) {
+      if (
+        force &&
+        this.lastPullCompleted &&
+        this.lastPulledKey === key &&
+        coversProfileSettings &&
+        now - this.lastPulledAtMs < FORCE_RESYNC_MIN_INTERVAL_MS
+      ) {
         if (notifyPullCompleted) {
           notifySyncPullCompleted({
             profileId: normalizeProfileId(profileId),
@@ -111,44 +121,16 @@ export function createStartupSyncServiceMethods02() {
         }
         return true;
       }
-      if (!force && !allowWarmRepeat && canUsePersistedWarmSync(key, includeProfileSettings, now)) {
-        // Android's warm cycle runs the same broad remote pull as a cold
-        // startup, including the plugin surface. Keep the service lazy while
-        // preserving that timing and ordering instead of pulling plugins only.
-        const warmPullSucceeded = await this.syncPull({
-          includeProfileScoped: this.profileScopedSyncEnabled,
-          includeProfileSettings,
-          generation,
-          profileId,
-          key
-        });
-        if (warmPullSucceeded && this.isCurrentRun(generation) && !isSyncBackoffActive()) {
-          this.markFullPullSucceeded(key, includeProfileSettings);
-          this.lastPullCompleted = true;
-          resetSyncBackoff();
-          if (notifyPullCompleted) {
-            notifySyncPullCompleted({
-              profileId: normalizeProfileId(profileId),
-              includeProfileScoped: Boolean(this.profileScopedSyncEnabled),
-              changedHomeInputs: Boolean(this.lastPullChangedHomeInputs),
-              completedAt: Date.now()
-            });
-          }
-          return true;
-        }
-        this.lastPullCompleted = false;
-        if (isSyncBackoffActive()) {
-          this.scheduleBackoffRetry({ notifyPullCompleted });
-        }
-        return false;
-      }
-
+      // Warm and cold starts both pull the complete account snapshot. Share the
+      // same in-flight promise so Home and a profile switch can await either.
       let requestPromise = null;
-      requestPromise = (async () => {
-        this.inFlight = true;
-        this.lastPullCompleted = false;
+      requestPromise = Promise.resolve().then(async () => {
         let completed = false;
+        let changedHomeInputs = false;
         try {
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) return false;
+          this.inFlight = true;
+          this.lastPullCompleted = false;
           for (let attempt = 1; attempt <= MAX_PULL_ATTEMPTS; attempt += 1) {
             if (!this.isCurrentRun(generation) || !AuthManager.isAuthenticated) {
               break;
@@ -168,11 +150,14 @@ export function createStartupSyncServiceMethods02() {
               profileId,
               key
             });
-            if (didComplete && this.isCurrentRun(generation) && !isSyncBackoffActive()) {
+            if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) break;
+            changedHomeInputs = changedHomeInputs || Boolean(this.lastPullChangedHomeInputs);
+            this.markHomeInputsChanged(changedHomeInputs);
+            if (didComplete && this.isCurrentRun(generation) && this.isCurrentProfile(profileId, key) && !isSyncBackoffActive()) {
               if (pushAfterPull && this.profileScopedSyncEnabled) {
                 await this.syncPush({ generation, profileId, key });
               }
-              if (!isSyncBackoffActive()) {
+              if (this.isCurrentRun(generation) && this.isCurrentProfile(profileId, key) && !isSyncBackoffActive()) {
                 this.markFullPullSucceeded(key, includeProfileSettings);
                 resetSyncBackoff();
                 completed = true;
@@ -193,31 +178,53 @@ export function createStartupSyncServiceMethods02() {
               this.scheduleBackoffRetry({ notifyPullCompleted });
               break;
             }
+            if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) break;
             if (attempt < MAX_PULL_ATTEMPTS) {
               await sleep(3000, AuthManager.getSessionSignal?.());
             }
           }
-          this.lastPullCompleted = completed;
+          if (
+            !completed &&
+            changedHomeInputs &&
+            notifyPullCompleted &&
+            this.isCurrentRun(generation) &&
+            this.isCurrentProfile(profileId, key)
+          ) {
+            // A later write may fail after a pull already applied fresh data.
+            // Publish those inputs now, including when backoff moves the retry
+            // into a separate request, while retaining the failed result.
+            notifySyncPullCompleted({
+              profileId: normalizeProfileId(profileId),
+              includeProfileScoped: Boolean(this.profileScopedSyncEnabled),
+              changedHomeInputs: true,
+              succeeded: false,
+              completedAt: Date.now()
+            });
+          }
+          if (this.isCurrentRun(generation)) this.lastPullCompleted = completed;
           return completed;
         } finally {
-          this.inFlight = false;
           if (this.inFlightPromise === requestPromise) {
+            this.inFlight = false;
             this.inFlightPromise = null;
             this.inFlightGeneration = 0;
+            this.inFlightKey = null;
           }
-          const pending = this.pendingSyncRequest;
-          this.pendingSyncRequest = null;
+          const pending = this.isCurrentRun(generation) ? this.pendingSyncRequest : null;
+          if (this.isCurrentRun(generation)) this.pendingSyncRequest = null;
           if (pending && this.isCurrentRun(generation)) {
             setTimeout(() => {
+              if (!this.isCurrentRun(generation)) return;
               void this.requestSyncNow(pending).catch((error) => {
                 console.warn("Queued startup sync failed", error);
               });
             }, 0);
           }
         }
-      })();
+      });
       this.inFlightPromise = requestPromise;
       this.inFlightGeneration = generation;
+      this.inFlightKey = key;
       return requestPromise;
     },
     async syncPull({
@@ -246,7 +253,7 @@ export function createStartupSyncServiceMethods02() {
         }
       }
       await ProfileSyncService.pull();
-      if (!this.isCurrentProfile(profileId, key)) {
+      if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) {
         return false;
       }
       const profileStatus = ProfileSyncService.getLastPullStatus?.();
@@ -284,6 +291,7 @@ export function createStartupSyncServiceMethods02() {
             profileSettingsSignatureAfter == null ||
             profileSettingsSignatureBefore !== profileSettingsSignatureAfter
         );
+        if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) return false;
         if (profileSettingsResult.ok && profileSettingsResult.value) {
           await runSurface("profile settings theme", async () => {
             await I18n.init();
@@ -304,7 +312,7 @@ export function createStartupSyncServiceMethods02() {
         )
       ]);
 
-      if (!this.isCurrentProfile(profileId, key)) {
+      if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key)) {
         return false;
       }
 
@@ -340,7 +348,7 @@ export function createStartupSyncServiceMethods02() {
       const addonPullStatus = LibrarySyncService.getLastPullStatus?.();
       this.markHomeInputsChanged(addonUrlsBefore !== addonUrlsAfter || addonPullStatus?.state !== "ok");
 
-      if (!this.isCurrentRun(generation) || isSyncBackoffActive()) {
+      if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key) || isSyncBackoffActive()) {
         return false;
       }
       const watchedItemsResult = await runSurface("watched items", async () => {
@@ -348,7 +356,9 @@ export function createStartupSyncServiceMethods02() {
         return WatchedItemsSyncService.getLastPullChangedHomeInputs?.() === false ? false : true;
       });
       this.markHomeInputsChanged(surfaceChangedHomeInputs(watchedItemsResult));
-      if (!this.isCurrentRun(generation) || isSyncBackoffActive()) {
+      const watchedStatus = WatchedItemsSyncService.getLastPullStatus();
+      const watchedSucceeded = watchedItemsResult.ok && ["ok", "skipped"].includes(watchedStatus);
+      if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key) || isSyncBackoffActive()) {
         return false;
       }
       const watchProgressResult = await runSurface("watch progress", async () => {
@@ -356,7 +366,30 @@ export function createStartupSyncServiceMethods02() {
         return WatchProgressSyncService.getLastPullChangedHomeInputs?.() === false ? false : true;
       });
       this.markHomeInputsChanged(surfaceChangedHomeInputs(watchProgressResult));
-      return this.isCurrentRun(generation) && !isSyncBackoffActive();
+      const progressStatus = WatchProgressSyncService.getLastPullStatus();
+      const progressSucceeded = watchProgressResult.ok && ["ok", "skipped"].includes(progressStatus);
+      // Playback may have persisted locally just before the TV was stopped,
+      // before its debounced push ran. Reconcile those writes at restart rather
+      // than waiting for the next foreground or fifteen-minute periodic cycle.
+      let writesSucceeded = true;
+      for (const [label, syncService, status] of [
+        ["watched items", WatchedItemsSyncService, watchedStatus],
+        ["watch progress", WatchProgressSyncService, progressStatus]
+      ]) {
+        if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, key) || isSyncBackoffActive()) return false;
+        if (status === "ok" && syncService.getLastPullHadUnsynced?.()) {
+          const pushResult = await runSurface(`${label} startup push`, () => syncService.push(activeProfileId));
+          writesSucceeded = writesSucceeded && pushResult.ok && pushResult.value !== false;
+        }
+      }
+      return (
+        watchedSucceeded &&
+        progressSucceeded &&
+        writesSucceeded &&
+        this.isCurrentRun(generation) &&
+        this.isCurrentProfile(profileId, key) &&
+        !isSyncBackoffActive()
+      );
     },
     async requestWatchStateSyncNow() {
       if (!this.started || !this.profileScopedSyncEnabled || !AuthManager.isAuthenticated) {
@@ -366,6 +399,11 @@ export function createStartupSyncServiceMethods02() {
       const profileId = ProfileManager.getActiveProfileId();
       const profileKey = currentSyncKey(profileId);
       if (this.watchStateInFlightPromise && this.watchStateInFlightGeneration === generation) {
+        if (this.watchStateInFlightKey !== profileKey) {
+          await this.watchStateInFlightPromise.catch(() => false);
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) return false;
+          return this.requestWatchStateSyncNow();
+        }
         return this.watchStateInFlightPromise;
       }
       if (isSyncBackoffActive()) {
@@ -378,26 +416,35 @@ export function createStartupSyncServiceMethods02() {
       let requestPromise = null;
       requestPromise = (async () => {
         try {
-          if (!this.isCurrentProfile(profileId, profileKey)) {
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) {
             return false;
           }
           const watchedResult = await runSurface("periodic watched items", () => WatchedItemsSyncService.pull(profileId));
-          if (!watchedResult.ok) {
-            return false;
+          const watchedStatus = WatchedItemsSyncService.getLastPullStatus();
+          const watchedSucceeded = watchedResult.ok && ["ok", "skipped"].includes(watchedStatus);
+          let writesSucceeded = true;
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) return false;
+          if (watchedSucceeded && watchedStatus === "ok" && WatchedItemsSyncService.getLastPullHadUnsynced?.() && !isSyncBackoffActive()) {
+            const pushResult = await runSurface("periodic watched items push", () => WatchedItemsSyncService.push(profileId));
+            writesSucceeded = writesSucceeded && pushResult.ok && pushResult.value !== false;
           }
-          if (watchedResult.ok && WatchedItemsSyncService.getLastPullHadUnsynced?.() && !isSyncBackoffActive()) {
-            await runSurface("periodic watched items push", () => WatchedItemsSyncService.push(profileId));
-          }
+          let progressSucceeded = false;
           if (!isSyncBackoffActive()) {
-            if (!this.isCurrentProfile(profileId, profileKey)) {
+            if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) {
               return false;
             }
             const progressResult = await runSurface("periodic watch progress", () => WatchProgressSyncService.pull(profileId));
-            if (!progressResult.ok) {
-              return false;
-            }
-            if (progressResult.ok && WatchProgressSyncService.getLastPullHadUnsynced?.() && !isSyncBackoffActive()) {
-              await runSurface("periodic watch progress push", () => WatchProgressSyncService.push(profileId));
+            const progressStatus = WatchProgressSyncService.getLastPullStatus();
+            progressSucceeded = progressResult.ok && ["ok", "skipped"].includes(progressStatus);
+            if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) return false;
+            if (
+              progressSucceeded &&
+              progressStatus === "ok" &&
+              WatchProgressSyncService.getLastPullHadUnsynced?.() &&
+              !isSyncBackoffActive()
+            ) {
+              const pushResult = await runSurface("periodic watch progress push", () => WatchProgressSyncService.push(profileId));
+              writesSucceeded = writesSucceeded && pushResult.ok && pushResult.value !== false;
             }
           }
           if (isSyncBackoffActive()) {
@@ -417,16 +464,18 @@ export function createStartupSyncServiceMethods02() {
               completedAt: Date.now()
             });
           }
-          return requestIsCurrent;
+          return requestIsCurrent && watchedSucceeded && progressSucceeded && writesSucceeded;
         } finally {
           if (this.watchStateInFlightPromise === requestPromise) {
             this.watchStateInFlightPromise = null;
             this.watchStateInFlightGeneration = 0;
+            this.watchStateInFlightKey = null;
           }
         }
       })();
       this.watchStateInFlightPromise = requestPromise;
       this.watchStateInFlightGeneration = generation;
+      this.watchStateInFlightKey = profileKey;
       return requestPromise;
     }
   };

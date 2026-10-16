@@ -213,6 +213,7 @@ export function createPlayerControllerMethods01() {
       return nativeVideoEngine.canPlay(this.video, mimeType);
     },
     isUnsupportedSourceError(error) {
+      if (String(error?.name || "").toLowerCase() === "notsupportederror") return true;
       const message = String(error?.message || "").toLowerCase();
       return message.includes("no supported source") || message.includes("no supported sources") || message.includes("not supported");
     },

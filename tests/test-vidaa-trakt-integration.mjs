@@ -82,84 +82,126 @@ async function check(name, run) {
 
 try {
   await check(
-    "custom app credentials are isolated by profile and stay off preference sync",
+    "legacy manual credentials cannot shadow the packaged Nuvio application",
     async () => {
       assert.deepEqual(getTraktClientCredentials(), {
         clientId: "test-client",
         clientSecret: "test-secret"
       });
-      TraktClientSettingsStore.set({ clientId: "user-client" });
-      assert.deepEqual(getTraktClientCredentials(), { clientId: "user-client", clientSecret: "" });
-      assert.equal(TraktAuthService.hasRequiredCredentials(), false);
-      TraktClientSettingsStore.set({ clientSecret: "user-secret" });
+      const legacy = JSON.stringify({
+        version: 1,
+        profiles: { 1: { clientId: "obsolete-incomplete-client", clientSecret: "" } }
+      });
+      stored.set("traktClientSettings", legacy);
+      token("profile-one", "refresh-one", false);
+      assert.deepEqual(getTraktClientCredentials(), {
+        clientId: "test-client",
+        clientSecret: "test-secret"
+      });
       assert.equal(TraktAuthService.hasRequiredCredentials(), true);
+      assert.equal(TraktAuthStore.get("1").accessToken, "profile-one");
+      assert.equal(stored.get("traktClientSettings"), legacy);
       assert.equal(stored.has("profileSettingsSyncPendingProfiles"), false);
       await ProfileManager.setActiveProfile("2");
       assert.deepEqual(getTraktClientCredentials(), {
         clientId: "test-client",
         clientSecret: "test-secret"
       });
-      assert.deepEqual(TraktClientSettingsStore.get(), { clientId: "", clientSecret: "" });
+      assert.deepEqual(TraktClientSettingsStore.get(), {
+        clientId: "test-client",
+        clientSecret: "test-secret"
+      });
     }
   );
 
-  await check(
-    "changing app identity disconnects only that profile and unchanged saves keep auth",
-    async () => {
-      TraktClientSettingsStore.set({ clientId: "user-client", clientSecret: "user-secret" });
-      token("profile-one", "refresh-one", false);
-      token("profile-two", "refresh-two", false, "2");
-      TraktClientSettingsStore.set({ clientId: "user-client" });
-      assert.equal(TraktAuthStore.get("1").accessToken, "profile-one");
-      TraktClientSettingsStore.set({ clientSecret: "replacement-secret" });
-      assert.equal(TraktAuthStore.get("1").accessToken, null);
-      assert.equal(TraktAuthStore.get("2").accessToken, "profile-two");
-    }
-  );
-
-  await check(
-    "API calls and token exchange use profile credentials without reloading",
-    async () => {
-      TraktClientSettingsStore.set({ clientId: "user-client", clientSecret: "user-secret" });
-      token();
-      globalThis.fetch = async (url, options) => {
-        assert.equal(options.headers["trakt-api-key"], "user-client");
-        if (url.endsWith("/oauth/token")) {
-          assert.equal(JSON.parse(options.body).client_id, "user-client");
-          assert.equal(JSON.parse(options.body).client_secret, "user-secret");
-          return json(refreshed());
-        }
-        assert.equal(options.headers.Authorization, "Bearer access-new");
-        return json([]);
-      };
-      const accessToken = await TraktAuthService.getValidAccessToken();
-      assert.equal(
-        (await requestJson("/sync/watchlist", { authorization: `Bearer ${accessToken}` })).response
-          .ok,
-        true
-      );
-    }
-  );
-
-  await check("integration fields mask credentials and expose clear/save actions", async () => {
-    TraktClientSettingsStore.set({
-      clientId: "hidden-client-value",
-      clientSecret: "hidden-secret-value"
-    });
-    const screen = Object.create(SettingsScreen);
-    screen.actionMap = new Map();
-    const markup = screen.renderIntegrationDetail({}, "trakt");
-    assert.equal(markup.includes("hidden-client-value"), false);
-    assert.equal(markup.includes("hidden-secret-value"), false);
-    screen.actionMap.get("integration:trakt:clientSecret")();
-    assert.equal(screen.textDialog.inputType, "password");
-    assert.ok(screen.renderTextDialog().includes('type="password"'));
-    await screen.textDialog.onSubmit("updated-secret");
-    assert.equal(TraktClientSettingsStore.get().clientSecret, "updated-secret");
-    await screen.textDialog.onClear();
-    assert.equal(TraktClientSettingsStore.get().clientSecret, "");
-    assert.equal(TraktAuthService.hasRequiredCredentials(), false);
+  await check("reopening credential access preserves existing profile tokens", async () => {
+    token("profile-one", "refresh-one", false);
+    token("profile-two", "refresh-two", false, "2");
+    getTraktClientCredentials("1");
+    getTraktClientCredentials("2");
+    assert.equal(TraktAuthStore.get("1").accessToken, "profile-one");
+    assert.equal(TraktAuthStore.get("2").accessToken, "profile-two");
+    assert.equal(TraktClientSettingsStore.set, undefined);
   });
+
+  await check("API calls and token exchange use the packaged Nuvio application", async () => {
+    token();
+    globalThis.fetch = async (url, options) => {
+      assert.equal(options.headers["trakt-api-key"], "test-client");
+      if (url.endsWith("/oauth/token")) {
+        assert.equal(JSON.parse(options.body).client_id, "test-client");
+        assert.equal(JSON.parse(options.body).client_secret, "test-secret");
+        return json(refreshed());
+      }
+      assert.equal(options.headers.Authorization, "Bearer access-new");
+      return json([]);
+    };
+    const accessToken = await TraktAuthService.getValidAccessToken();
+    assert.equal(
+      (await requestJson("/sync/watchlist", { authorization: `Bearer ${accessToken}` })).response
+        .ok,
+      true
+    );
+  });
+
+  await check(
+    "integration and tracking screens expose device linking without app credential fields",
+    async () => {
+      const screen = Object.create(SettingsScreen);
+      screen.actionMap = new Map();
+      const markup = screen.renderIntegrationDetail({}, "trakt");
+      assert.equal(markup.includes("Client ID"), false);
+      assert.equal(markup.includes("Client Secret"), false);
+      assert.equal(screen.actionMap.has("integration:trakt:clientSecret"), false);
+      assert.equal(screen.actionMap.has("integration:trakt:clientId"), false);
+      assert.equal(typeof screen.actionMap.get("integration:trakt:account"), "function");
+      const tracking = Object.create(TraktScreen);
+      tracking.actionMap = new Map();
+      const accountMarkup = tracking.renderTrackingTraktAccount({}, false, false);
+      assert.equal(accountMarkup.includes("Client ID"), false);
+      assert.equal(accountMarkup.includes("Client Secret"), false);
+      assert.equal(accountMarkup.includes("tracking:traktConfigure"), false);
+      assert.ok(accountMarkup.includes("tracking:traktConnect"));
+    }
+  );
+
+  await check(
+    "device linking uses the upstream code and token endpoints, then reuses approval state",
+    async () => {
+      const requests = [];
+      globalThis.fetch = async (url, options) => {
+        requests.push(url);
+        assert.equal(options.headers["trakt-api-key"], "test-client");
+        if (url.endsWith("/oauth/device/code")) {
+          assert.equal(options.method, "POST");
+          assert.deepEqual(JSON.parse(options.body), { client_id: "test-client" });
+          return json({
+            device_code: "device-flow",
+            user_code: "USER-CODE",
+            verification_url: "https://trakt.tv/activate",
+            expires_in: 600,
+            interval: 5
+          });
+        }
+        assert.ok(url.endsWith("/oauth/device/token"));
+        assert.deepEqual(JSON.parse(options.body), {
+          code: "device-flow",
+          client_id: "test-client",
+          client_secret: "test-secret"
+        });
+        return json({ error: "authorization_pending" }, 400);
+      };
+      const flow = await TraktAuthService.startDeviceAuth();
+      assert.equal(flow.userCode, "USER-CODE");
+      assert.equal(flow.verificationUrl, "https://trakt.tv/activate");
+      assert.equal(flow.pollInterval, 5);
+      assert.equal((await TraktAuthService.startDeviceAuth()).deviceCode, "device-flow");
+      assert.equal(requests.length, 1, "Restart/re-entry keeps the unexpired activation code");
+      assert.deepEqual(await TraktAuthService.pollDeviceToken(), { type: "pending" });
+      assert.equal(TraktAuthStore.get().deviceCode, "device-flow");
+      assert.equal(requests.length, 2);
+    }
+  );
 
   await check("honors Trakt's returned expiry instead of extending one-day tokens", async () => {
     assert.equal(normalizeTraktTokenLifetimeSeconds(86400), 86400);
@@ -325,14 +367,12 @@ try {
     await check(
       `${name} pagination aborts before mixing two profiles' app credentials`,
       async () => {
-        TraktClientSettingsStore.set({ clientId: "client-one", clientSecret: "secret-one" }, "1");
-        TraktClientSettingsStore.set({ clientId: "client-two", clientSecret: "secret-two" }, "2");
         token("profile-one", "refresh-one", false);
         token("profile-two", "refresh-two", false, "2");
         let requests = 0;
         globalThis.fetch = async (_url, options) => {
           requests += 1;
-          assert.equal(options.headers["trakt-api-key"], "client-one");
+          assert.equal(options.headers["trakt-api-key"], "test-client");
           assert.equal(options.headers.Authorization, "Bearer profile-one");
           const response = json(Array(count).fill(entry), 200, { "X-Pagination-Page-Count": "2" });
           const getHeader = response.headers.get.bind(response.headers);
@@ -357,8 +397,6 @@ try {
     ["library request", () => authorizedTraktRequest("/sync/watchlist")]
   ]) {
     await check(`${name} keeps its profile across the token await`, async () => {
-      TraktClientSettingsStore.set({ clientId: "client-one", clientSecret: "secret-one" }, "1");
-      TraktClientSettingsStore.set({ clientId: "client-two", clientSecret: "secret-two" }, "2");
       let requests = 0;
       globalThis.fetch = async () => {
         requests += 1;
@@ -481,7 +519,10 @@ try {
       requests += 1;
       return json([]);
     };
-    await assert.rejects(requestJson("/sync/watchlist", { clientId: "" }), /Integrations > Trakt/);
+    await assert.rejects(
+      requestJson("/sync/watchlist", { clientId: "" }),
+      /unavailable in this app build/
+    );
     assert.equal(requests, 0);
   });
 

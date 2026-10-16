@@ -5,6 +5,7 @@ import {
   nativeTrackListToArray,
   nativeAudioTrackSelectionMatches,
   applyNativeAudioTrackFlags,
+  createNativeAudioSelectionRollback,
   nativeTextTrackSelectionMatches,
   confirmNativeTrackSelection
 } from "./playerControllerMethods-02-is-likely-direct-file-url.js";
@@ -83,14 +84,21 @@ export function createPlayerControllerMethods15() {
       }
 
       const video = this.video;
+      const targetTrack = tracks[targetIndex];
       const videoSource = video.src;
       const playRequestToken = this.playRequestToken;
+      const playbackEngine = this.playbackEngine;
+      const hlsInstance = this.hlsInstance;
+      const dashInstance = this.dashInstance;
       const previousPending = this.pendingNativeAudioTrackSelection;
       const supersedesPending = Boolean(previousPending && previousPending.video === video && previousPending.source === videoSource);
       const isCurrent = () =>
         this.video === video &&
         video.src === videoSource &&
         this.playRequestToken === playRequestToken &&
+        this.playbackEngine === playbackEngine &&
+        this.hlsInstance === hlsInstance &&
+        this.dashInstance === dashInstance &&
         this.nativeAudioTrackSelectionToken === requestToken;
 
       const applySelection = () => {
@@ -111,15 +119,27 @@ export function createPlayerControllerMethods15() {
       this.selectedWebOsEmbeddedAudioTrackIndex = -1;
       if (!supersedesPending && nativeAudioTrackSelectionMatches(tracks, targetIndex)) return true;
       this.pendingNativeAudioTrackSelection = null;
+      const rollback = Platform.isVidaa()
+        ? createNativeAudioSelectionRollback(tracks, {
+            preferEnabled: true,
+            isCurrent,
+            getTracks: () => this.nativeAudioTrackListToArray()
+          })
+        : null;
+      const finishSelection = (applied) => {
+        if (!applied && rollback) rollback(this.nativeAudioTrackListToArray());
+        return applied;
+      };
       applySelection();
-      const result = confirmNativeTrackSelection(
-        () => nativeAudioTrackSelectionMatches(this.nativeAudioTrackListToArray(), targetIndex),
-        isCurrent
-      );
-      if (!result || typeof result.then !== "function") return result;
+      const result = confirmNativeTrackSelection(() => {
+        const currentTracks = this.nativeAudioTrackListToArray();
+        const currentIndex = Platform.isVidaa() ? currentTracks.indexOf(targetTrack) : targetIndex;
+        return nativeAudioTrackSelectionMatches(currentTracks, currentIndex);
+      }, isCurrent);
+      if (!result || typeof result.then !== "function") return finishSelection(result);
       const pending = { video, source: videoSource };
       this.pendingNativeAudioTrackSelection = pending;
-      return result.finally(() => {
+      return result.then(finishSelection).finally(() => {
         if (this.pendingNativeAudioTrackSelection === pending) this.pendingNativeAudioTrackSelection = null;
       });
     },

@@ -241,13 +241,13 @@ export async function preloadMatchedStreamBadgeImages(streams = [], settings = S
 }
 
 export function getStreamHeadline(stream = {}) {
+  const readableText = Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText : String;
   const primary = [stream.name, stream.title, stream.description].find((value) => String(value || "").trim());
   if (!primary) {
-    return stream.addonName || "Unknown source";
+    return readableText(stream.addonName || "Unknown source");
   }
   const firstLine = String(primary).split(/\r?\n/)[0].trim();
-  const displayLine = Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText(firstLine) : firstLine;
-  return displayLine || stream.addonName || "Unknown source";
+  return readableText(firstLine || stream.addonName || "Unknown source");
 }
 
 export function getStreamQuality(stream = {}) {
