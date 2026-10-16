@@ -11,6 +11,9 @@ const { createHomeScreenMethods24 } =
   await import("../js/ui/screens/home/homeScreenMethods-24-schedule-home-lazy-image-hydration.js");
 const { createHomeScreenMethods30 } =
   await import("../js/ui/screens/home/homeScreenMethods-30-cleanup.js");
+const { cancelVidaaHomePosterPrefetches } =
+  await import("../js/ui/screens/home/vidaaHomePosterPrefetch.js");
+const owners = [];
 
 const originalPerformance = Object.getOwnPropertyDescriptor(globalThis, "performance");
 const originalDateNow = Date.now;
@@ -35,6 +38,7 @@ globalThis.clearTimeout = (id) => timers.delete(id);
 Date.now = () => wallTime;
 
 function reset(platform = "vidaa", clock = { now: () => time }) {
+  owners.splice(0).forEach(cancelVidaaHomePosterPrefetches);
   globalThis.__NUVIO_PLATFORM__ = platform;
   Platform.current = null;
   resetTvRuntimePerformanceProfile();
@@ -47,19 +51,22 @@ function reset(platform = "vidaa", clock = { now: () => time }) {
 }
 
 function frame() {
-  assert.equal(frames.size, 1, "Only one image-drain frame may be pending");
-  const [id, callback] = frames.entries().next().value;
-  frames.delete(id);
-  callback(time);
+  assert.ok(frames.size > 0, "Image work schedules a continuation");
+  const pending = [...frames.values()];
+  frames.clear();
+  pending.forEach((callback) => callback(time));
 }
 
 function image(id, cost = 0) {
   const result = Object.assign(new HTMLImageElement(), {
     isConnected: true,
+    complete: true,
+    naturalWidth: 200,
     dataset: { src: id },
     closest: () => null,
     removeAttribute(name) {
       if (name === "data-src") delete this.dataset.src;
+      else if (name === "src") delete this.currentSrc;
     }
   });
   Object.defineProperty(result, "src", {
@@ -83,6 +90,7 @@ function surface(images) {
     isVidaaHomeLoadingBusy: () => false,
     getCurrentFocusedNode: () => null
   };
+  owners.push(owner);
   owner.commitHomeLazyImageSources(
     images.map((item) => ({ image: item, src: item.dataset.src, priority: 2 }))
   );
@@ -94,10 +102,12 @@ try {
   {
     const owner = surface(Array.from({ length: 10 }, (_, index) => image(`fast-${index}`)));
     frame();
-    assert.equal(assigned.length, 4, "Fast work retains the four-image limit");
+    assert.equal(assigned.length, 0, "Viewport jobs join the shared source queue");
     frame();
-    assert.equal(assigned.length, 8);
+    assert.equal(assigned.length, 2, "Native work starts at most twice per frame");
     frame();
+    assert.equal(assigned.length, 4);
+    while (frames.size) frame();
     assert.equal(assigned.length, 10);
     assert.equal(owner.homeLazyImageCommitQueue.length, 0);
     assert.equal(frames.size, 0);
@@ -116,6 +126,8 @@ try {
       { contains: (candidate) => candidate === images[1] },
       focusedRow
     );
+    frame();
+    assert.deepEqual(assigned, [], "Enqueueing does not bypass the source budget");
     frame();
     assert.deepEqual(assigned, ["focused"], "One costly focused image progresses before yielding");
     frame();
@@ -165,6 +177,7 @@ try {
     frame();
     assert.equal(owner.homeLazyImageCommitQueue.length, 1);
     frame();
+    frame();
     assert.deepEqual(assigned, ["expired-24"]);
     assert.equal(frames.size, 0);
   }
@@ -181,6 +194,7 @@ try {
     reset("vidaa", clock === undefined ? null : clock);
     const owner = surface(Array.from({ length: 5 }, (_, index) => image(`fallback-${index}`, 2)));
     frame();
+    frame();
     assert.equal(assigned.length, 2, "Wall-time fallback yields at four milliseconds");
     while (frames.size) frame();
     assert.equal(owner.homeLazyImageCommitQueue.length, 0);
@@ -189,6 +203,7 @@ try {
   reset("vidaa", { now: () => -time });
   {
     surface(Array.from({ length: 5 }, (_, index) => image(`backward-${index}`, 2)));
+    frame();
     frame();
     assert.equal(
       assigned.length,
@@ -212,6 +227,7 @@ try {
   reset();
   {
     const owner = surface([image("cleanup", 8), image("cleanup-later", 8)]);
+    frame();
     frame();
     Object.assign(owner, createHomeScreenMethods30(), {
       hasLoadedOnce: true,
@@ -266,7 +282,7 @@ try {
     assert.equal(frames.size, 0);
   }
   console.log(
-    "VIDAA image frame budget passed: four milliseconds, four assignments, bounded stale scans, clock fallback, focus priority and lifecycle isolation."
+    "VIDAA image frame budget passed: four milliseconds, two native starts, bounded stale scans, clock fallback, focus priority and lifecycle isolation."
   );
 } finally {
   Date.now = originalDateNow;

@@ -300,7 +300,7 @@ export function renderContinueWatchingCard(item, index, options = {}) {
     {
       cardStyle,
       useEpisodeThumbnails: options?.useEpisodeThumbnails,
-      maxTmdbWidth: Platform.isVidaa() ? 500 : undefined,
+      maxTmdbWidth: Platform.isVidaa() ? (cardStyle === "poster" ? 342 : 500) : undefined,
       isSeries: isSeriesTypeForContinueWatching(normalized.type),
       isNextUp,
       hasAired

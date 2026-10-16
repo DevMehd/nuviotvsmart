@@ -1,5 +1,11 @@
+import {
+  cancelVidaaPosterImage,
+  cancelVidaaPosterJobs,
+  enqueueVidaaPosterJob,
+  scheduleVidaaPosterImage
+} from "../../components/vidaaPosterScheduler.js";
+
 // Network warming must not retain decoded offscreen posters or obsolete runs.
-const MAX_INFLIGHT = 18;
 const WARM_URL_LIMIT = 96;
 const observations = new WeakMap();
 const recoveryAttempts = new WeakMap();
@@ -12,12 +18,13 @@ function recordLatency(screen, elapsedMs) {
 }
 
 export function cancelVidaaPosterObservation(image) {
+  cancelVidaaPosterImage(image);
   observations.get(image)?.();
 }
 
 export function observeVidaaPosterReady(screen, image) {
   if (!image?.addEventListener) return;
-  cancelVidaaPosterObservation(image);
+  observations.get(image)?.();
   const startedAt = Date.now();
   const source = String(image.dataset?.src || image.getAttribute?.("src") || "").trim();
   const originalFallbacks = image.dataset?.fallbackSrcs || "";
@@ -77,35 +84,39 @@ export function observeVidaaPosterReady(screen, image) {
 }
 
 function releasePreload(record) {
-  if (record.timeoutId) clearTimeout(record.timeoutId);
-  record.timeoutId = 0;
   record.image.onload = null;
   record.image.onerror = null;
   if (record.image.removeAttribute) record.image.removeAttribute("src");
   else record.image.src = "";
 }
 
-function cancelRecord(inflight, source, record) {
-  inflight.delete(source);
-  releasePreload(record);
-}
-
 export function cancelVidaaHomePosterPrefetches(screen) {
-  const inflight = screen.homeVidaaPosterPrefetchInflight;
-  inflight?.forEach((record, source) => cancelRecord(inflight, source, record));
+  cancelVidaaPosterJobs(screen);
   screen.homeVidaaPosterPrefetchDesired = null;
 }
 
 export function reconcileVidaaHomePosterPrefetches(screen, sources) {
   const desired = new Set(sources.map((source) => String(source || "").trim()).filter(Boolean));
-  const inflight = screen.homeVidaaPosterPrefetchInflight;
-  inflight?.forEach((record, source) => {
-    // Let nearby requests finish into the HTTP cache. Replacing every request
-    // on each reversal throws away progress and delays posters when returning.
-    if (!desired.has(source) && Date.now() - record.startedAt > 1250)
-      cancelRecord(inflight, source, record);
-  });
   screen.homeVidaaPosterPrefetchDesired = desired;
+  cancelVidaaPosterJobs(screen, {
+    keep: (job) => desired.has(job.source) || (job.active && Date.now() - job.startedAt <= 1250)
+  });
+}
+
+export function hydrateVidaaPosterImage(screen, image, priority = "auto") {
+  const source = String(image?.dataset?.src || "").trim();
+  if (!source) return false;
+  // Do not create a second detached/native request for the same artwork when
+  // its real card has entered the viewport.
+  cancelVidaaPosterJobs(screen, { keep: (job) => job.key !== source });
+  return scheduleVidaaPosterImage(screen, image, {
+    priority: priority === "high" ? 0 : priority === "low" ? 2 : 1,
+    beforeStart: () => observeVidaaPosterReady(screen, image),
+    onCancel: () => observations.get(image)?.(),
+    isRelevant: () =>
+      image.isConnected !== false &&
+      (!screen.homeVidaaPosterPrefetchDesired || screen.homeVidaaPosterPrefetchDesired.has(source))
+  });
 }
 
 export function prefetchVidaaPosterSource(screen, src) {
@@ -116,41 +127,42 @@ export function prefetchVidaaPosterSource(screen, src) {
   const inflight =
     screen.homeVidaaPosterPrefetchInflight || (screen.homeVidaaPosterPrefetchInflight = new Map());
   if (inflight.has(source)) return true;
-  if (inflight.size >= MAX_INFLIGHT) {
-    // Reclaim only the slot needed now, preferring an obsolete request with the
-    // least progress. The selected run still gets immediate capacity.
-    const obsolete = [...inflight].filter(
-      ([url]) => !screen.homeVidaaPosterPrefetchDesired?.has(url)
-    );
-    obsolete.sort((a, b) => b[1].startedAt - a[1].startedAt);
-    if (!obsolete.length) return false;
-    cancelRecord(inflight, obsolete[0][0], obsolete[0][1]);
-  }
   let image;
   try {
     image = new globalThis.Image();
   } catch (_) {
     return false;
   }
-  const record = { image, timeoutId: 0, startedAt: Date.now() };
-  const finish = (success) => {
-    if (inflight.get(source) !== record) return;
-    cancelRecord(inflight, source, record);
-    if (!success) return;
-    if (warmed.has(source)) warmed.delete(source);
-    warmed.add(source);
-    while (warmed.size > WARM_URL_LIMIT) warmed.delete(warmed.values().next().value);
-    recordLatency(screen, Date.now() - record.startedAt);
-  };
-  image.decoding = "async";
-  try {
-    image.fetchPriority = "low";
-  } catch (_) {}
-  // load warms the response without forcing decode() for invisible artwork.
-  image.onload = () => finish(true);
-  image.onerror = () => finish(false);
+  const record = { image, startedAt: 0 };
   inflight.set(source, record);
-  record.timeoutId = setTimeout(() => finish(false), 5000);
-  image.src = source;
+  enqueueVidaaPosterJob(screen, source, {
+    source,
+    priority: 2,
+    isRelevant: () =>
+      !screen.homeVidaaPosterPrefetchDesired || screen.homeVidaaPosterPrefetchDesired.has(source),
+    isValid: () => screen.container?.isConnected !== false,
+    start(done) {
+      record.startedAt = Date.now();
+      image.decoding = "async";
+      try {
+        image.fetchPriority = "low";
+      } catch (_) {}
+      // load warms the response without forcing decode() offscreen.
+      image.onload = () => done(true);
+      image.onerror = () => done(false);
+      image.src = source;
+      if (image.complete && Number(image.naturalWidth || 0) > 0) done(true);
+      return () => releasePreload(record);
+    },
+    onFinish(success) {
+      if (inflight.get(source) !== record) return;
+      inflight.delete(source);
+      if (!success) return;
+      if (warmed.has(source)) warmed.delete(source);
+      warmed.add(source);
+      while (warmed.size > WARM_URL_LIMIT) warmed.delete(warmed.values().next().value);
+      recordLatency(screen, Date.now() - record.startedAt);
+    }
+  });
   return true;
 }

@@ -187,8 +187,8 @@ export function createHomeScreenMethods13() {
         if (overrideTransition && frame instanceof HTMLElement) {
           frame.style.setProperty("transition", "none", "important");
         }
-        target.classList.remove("is-expanded", "is-trailer-active", "is-expanded-backdrop-ready");
         if (Platform.isVidaa()) clearVidaaHomePosterPreviewPosition(target);
+        target.classList.remove("is-expanded", "is-trailer-active", "is-expanded-backdrop-ready");
         this.homeActivePosterNodes?.delete(target);
         const trailerLayer = target.querySelector(".home-poster-trailer-layer");
         if (this.shouldUseImmediateFocusScroll()) {
@@ -241,8 +241,8 @@ export function createHomeScreenMethods13() {
       this.homeActivePosterNodes?.add(node);
       this.hydrateFocusedPosterAssets(node);
       this.expandedPosterNode = node;
-      // Keep the VIDAA camera stable. At the row end the media expands inward
-      // while the card retains the coordinates used by navigation.
+      // VIDAA has already reserved the expanded slot and positioned the camera
+      // before its compositor-only preview animation starts.
       if (Platform.isVidaa()) {
         return;
       }

@@ -4,89 +4,66 @@
   <title>VIDAA focused poster expansion</title>
   <link rel="stylesheet" href="../css/components.css" />
   <style>
-    body {
-      margin: 0;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 1920px;
-      height: 1080px;
-      overflow: hidden;
-    }
-    #result {
-      position: fixed;
-      top: 0;
-      z-index: 100;
-    }
-    .home-main {
-      width: 1920px;
-    }
-    .home-row {
-      width: 100%;
-    }
-    #fixture * {
-      box-sizing: var(--test-box-sizing, content-box);
-    }
-    #fixture {
-      transition: none !important;
-    }
+    body { margin: 0; position: fixed; inset: 0; width: 1920px; height: 1080px; overflow: hidden; }
+    #result { position: fixed; top: 0; z-index: 100; }
+    .home-main { width: 1920px; }
+    .home-row { width: 100%; }
+    #fixture * { box-sizing: var(--test-box-sizing, content-box); }
+    #fixture { transition: none !important; }
   </style>
   <pre id="result">RUNNING</pre>
   <div id="fixture"></div>
   <script type="module">
     globalThis.__NUVIO_PLATFORM__ = "vidaa";
-    const { createHomeScreenMethods13 } =
-      await import("../js/ui/screens/home/homeScreenMethods-13-mount-trailer-layer.js");
-    const { createHomeScreenMethods15 } =
-      await import("../js/ui/screens/home/homeScreenMethods-15-schedule-focused-poster-flow.js");
-    const { captureVidaaHomeTrackAppendInset } =
-      await import("../js/ui/screens/home/vidaaHomeTrackCamera.js");
-    const { updateVidaaHomeCardWindow, restoreAllVidaaHomeCards } =
-      await import("../js/ui/screens/home/vidaaHomeCardWindow.js");
+    const { createHomeScreenMethods13 } = await import("../js/ui/screens/home/homeScreenMethods-13-mount-trailer-layer.js");
+    const { createHomeScreenMethods15 } = await import("../js/ui/screens/home/homeScreenMethods-15-schedule-focused-poster-flow.js");
+    const { captureVidaaHomeTrackAppendInset } = await import("../js/ui/screens/home/vidaaHomeTrackCamera.js");
+    const { getVidaaHomePosterPreviewCamera } = await import("../js/ui/screens/home/vidaaHomePosterExpansion.js");
+    const { updateVidaaHomeCardWindow, restoreAllVidaaHomeCards } = await import("../js/ui/screens/home/vidaaHomeCardWindow.js");
     const fixture = document.querySelector("#fixture");
     const result = document.querySelector("#result");
-    const assert = (condition, message) => {
-      if (!condition) throw Error(message);
-    };
+    const assert = (condition, message) => { if (!condition) throw Error(message); };
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const near = (a, b) => Math.abs(a - b) < 1;
-    const cardMarkup = (landscape, index) =>
-      `<article tabindex="0" data-item-id="${index}" class="home-content-card home-poster-card ${landscape ? "is-landscape" : ""}"><div class="home-poster-frame"><div class="content-poster placeholder"></div><div class="home-poster-expanded-backdrop placeholder"></div><div class="home-poster-expanded-gradient"></div><div class="home-poster-expanded-brand">Preview</div><div class="home-poster-trailer-layer"></div></div><div class="home-poster-copy">Title</div></article>`;
+    const cardMarkup = (landscape, index) => `<article tabindex="0" data-item-id="${index}" class="home-content-card home-poster-card ${landscape ? "is-landscape" : ""}"><div class="home-poster-frame"><div class="content-poster placeholder"></div><div class="home-poster-expanded-backdrop placeholder"></div><div class="home-poster-expanded-gradient"></div><div class="home-poster-expanded-brand">Preview</div><div class="home-poster-trailer-layer"></div></div><div class="home-poster-copy">Title</div></article>`;
+    const sampleAnimation = async (check) => {
+      const start = performance.now();
+      do {
+        await new Promise(requestAnimationFrame);
+        check();
+      } while (performance.now() - start < 250);
+    };
+    let scenarios = 0;
     try {
       for (const sizing of [
-        { width: 212, viewportWidth: 1920, boxSizing: "content-box" },
-        { width: 288, viewportWidth: 1740, boxSizing: "border-box" },
-        { width: 180, viewportWidth: 1920, boxSizing: "border-box", cssCalc: true },
-        { width: 228, viewportWidth: 1920, boxSizing: "border-box", offset: 104 }
+        { width: 212, viewportWidth: 1920, boxSizing: "content-box", count: 20 },
+        { width: 288, viewportWidth: 1740, boxSizing: "border-box", count: 20 },
+        { width: 180, viewportWidth: 1920, boxSizing: "border-box", cssCalc: true, count: 20 },
+        { width: 228, viewportWidth: 1920, boxSizing: "border-box", offset: 104, count: 20 },
+        { width: 228, viewportWidth: 720, boxSizing: "border-box", count: 3 },
+        { width: 228, viewportWidth: 640, boxSizing: "border-box", count: 1 }
       ]) {
         for (const landscape of [false, true]) {
           const portraitWidth = sizing.width;
           fixture.style.marginLeft = `${sizing.offset || 0}px`;
           const portraitHeight = Math.round(portraitWidth * 1.5);
-          const expandedWidth = sizing.cssCalc
-            ? portraitWidth * 2.66
-            : Math.round((portraitHeight * 16) / 9);
-          fixture.innerHTML = `<div class="home-screen-shell home-layout-modern ${landscape ? "home-modern-landscape-posters" : ""}" style="--test-box-sizing:${sizing.boxSizing};--home-poster-width:${portraitWidth}px;--home-modern-portrait-poster-width:${portraitWidth}px;--home-modern-portrait-poster-height:${portraitHeight}px;--home-modern-portrait-expanded-width:${sizing.cssCalc ? "calc(var(--home-modern-portrait-poster-width) * 2.66)" : expandedWidth + "px"};--home-landscape-poster-width:318px;--home-landscape-poster-height:179px"><main class="home-main"><div class="home-modern-rows-viewport" style="position:relative;height:auto;width:${sizing.viewportWidth}px">${[0, 1].map((row) => `<section class="home-row home-modern-row"><div class="home-row-head">Row ${row}</div><div class="home-track">${Array.from({ length: 20 }, (_, index) => cardMarkup(landscape, row * 20 + index)).join("")}</div></section>`).join("")}</div></main></div>`;
+          const expandedWidth = sizing.cssCalc ? portraitWidth * 2.66 : Math.round((portraitHeight * 16) / 9);
+          fixture.innerHTML = `<div class="home-screen-shell home-layout-modern ${landscape ? "home-modern-landscape-posters" : ""}" style="--test-box-sizing:${sizing.boxSizing};--home-poster-width:${portraitWidth}px;--home-modern-portrait-poster-width:${portraitWidth}px;--home-modern-portrait-poster-height:${portraitHeight}px;--home-modern-portrait-expanded-width:${sizing.cssCalc ? "calc(var(--home-modern-portrait-poster-width) * 2.66)" : expandedWidth + "px"};--home-landscape-poster-width:318px;--home-landscape-poster-height:179px"><main class="home-main"><div class="home-modern-rows-viewport" style="position:relative;height:auto;width:${sizing.viewportWidth}px">${[0, 1].map((row) => `<section class="home-row home-modern-row"><div class="home-row-head">Row ${row}</div><div class="home-track">${Array.from({ length: sizing.count }, (_, index) => cardMarkup(landscape, row * 20 + index)).join("")}</div></section>`).join("")}</div></main></div>`;
           const track = fixture.querySelector(".home-track");
           const cards = [...track.querySelectorAll("article")];
           const nextRow = fixture.querySelectorAll(".home-row")[1];
+          const viewport = fixture.querySelector(".home-modern-rows-viewport");
           const screen = {
-            ...createHomeScreenMethods15(),
-            ...createHomeScreenMethods13(),
-            container: fixture,
+            ...createHomeScreenMethods15(), ...createHomeScreenMethods13(), container: fixture,
             getCurrentFocusedNode: () => fixture.querySelector(".focused"),
             isModernPosterNode: (node) => node?.classList.contains("home-poster-card"),
             hydrateFocusedPosterAssets() {},
-            ensureTrackHorizontalVisibility() {
-              throw Error("Expansion must not move the VIDAA camera");
-            },
-            isPerformanceConstrained: () => true,
-            shouldUseImmediateFocusScroll: () => true,
-            scheduleTrailerLayerCleanup() {},
-            setHeroTrailerActive() {}
+            ensureTrackHorizontalVisibility() { throw Error("Preview handles its own settled camera"); },
+            isPerformanceConstrained: () => true, shouldUseImmediateFocusScroll: () => true,
+            scheduleTrailerLayerCleanup() {}, setHeroTrailerActive() {}
           };
-          // Test an ordinary card, a card near the edge, and the last row slot.
-          for (const index of [2, 17, 19]) {
+          for (const index of [...new Set([Math.min(2, sizing.count - 1), Math.max(0, sizing.count - 3), sizing.count - 1])]) {
+            scenarios++;
             const card = cards[index];
             card.classList.add("focused");
             card.focus({ preventScroll: true });
@@ -94,228 +71,95 @@
             updateVidaaHomeCardWindow(screen, track.getBoundingClientRect(), card);
             const before = card.getBoundingClientRect();
             const frame = card.querySelector(".home-poster-frame");
+            const poster = card.querySelector(".content-poster");
             const beforeFrame = frame.getBoundingClientRect();
+            const beforePoster = poster.getBoundingClientRect();
+            const beforePosterStyle = poster.getAttribute("style");
             const beforeExtent = track.scrollWidth;
-            const beforeNextCard = cards[index + 1]?.getBoundingClientRect().left;
-            const visibleRight = Math.min(
-              track.getBoundingClientRect().right,
-              fixture.querySelector(".home-modern-rows-viewport").getBoundingClientRect().right,
-              document.documentElement.clientWidth
-            );
+            const beforeNext = cards[index + 1]?.getBoundingClientRect().left;
+            const visibleLeft = Math.max(0, track.getBoundingClientRect().left, viewport.getBoundingClientRect().left);
+            const visibleRight = Math.min(track.getBoundingClientRect().right, viewport.getBoundingClientRect().right, document.documentElement.clientWidth);
             const beforeRow = nextRow.getBoundingClientRect().top;
             const beforeScroll = track.scrollLeft;
-            const beforeParents = {
-              document: document.documentElement.scrollLeft,
-              body: document.body.scrollLeft,
-              fixture: fixture.getBoundingClientRect().left,
-              main: fixture.querySelector(".home-main").scrollLeft,
-              viewport: fixture.querySelector(".home-modern-rows-viewport").scrollLeft
-            };
-            const posterWidth = card.querySelector(".content-poster").getBoundingClientRect().width;
-            const mustGrowInward =
-              beforeFrame.right + (landscape ? 0 : expandedWidth - portraitWidth) >
-              visibleRight - 8;
+            const parentScroll = [document.documentElement.scrollLeft, document.body.scrollLeft, fixture.querySelector(".home-main").scrollLeft, viewport.scrollLeft];
             screen.expandFocusedPoster(card);
-            await wait(70);
-            const during = card.getBoundingClientRect();
-            assert(
-              near(during.left, before.left),
-              `Expansion changed navigation coordinates: ${JSON.stringify({ sizing, landscape, index, before: before.toJSON(), during: during.toJSON(), beforeScroll, scroll: track.scrollLeft, beforeExtent, extent: track.scrollWidth, beforeParents, duringParents: { document: document.documentElement.scrollLeft, body: document.body.scrollLeft, fixture: fixture.getBoundingClientRect().left, main: fixture.querySelector(".home-main").scrollLeft, viewport: fixture.querySelector(".home-modern-rows-viewport").scrollLeft } })}`
-            );
-            assert(
-              frame.getBoundingClientRect().right <= Math.max(beforeFrame.right, visibleRight - 4),
-              `Animating preview crossed the right edge: ${JSON.stringify({ landscape, index, beforeFrame: beforeFrame.toJSON(), duringFrame: frame.getBoundingClientRect().toJSON(), visibleRight, shift: card.style.getPropertyValue("--vidaa-poster-preview-shift") })}`
-            );
-            assert(
-              near(nextRow.getBoundingClientRect().top, beforeRow),
-              "Expansion shifted the following row"
-            );
-            assert(near(track.scrollLeft, beforeScroll), "Expansion scrolled the track");
-            assert(near(during.height, before.height), "Expansion changed card height");
-            if (!landscape) {
-              assert(
-                frame.getBoundingClientRect().width > beforeFrame.width + 1 &&
-                  frame.getBoundingClientRect().width <
-                    beforeFrame.width + expandedWidth - portraitWidth - 1,
-                "Portrait expansion must animate, not snap"
-              );
-              assert(
-                near(
-                  card.querySelector(".content-poster").getBoundingClientRect().width,
-                  sizing.boxSizing === "border-box" ? portraitWidth : posterWidth
-                ),
-                "Pending backdrop stretched the portrait"
-              );
-            }
-            await wait(180);
-            const after = card.getBoundingClientRect();
+            await sampleAnimation(() => {
+              const rect = frame.getBoundingClientRect();
+              const previous = cards[index - 1]?.querySelector(".home-poster-frame")?.getBoundingClientRect();
+              const next = cards[index + 1]?.querySelector(".home-poster-frame")?.getBoundingClientRect();
+              const detail = JSON.stringify({ sizing, landscape, index, rect: rect.toJSON(), previous: previous?.toJSON(), next: next?.toJSON(), scroll: track.scrollLeft, beforeScroll });
+              assert(!previous || previous.right <= rect.left + 1, "Preview overlaps previous card: " + detail);
+              assert(!next || rect.right <= next.left + 1, "Preview overlaps next card: " + detail);
+              assert(rect.right <= Math.max(beforeFrame.right, visibleRight - 4) + 1, "Animating preview crosses right edge: " + detail);
+              assert(rect.left >= visibleLeft - 1, "Preview crosses left edge: " + detail);
+              assert(near(nextRow.getBoundingClientRect().top, beforeRow), "Expansion moved the next row");
+              assert(near(poster.getBoundingClientRect().width, beforePoster.width), "Opening deformed the original portrait");
+              assert(near(poster.getBoundingClientRect().height, beforePoster.height), "Opening deformed portrait height");
+              assert(document.activeElement === card, "Expansion lost native focus");
+            });
             const afterFrame = frame.getBoundingClientRect();
-            assert(
-              afterFrame.right <= visibleRight - 4,
-              "Expanded preview is clipped at the right edge"
-            );
-            if (!mustGrowInward) {
-              assert(
-                near(afterFrame.left, beforeFrame.left),
-                "Preview moved despite sufficient room"
-              );
-            } else {
-              assert(afterFrame.left < beforeFrame.left, "Row-end preview did not grow inward");
-            }
-            assert(near(after.height, before.height), "Expanded height must stay fixed");
-            assert(
-              near(nextRow.getBoundingClientRect().top, beforeRow),
-              "Expanded preview shifted the following row"
-            );
-            assert(
-              landscape
-                ? near(afterFrame.width, beforeFrame.width)
-                : afterFrame.width > beforeFrame.width * 2.5,
-              "Unexpected final preview width"
-            );
-            assert(near(after.width, before.width), "Expansion changed the navigation slot width");
-            assert(
-              near(track.scrollWidth, beforeExtent),
-              "Expansion changed the row scroll extent"
-            );
-            if (beforeNextCard != null) {
-              assert(
-                near(cards[index + 1].getBoundingClientRect().left, beforeNextCard),
-                "Expansion moved the following poster"
-              );
-            }
-            assert(document.activeElement === card, "Preview lost native focus");
-            if (mustGrowInward) {
-              const overlap = document.elementFromPoint(afterFrame.left + 10, afterFrame.top + 10);
-              assert(
-                overlap?.closest(".home-poster-card") === card,
-                "Previous posters painted over the preview"
-              );
-            }
+            const after = card.getBoundingClientRect();
+            assert(afterFrame.right <= visibleRight - 4, "Expanded preview is clipped at the right edge");
+            assert(near(after.height, before.height), "Expanded height changed");
+            assert(landscape ? near(after.width, before.width) : after.width > before.width * 2, "Expanded flex slot has wrong width");
+            assert(landscape || track.scrollWidth >= beforeExtent, "Real expansion did not reserve its row slot");
+            if (!landscape && beforeNext != null) assert(cards[index + 1].getBoundingClientRect().left > beforeNext || track.scrollLeft > beforeScroll, "Following poster was not displaced");
+            const afterScroll = track.scrollLeft;
             screen.expandFocusedPoster(card);
-            assert(
-              near(frame.getBoundingClientRect().left, afterFrame.left),
-              "Repeated activation moved the preview"
-            );
+            assert(near(track.scrollLeft, afterScroll) && near(frame.getBoundingClientRect().left, afterFrame.left), "Repeated activation accumulated camera/width");
+            assert(parentScroll.every((value, i) => near(value, [document.documentElement.scrollLeft, document.body.scrollLeft, fixture.querySelector(".home-main").scrollLeft, viewport.scrollLeft][i])), "Expansion scrolled an ancestor");
             screen.collapseFocusedPoster(card);
-            assert(
-              near(card.getBoundingClientRect().width, before.width),
-              "D-pad collapse must finish immediately"
-            );
-            assert(
-              near(frame.getBoundingClientRect().left, beforeFrame.left),
-              "Collapse retained the preview offset"
-            );
-            assert(
-              near(nextRow.getBoundingClientRect().top, beforeRow),
-              "Collapse shifted the following row"
-            );
+            assert(near(track.scrollLeft, beforeScroll), "Collapse failed to restore pre-preview camera");
+            assert(near(card.getBoundingClientRect().width, before.width), "D-pad collapse retained expanded width");
+            assert(near(frame.getBoundingClientRect().left, beforeFrame.left), "Collapse retained a transform");
+            assert(poster.parentElement === frame && (poster.getAttribute("style") || "") === (beforePosterStyle || ""), `Collapse did not restore the original portrait node/styles: ${JSON.stringify({ beforePosterStyle, afterStyle: poster.getAttribute("style"), parent: poster.parentElement.className })}`);
             card.classList.remove("focused");
             restoreAllVidaaHomeCards(screen);
           }
-          // Reversing focus halfway through a tween must not leave animated geometry.
-          const card = cards[19];
-          card.classList.add("focused");
-          const width = card.getBoundingClientRect().width;
+
+          // Interrupted animation, restored expansion, resize and appended page.
+          const card = cards.at(-1);
           const frame = card.querySelector(".home-poster-frame");
-          const frameLeft = frame.getBoundingClientRect().left;
+          card.classList.add("focused");
+          track.scrollLeft = track.scrollWidth;
+          const width = card.getBoundingClientRect().width;
+          const originalScroll = track.scrollLeft;
           screen.expandFocusedPoster(card);
           await wait(60);
           screen.collapseFocusedPoster(card);
-          card.classList.remove("focused");
-          assert(
-            near(card.getBoundingClientRect().width, width),
-            "Interrupted expansion left stale width"
-          );
-          assert(
-            near(frame.getBoundingClientRect().left, frameLeft),
-            "Interrupted preview retained its offset"
-          );
-          await wait(220);
-          assert(screen.expandedPosterNode === null, "Interrupted preview retained expanded state");
-          // Restored markup can contain an expanded card before flow activation.
-          card.style.setProperty("transition", "none", "important");
-          card.classList.add("focused", "is-expanded");
-          const restoredScroll = track.scrollLeft;
+          assert(near(track.scrollLeft, originalScroll) && near(card.getBoundingClientRect().width, width), "Interrupted opening retained geometry");
+          await wait(240);
+          assert(!card.classList.contains("vidaa-poster-expanding") && screen.expandedPosterNode === null, "Interrupted transition retained work/state");
+          card.classList.add("is-expanded");
           screen.expandFocusedPoster(card);
-          await wait(220);
-          const rightEdge = Math.min(
-            fixture.querySelector(".home-modern-rows-viewport").getBoundingClientRect().right,
-            document.documentElement.clientWidth
-          );
-          assert(
-            frame.getBoundingClientRect().right <= rightEdge - 4,
-            `Restored expansion is clipped: ${JSON.stringify({ landscape, sizing, frame: frame.getBoundingClientRect().toJSON(), card: card.getBoundingClientRect().toJSON(), rightEdge, shift: card.style.getPropertyValue("--vidaa-poster-preview-shift") })}`
-          );
-          assert(near(track.scrollLeft, restoredScroll), "Restored expansion moved the camera");
-          // A viewport change while the poster stays expanded must update its
-          // visual bounds without accumulating another width/left offset.
-          const viewport = fixture.querySelector(".home-modern-rows-viewport");
-          viewport.style.width = `${sizing.viewportWidth - 240}px`;
+          await wait(260);
+          viewport.style.width = `${Math.max(620, sizing.viewportWidth - 240)}px`;
           window.dispatchEvent(new Event("resize"));
-          await wait(220);
-          assert(
-            frame.getBoundingClientRect().right <=
-              Math.min(
-                viewport.getBoundingClientRect().right,
-                document.documentElement.clientWidth
-              ) -
-                4,
-            "Resized viewport clipped a persistent preview"
-          );
+          await wait(260);
+          assert(frame.getBoundingClientRect().right <= Math.min(viewport.getBoundingClientRect().right, document.documentElement.clientWidth) - 4, "Resized persistent preview is clipped");
           viewport.style.width = `${sizing.viewportWidth}px`;
           window.dispatchEvent(new Event("resize"));
-          await wait(220);
-          assert(
-            frame.getBoundingClientRect().right <= rightEdge - 4,
-            "Restoring viewport width accumulated a preview offset"
-          );
-
-          // Actual row-end expansion followed by an append and Right: the
-          // visual frame must not alter the row extent or cause collapse clamp.
-          const appendScroll = track.scrollLeft;
-          const appendX = card.getBoundingClientRect().left;
-          const appendExtent = track.scrollWidth;
-          const appendMax = track.scrollWidth - track.clientWidth;
+          await wait(260);
+          const expandedScroll = track.scrollLeft;
+          const collapsedCamera = getVidaaHomePosterPreviewCamera(card).scrollLeft;
           captureVidaaHomeTrackAppendInset(screen, track);
-          track.insertAdjacentHTML(
-            "beforeend",
-            Array.from({ length: 4 }, (_, i) => cardMarkup(landscape, 40 + i)).join("")
-          );
-          assert(
-            near(track.scrollLeft, appendScroll),
-            "Page append moved an expanded preview's camera"
-          );
-          assert(
-            near(card.getBoundingClientRect().left, appendX),
-            "Page append moved the expanded card slot"
-          );
-          assert(track.scrollWidth > appendExtent, "Fixture did not append a real poster page");
+          track.insertAdjacentHTML("beforeend", Array.from({ length: 4 }, (_, i) => cardMarkup(landscape, 40 + i)).join(""));
+          assert(near(track.scrollLeft, expandedScroll), "Page append moved an open preview");
           screen.collapseFocusedPoster(card);
-          assert(
-            near(track.scrollLeft, appendScroll),
-            "Collapse after a page append clamped the camera"
-          );
+          assert(near(track.scrollLeft, collapsedCamera), `Collapse after append lost original camera: ${JSON.stringify({ sizing, landscape, originalScroll, collapsedCamera, after: track.scrollLeft, expandedScroll })}`);
           card.classList.remove("focused");
           const next = card.nextElementSibling;
-          const stride = next.getBoundingClientRect().left - card.getBoundingClientRect().left;
           next.classList.add("focused");
           next.focus({ preventScroll: true });
+          const stride = next.getBoundingClientRect().left - card.getBoundingClientRect().left;
           const target = screen.getModernTrackAlignedScrollTarget(next);
-          assert(
-            target.value - appendScroll <= stride + 1,
-            `Right after expanded pagination jumped more than one poster: ${JSON.stringify({ sizing, landscape, appendScroll, appendExtent, appendMax, target: target.value, stride, card: card.getBoundingClientRect().toJSON(), next: next.getBoundingClientRect().toJSON() })}`
-          );
+          assert(target.value - collapsedCamera <= stride + 1, `Right after expanded page append jumped too far: ${JSON.stringify({ sizing, landscape, target: target.value, collapsedCamera, stride })}`);
           track.scrollLeft = target.value;
-          assert(
-            document.activeElement === next,
-            "Expanded pagination lost the next poster's focus"
-          );
+          assert(document.activeElement === next, "Expanded pagination lost next focus");
           next.classList.remove("focused");
         }
       }
-      result.textContent =
-        "PASS: VIDAA portrait/landscape expansion, stable rows and camera, late backdrop, row-end focus, parked cards and interrupted navigation.";
+      result.textContent = `PASS: ${scenarios} portrait/landscape expansion scenarios; no overlap during animation, real row spacing, short rows, screen edges, resize, interruption, focus and appended-page camera.`;
       result.dataset.status = "passed";
     } catch (error) {
       result.textContent = "FAIL: " + error.stack;

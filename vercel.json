@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run package:vidaa",
+  "buildCommand": "node scripts/import-official-trakt-config.mjs --if-missing && npm run package:vidaa",
   "outputDirectory": "dist/vidaa",
   "headers": [
     {

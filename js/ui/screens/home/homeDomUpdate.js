@@ -58,6 +58,12 @@ export function registerHomeDomNodes(nodes) {
   nodes.forEach((node) => remember(node, node));
 }
 
+// Recyclable card renderers keep their canonical markup here already. Reuse
+// that source instead of serializing every live subtree during scrolling.
+export function getHomeDomCardSource(node) {
+  return sourceByNode.get(node)?.markup;
+}
+
 function updateAttributes(node, previous, next) {
   const names = new Set(
     [...Array.from(previous.attributes), ...Array.from(next.attributes)].map((attr) => attr.name)

@@ -12,8 +12,12 @@ export function limitTmdbImageWidth(value, maxWidth) {
   ) {
     return value;
   }
-  return value.replace(/(\/t\/p\/)(original|w(\d+))\//i, (match, prefix, size, width) =>
-    size.toLowerCase() === "original" || Number(width) > maxWidth ? `${prefix}w${maxWidth}/` : match
+  return value.replace(
+    /^((?:https?:)?\/\/image\.tmdb\.org\/t\/p\/)(original|w(\d+))\//i,
+    (match, prefix, size, width) =>
+      size.toLowerCase() === "original" || Number(width) > maxWidth
+        ? `${prefix}w${maxWidth}/`
+        : match
   );
 }
 
@@ -26,7 +30,10 @@ export function normalizeTmdbBackdropUrl(value) {
   if (!normalized || !TMDB_IMAGE_HOST_PATTERN.test(normalized)) {
     return normalized;
   }
-  return normalized.replace(/(\/t\/p\/)(?:original|w780)\//i, "$1w1280/");
+  return normalized.replace(
+    /^((?:https?:)?\/\/image\.tmdb\.org\/t\/p\/)(?:original|w780)\//i,
+    "$1w1280/"
+  );
 }
 
 export function normalizeTmdbPosterUrl(value) {
@@ -34,5 +41,5 @@ export function normalizeTmdbPosterUrl(value) {
   if (!normalized || !TMDB_IMAGE_HOST_PATTERN.test(normalized)) {
     return normalized;
   }
-  return normalized.replace(/(\/t\/p\/)original\//i, "$1w500/");
+  return normalized.replace(/^((?:https?:)?\/\/image\.tmdb\.org\/t\/p\/)original\//i, "$1w500/");
 }

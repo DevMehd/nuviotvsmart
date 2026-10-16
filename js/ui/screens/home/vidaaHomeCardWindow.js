@@ -1,10 +1,70 @@
 import { releaseVidaaHomeImage } from "./vidaaHomeImageWindow.js";
 import { prefetchVidaaPosterSource } from "./vidaaHomePosterPrefetch.js";
+import { getHomeDomCardSource, registerHomeDomNodes } from "./homeDomUpdate.js";
 
 const ROW_SELECTOR = ".home-row, .home-modern-row, .home-grid-section, .home-row-continue";
 const STYLE_PROPERTIES = ["width", "height", "box-sizing"];
 const ACTIVE_CARD_HEADROOM = 64;
 const WINDOW_MARGIN = 600;
+const RETAINED_RECYCLABLE_FRAGMENTS = 96;
+
+function retainCardFragment(screen, card, record) {
+  if (
+    card.dataset.vidaaRecyclableCard !== "true" ||
+    card.classList.contains("is-expanded") ||
+    card.classList.contains("is-trailer-active")
+  )
+    return;
+  const markup = getHomeDomCardSource(card);
+  if (!markup) return;
+  record.markup = markup;
+  const retained =
+    screen.homeVidaaRetainedCardFragments || (screen.homeVidaaRetainedCardFragments = new Map());
+  retained.set(card, record);
+  while (retained.size > RETAINED_RECYCLABLE_FRAGMENTS) {
+    const [oldCard, oldRecord] = retained.entries().next().value;
+    retained.delete(oldCard);
+    // All image sources/observers were released before parking. The renderer
+    // opts in only static cards whose interactions belong to the live anchor.
+    oldRecord.content = null;
+  }
+}
+
+function captureCardImages(card) {
+  return [...card.querySelectorAll("img")].map((image) => ({
+    src: image.dataset.src || image.getAttribute("src") || "",
+    fallbacks: image.dataset.fallbackSrcs,
+    placeholder: image.classList.contains("placeholder")
+  }));
+}
+
+function recreateCardContent(card, record) {
+  // Parsing an <img src> can start a request before the subtree is attached.
+  // Defer canonical sources before parsing; only the loader owns their start.
+  const deferredMarkup = record.markup.replace(
+    /(<img\b[^>]*?)\ssrc=("[^"]*"|'[^']*')/gi,
+    "$1 data-src=$2"
+  );
+  const fragment = card.ownerDocument.createRange().createContextualFragment(deferredMarkup);
+  const source = fragment.firstElementChild;
+  if (!source?.classList.contains("home-content-card"))
+    throw new Error("Invalid recyclable Home card");
+  const images = source.querySelectorAll("img");
+  images.forEach((image, index) => {
+    const asset = record.images[index];
+    image.removeAttribute("src");
+    if (asset?.src) image.dataset.src = asset.src;
+    else image.removeAttribute("data-src");
+    if (asset?.fallbacks !== undefined) image.dataset.fallbackSrcs = asset.fallbacks;
+    image.classList.toggle("placeholder", Boolean(asset?.placeholder));
+    if (image.classList.contains("home-poster-expanded-backdrop")) {
+      image.dataset.loadBound = "false";
+      image.dataset.loadState = "";
+    }
+  });
+  while (source.firstChild) card.appendChild(source.firstChild);
+  registerHomeDomNodes([...card.childNodes]);
+}
 
 function getCardWindowScan(screen, viewportRect, active, activeOnly) {
   const rowRects = new Map();
@@ -77,7 +137,8 @@ function getCardWindowScan(screen, viewportRect, active, activeOnly) {
 }
 
 function restoreCard(card, record) {
-  card.appendChild(record.content);
+  if (record.content) card.appendChild(record.content);
+  else recreateCardContent(card, record);
   for (const [property, value, priority] of record.styles) {
     if (value) card.style.setProperty(property, value, priority);
     else card.style.removeProperty(property);
@@ -90,6 +151,7 @@ export function restoreVidaaHomeCard(screen, card) {
   if (!record) return false;
   restoreCard(card, record);
   screen.homeVidaaParkedCards.delete(card);
+  screen.homeVidaaRetainedCardFragments?.delete(card);
   screen.homeVidaaActiveCards?.add(card);
   scheduleVidaaHomeCardWindow(screen);
   screen.homeLazyImageHydrationNeedsIndexRefresh = true;
@@ -108,6 +170,7 @@ export function suspendVidaaHomeCardWindow(screen) {
 export function discardVidaaHomeCards(screen) {
   suspendVidaaHomeCardWindow(screen);
   screen.homeVidaaParkedCards?.clear();
+  screen.homeVidaaRetainedCardFragments?.clear();
   screen.homeVidaaActiveCards = null;
   screen.homeVidaaCardWindowBaseSize = 0;
   screen.homeVidaaCardWindowSnapshot = null;
@@ -121,7 +184,10 @@ export function restoreAllVidaaHomeCards(screen) {
 
 export function pruneVidaaHomeCards(screen) {
   screen.homeVidaaParkedCards?.forEach((record, card) => {
-    if (!screen.container.contains(card)) screen.homeVidaaParkedCards.delete(card);
+    if (!screen.container.contains(card)) {
+      screen.homeVidaaParkedCards.delete(card);
+      screen.homeVidaaRetainedCardFragments?.delete(card);
+    }
   });
   screen.homeVidaaActiveCards?.forEach((card) => {
     if (!screen.container.contains(card)) screen.homeVidaaActiveCards.delete(card);
@@ -231,6 +297,7 @@ export function updateVidaaHomeCardWindow(
       if (!screen.container.contains(card)) {
         restoreCard(card, record);
         parked.delete(card);
+        screen.homeVidaaRetainedCardFragments?.delete(card);
       }
     });
   const rows = scan.rowRects;
@@ -285,7 +352,7 @@ export function updateVidaaHomeCardWindow(
         card.style.getPropertyPriority(property)
       ])
     };
-    card.querySelectorAll("img[src]").forEach((image) => {
+    card.querySelectorAll("img").forEach((image) => {
       // Retiring a tree must not abort a poster still needed by the runway.
       const src = image.getAttribute("src");
       if (screen.homeVidaaPosterPrefetchDesired?.has(src) && image.complete === false) {
@@ -293,12 +360,16 @@ export function updateVidaaHomeCardWindow(
       }
       releaseVidaaHomeImage(image);
     });
+    record.images = captureCardImages(card);
+    const poster = card.querySelector(".content-poster, .home-continue-bg");
+    record.posterSource = poster?.dataset.src || "";
     card.style.setProperty("box-sizing", "border-box");
     card.style.setProperty("width", `${change.width}px`);
     card.style.setProperty("height", `${change.height}px`);
     while (card.firstChild) record.content.appendChild(card.firstChild);
     card.classList.add("vidaa-card-parked");
     parked.set(card, record);
+    retainCardFragment(screen, card, record);
     active.delete(card);
   }
   if (!activeOnly || changes.length === 0) screen.homeVidaaCardWindowBaseSize = active.size;

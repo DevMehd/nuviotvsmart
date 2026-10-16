@@ -1,4 +1,9 @@
 import { isVidaaNavigationBusy } from "../navigation/vidaaNavigationActivity.js";
+import {
+  cancelVidaaPosterImage,
+  cancelVidaaPosterJobs,
+  scheduleVidaaPosterImage
+} from "./vidaaPosterScheduler.js";
 
 const POSTER_SELECTOR = ".seeall-card-poster-image";
 const POSTERS_PER_FRAME = 4;
@@ -13,6 +18,7 @@ function frameTime() {
 }
 
 function releaseImage(image) {
+  cancelVidaaPosterImage(image);
   const src = image.getAttribute("src");
   if (!src) return;
   image.dataset.src = src;
@@ -50,6 +56,7 @@ export function disposeVidaaGridPosterWindow(owner) {
   if (!state) return;
   cancelFrame(state);
   if (state.timer != null) clearTimeout(state.timer);
+  cancelVidaaPosterJobs(owner);
   globalThis.window?.removeEventListener?.("resize", state.onResize);
   for (const image of state.resident) releaseImage(image);
   state.resident.clear();
@@ -99,6 +106,7 @@ export function scheduleVidaaGridPosterWindow(owner, scrollerSelector) {
   // would starve the visible posters throughout an animated/held scroll.
   state.needsScan = true;
   state.queue = [];
+  cancelVidaaPosterJobs(owner, { queuedOnly: true });
   if (isVidaaNavigationBusy()) {
     if (state.timer == null) {
       const resumePrefetch = () => {
@@ -124,7 +132,7 @@ function runFrame(owner, state) {
     scanWindow(owner, state);
   }
   if (owner.vidaaGridPosterWindow !== state) return;
-  commitBatch(state);
+  commitBatch(owner, state);
   if (state.queue.length) state.frame = requestAnimationFrame(() => runFrame(owner, state));
 }
 
@@ -138,9 +146,9 @@ function scanWindow(owner, state) {
   const viewport = scroller.getBoundingClientRect();
   const height = Math.max(1, Number(viewport.height || viewport.bottom - viewport.top));
   const idlePrefetch = Math.max(320, Math.min(640, height));
-  // During held navigation spend work on the actual viewport only. Keep its
-  // posters progressing; fill the larger runway once input becomes quiet.
-  const prefetch = isVidaaNavigationBusy() ? 0 : idlePrefetch;
+  // A small runway keeps the next row moving during a hold. It shares the
+  // request budget with visible artwork, which always gets higher priority.
+  const prefetch = isVidaaNavigationBusy() ? Math.min(220, height * 0.35) : idlePrefetch;
   const retention = Math.max(idlePrefetch * 2, height * 2.5);
   const rowRects = new Map();
   const rectForRow = (index) => {
@@ -174,7 +182,7 @@ function scanWindow(owner, state) {
     }
   }
   const queued = new Set();
-  for (const { index } of candidates) {
+  for (const { index, distance } of candidates) {
     for (const card of rows[index]) {
       const image = card.querySelector(POSTER_SELECTOR);
       if (!image || !image.isConnected) continue;
@@ -182,10 +190,14 @@ function scanWindow(owner, state) {
         state.resident.add(image);
       } else if (image.dataset.src && !queued.has(image)) {
         queued.add(image);
-        state.queue.push(image);
+        state.queue.push({
+          image,
+          priority: card.classList?.contains("focused") ? 0 : distance === 0 ? 1 : 2
+        });
       }
     }
   }
+  state.desired = new Set([...queued, ...state.resident]);
   // Finish geometry before changing image sources or starting any requests.
   for (const image of release) {
     releaseImage(image);
@@ -193,16 +205,17 @@ function scanWindow(owner, state) {
   }
 }
 
-function commitBatch(state) {
+function commitBatch(owner, state) {
   const startedAt = frameTime();
   for (let assigned = 0; state.queue.length && assigned < POSTERS_PER_FRAME; assigned++) {
     if (assigned > 0 && frameTime() - startedAt >= COMMIT_BUDGET_MS) break;
-    const image = state.queue.shift();
+    const { image, priority } = state.queue.shift();
     const src = String(image.dataset.src || "").trim();
     if (!image.isConnected || !src) continue;
-    image.loading = "eager";
-    image.removeAttribute("data-src");
-    image.src = src;
+    scheduleVidaaPosterImage(owner, image, {
+      priority,
+      isRelevant: () => state.desired?.has(image)
+    });
     state.resident.add(image);
   }
 }

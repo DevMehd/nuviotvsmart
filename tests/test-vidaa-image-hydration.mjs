@@ -15,6 +15,9 @@ const { createHomeScreenMethods29 } =
   await import("../js/ui/screens/home/homeScreenMethods-29-setup-modern-track-scroll-pagination.js");
 const { Router, buildModernRowKey } = await import("../js/ui/screens/home/homeScreenContext.js");
 const { catalogRepository } = await import("../js/data/repository/catalogRepository.js");
+const { cancelVidaaHomePosterPrefetches } =
+  await import("../js/ui/screens/home/vidaaHomePosterPrefetch.js");
+const owners = [];
 
 let now = 0;
 let nextId = 0;
@@ -24,7 +27,16 @@ const frames = new Map();
 const timers = new Map();
 Date.now = () => now;
 globalThis.HTMLElement = class {};
-globalThis.HTMLImageElement = class extends HTMLElement {};
+globalThis.HTMLImageElement = class extends HTMLElement {
+  get src() {
+    return this._src;
+  }
+  set src(value) {
+    this._src = value;
+    this.complete = true;
+    this.naturalWidth = 200;
+  }
+};
 globalThis.requestAnimationFrame = (callback) => {
   const id = ++nextId;
   frames.set(id, callback);
@@ -40,6 +52,7 @@ globalThis.clearTimeout = (id) => timers.delete(id);
 Router.getCurrent = () => "home";
 
 function platform(name) {
+  owners.splice(0).forEach(cancelVidaaHomePosterPrefetches);
   globalThis.__NUVIO_PLATFORM__ = name;
   Platform.current = null;
   resetVidaaNavigationActivity();
@@ -67,6 +80,10 @@ function frame() {
     frames.delete(id);
     callback(now);
   }
+}
+function settleFrames() {
+  for (let pass = 0; frames.size && pass < 100; pass++) frame();
+  assert.equal(frames.size, 0, "All currently available image slots make progress");
 }
 
 function homeSurface() {
@@ -143,6 +160,7 @@ function homeSurface() {
     isPerformanceConstrained: () => true,
     isLegacyTvRuntime: () => false
   };
+  owners.push(owner);
   return {
     owner,
     images,
@@ -180,7 +198,9 @@ platform("vidaa");
   cards[9].querySelector = () => null;
 
   owner.scheduleHomeLazyImageHydration(cards[0], { navigationDirection: "right" });
-  assert.equal(images[0].src, "poster-0-0", "Focused poster must start immediately");
+  assert.equal(images[0].src, undefined, "Focus queues source assignment for the next frame");
+  settleFrames();
+  assert.equal(images[0].src, "poster-0-0", "Focused poster starts before the runway");
   for (let index = 1; index <= 8; index += 1) {
     assert.equal(
       images[index].src,
@@ -214,6 +234,7 @@ platform("vidaa");
   owner.homeVidaaPrefetchMotion = { direction: "right", lastAt: 1, intervalMs: 80 };
   now = 301;
   owner.scheduleHomeLazyImageHydration(cards[0], { navigationDirection: "right" });
+  settleFrames();
   for (let index = 1; index <= 6; index += 1) {
     assert.equal(images[index].src, `poster-0-${index}`);
   }
@@ -233,6 +254,7 @@ platform("vidaa");
   );
 
   owner.scheduleHomeLazyImageHydration(cards[4], { navigationDirection: "down" });
+  settleFrames();
   assert.equal(images[4].src, "poster-0-4");
   for (const index of [1, 2, 3, 5, 6, 7]) {
     assert.equal(
@@ -265,6 +287,7 @@ platform("vidaa");
   upSurface.owner.scheduleHomeLazyImageHydration(upSurface.cards[24], {
     navigationDirection: "up"
   });
+  settleFrames();
   for (const index of [21, 22, 23, 25, 26, 27]) {
     assert.equal(upSurface.images[index].src, `poster-2-${index % 10}`);
     assert.equal(upSurface.images[index].fetchPriority, "auto");
@@ -283,6 +306,7 @@ platform("vidaa");
   const { owner, images, cards, setFocused } = homeSurface();
   noteVidaaNavigationKeyDown(39);
   owner.scheduleHomeLazyImageHydration(cards[0], { refreshIndex: true });
+  frame();
   assert.equal(
     images[0].src,
     "poster-0-0",
@@ -296,6 +320,7 @@ platform("vidaa");
   now = 100;
   noteVidaaNavigationKeyDown(39);
   owner.scheduleHomeLazyImageHydration(cards[1]);
+  frame();
   assert.equal(images[1].src, "poster-0-1");
   advance(350);
   assert.equal(globalScans, 0, "Held remote repeats keep secondary loading paused");
@@ -308,16 +333,26 @@ platform("vidaa");
   const loadedBeforeFrame = images.filter((image) => image.src).length;
   frame();
   assert.equal(
+    images.filter((image) => image.src).length,
+    loadedBeforeFrame,
+    "Viewport batching shares the request queue"
+  );
+  frame();
+  assert.equal(
     images.filter((image) => image.src).length - loadedBeforeFrame,
-    4,
-    "Commit at most four secondary sources per frame"
+    2,
+    "Start at most two secondary sources per frame"
   );
   const readsAfterScan = geometryReads;
 
   noteVidaaNavigationKeyDown(40);
   setFocused(cards[10]);
   owner.scheduleHomeLazyImageHydration(cards[10]);
-  assert.equal(frames.size, 0, "New navigation cancels the queued background image burst");
+  assert.equal(
+    frames.size,
+    1,
+    "New navigation replaces the background queue with the focused poster"
+  );
   assert.equal(geometryReads, readsAfterScan);
   assert.equal(owner.homeLazyImageCommitQueue.length, 0);
   noteVidaaNavigationKeyUp(40);
@@ -355,6 +390,7 @@ platform("vidaa");
   owner.getNodeRowKey = (node) => node.dataset.navRowKey;
   owner.lastFocusedItemIndexByRowKey = { "row-1": 8 };
   owner.scheduleHomeLazyImageHydration(cards[4], { navigationDirection: "down" });
+  settleFrames();
   assert.equal(images[18].src, "poster-1-8", "Warm the remembered column in the next row");
   assert.equal(images[20].src, "poster-2-0", "Unvisited rows use the navigation default column");
   assert.equal(

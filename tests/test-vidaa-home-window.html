@@ -58,6 +58,7 @@
   } from "../js/ui/screens/home/vidaaHomeCardWindow.js";
   import { releaseDistantVidaaHomeImages } from "../js/ui/screens/home/vidaaHomeImageWindow.js";
   import { patchHomeMarkup } from "../js/ui/screens/home/patchHomeMarkup.js";
+  import { updateHomeDom } from "../js/ui/screens/home/homeDomUpdate.js";
   const result = document.getElementById("result");
   try {
     const assert = (condition, message) => {
@@ -281,6 +282,83 @@
     assert(
       screen.homeVidaaParkedCards.size === 0 && screen.homeVidaaActiveCards === null,
       "Discard must release window references"
+    );
+
+    // Only generated static cards opt in. Large catalogs retain canonical
+    // markup, not every detached DOM tree; custom/listener cards above keep
+    // their original nodes. The navigation anchor and its listeners survive.
+    const recyclableMarkup = `<div class="home-shell"><main class="home-main">${Array.from({ length: 12 }, (_, r) => `<section class="home-row"><div class="home-track">${Array.from({ length: 40 }, (_, c) => `<article tabindex="0" class="home-content-card home-poster-card" data-item-id="recycle-${r}-${c}" data-vidaa-recyclable-card="true"><div class="home-poster-frame"><img class="content-poster" data-src="${imageUrl}"><img class="home-poster-expanded-backdrop" data-src="${imageUrl}" data-load-bound="true"></div><span class="title">Title ${r}-${c}</span></article>`).join("")}</div></section>`).join("")}</main></div>`;
+    updateHomeDom(container, recyclableMarkup);
+    const recycleViewport = container.querySelector("main");
+    const recycleCards = [...container.querySelectorAll("article")];
+    const recycleScreen = { container };
+    let anchorClicks = 0;
+    recycleCards[15].addEventListener("click", () => anchorClicks++);
+    const canonicalOldChild = recycleCards[15].firstElementChild;
+    const successfulFallback = "https://fixture.invalid/fallback.jpg";
+    recycleCards[15].querySelector(".content-poster").dataset.src = successfulFallback;
+    updateVidaaHomeCardWindow(
+      recycleScreen,
+      recycleViewport.getBoundingClientRect(),
+      recycleCards[0]
+    );
+    const recycled = [...recycleScreen.homeVidaaParkedCards.values()].filter(
+      (record) => !record.content
+    );
+    assert(recycled.length > 250, "Old offscreen cards must release their detached DOM trees");
+    assert(
+      recycleScreen.homeVidaaRetainedCardFragments.size <= 96,
+      "Detached static card cache must stay bounded"
+    );
+    assert(recycleCards[15].childNodes.length === 0, "Far card anchor is a stable empty slot");
+    const recycleHeight = recycleViewport.scrollHeight;
+    restoreVidaaHomeCard(recycleScreen, recycleCards[15]);
+    assert(
+      recycleCards[15].firstElementChild !== canonicalOldChild,
+      "Old static visual trees must be recreated"
+    );
+    assert(
+      recycleCards[15].querySelector(".content-poster").dataset.src === successfulFallback,
+      "Recycling preserves the successful image fallback"
+    );
+    assert(
+      recycleCards[15].querySelector(".home-poster-expanded-backdrop").dataset.loadBound ===
+        "false",
+      "Recreated expansion can bind a fresh listener"
+    );
+    assert(
+      !recycleCards[15].querySelector("img[src]"),
+      "Recreated images remain deferred until needed"
+    );
+    recycleCards[15].focus({ preventScroll: true });
+    recycleCards[15].click();
+    assert(
+      document.activeElement === recycleCards[15] && anchorClicks === 1,
+      "Recycling preserves navigation anchor and delegated interaction"
+    );
+    assert(recycleViewport.scrollHeight === recycleHeight, "Recycling keeps scroll geometry");
+    const refreshed = recyclableMarkup.replace("Title 0-15", "Refreshed title");
+    updateHomeDom(container, refreshed, {
+      incremental: true,
+      focusedNode: recycleCards[15],
+      beforeCardUpdate: (card) => restoreVidaaHomeCard(recycleScreen, card)
+    });
+    assert(
+      recycleCards[15].textContent.includes("Refreshed title"),
+      "Recycled child snapshots support incremental data updates"
+    );
+    assert(
+      document.activeElement === recycleCards[15],
+      "Incremental refresh preserves recycled focus"
+    );
+    restoreAllVidaaHomeCards(recycleScreen);
+    assert(
+      container.querySelectorAll(".home-poster-frame").length === 480,
+      "All canonical trees remain restorable"
+    );
+    assert(
+      recycleScreen.homeVidaaRetainedCardFragments.size === 0,
+      "Restore/cleanup clears the fragment cache"
     );
     container.replaceChildren();
     result.textContent = `PASS: 300 card anchors, ${active} active visual subtrees.\nScroll geometry, focus, listeners, image release, reversal, reconciliation and cleanup verified.`;

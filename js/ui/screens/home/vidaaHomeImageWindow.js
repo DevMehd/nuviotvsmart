@@ -15,11 +15,12 @@ const IMAGE_SELECTOR = [
 // one card/row reuses warm artwork; traversing a catalog doesn't retain every
 // decoded poster and full-size expanded backdrop indefinitely.
 export function releaseVidaaHomeImage(image) {
-  const src = image.getAttribute("src");
-  if (!src) return;
   cancelVidaaPosterObservation(image);
-  image.dataset.src = src;
-  image.removeAttribute("src");
+  const src = image.getAttribute("src");
+  if (src) {
+    image.dataset.src = src;
+    image.removeAttribute("src");
+  }
   if (image.classList.contains("home-poster-expanded-backdrop")) {
     image.dataset.loadState = "";
     image.dataset.loadBound = "false";

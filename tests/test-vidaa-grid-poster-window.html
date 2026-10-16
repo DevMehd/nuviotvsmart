@@ -45,6 +45,8 @@
     const { DiscoverScreen } = await import("../js/ui/screens/search/discoverScreen.js");
     const { scheduleVidaaGridPosterWindow } =
       await import("../js/ui/components/vidaaGridPosterWindow.js");
+    const { getVidaaPosterSchedulerStats } =
+      await import("../js/ui/components/vidaaPosterScheduler.js");
     const { noteVidaaNavigationKeyDown, resetVidaaNavigationActivity } =
       await import("../js/ui/navigation/vidaaNavigationActivity.js");
     const container = document.getElementById("fixture");
@@ -137,10 +139,45 @@
           ),
           `${kind}: visible poster missing`
         );
+      const waitForVisiblePosters = async ({ held = false, focus = null } = {}) => {
+        const images = visibleImages();
+        const loaded = () =>
+          images.filter(
+            (image) => image.hasAttribute("src") && image.complete && image.naturalWidth > 0
+          ).length;
+        const initialReady = loaded();
+        // Completion includes asynchronous native load/decode. The old fixed
+        // eight-frame snapshot raced those events after imposing two starts
+        // per frame. Keep input held and wait for the actual bounded condition.
+        const deadlineFrames = Math.max(24, images.length * 3);
+        let elapsedFrames = 0;
+        while (loaded() < images.length && elapsedFrames < deadlineFrames) {
+          if (held) noteVidaaNavigationKeyDown(40);
+          await nextFrame();
+          elapsedFrames++;
+          assert(
+            getVidaaPosterSchedulerStats().active <= 4,
+            `${kind}: shared native request budget exceeded`
+          );
+          if (elapsedFrames === 4 && focus)
+            assert(
+              focus.querySelector("img").hasAttribute("src"),
+              `${kind}: focused poster did not start within four frames`
+            );
+          if (elapsedFrames === 8)
+            assert(
+              loaded() > initialReady,
+              `${kind}: visible posters made no progress while input was held`
+            );
+        }
+        ready();
+        if (focus)
+          assert(document.activeElement === focus, `${kind}: poster loading moved the focus`);
+        return elapsedFrames;
+      };
       let peakSources = 0;
       render();
-      await waitFrames(18);
-      ready();
+      await waitForVisiblePosters();
       assert(resizeListeners.size === 1, `${kind}: exactly one resize listener`);
       let firstImage = container.querySelector("img");
       let target;
@@ -153,8 +190,7 @@
         scroller.scrollTop +=
           target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 20;
         scroller.dispatchEvent(new Event("scroll"));
-        await waitFrames(18);
-        ready();
+        await waitForVisiblePosters({ focus: target });
         assert(document.activeElement === target, `${kind}: scroll hydration changed focus`);
         peakSources = Math.max(peakSources, container.querySelectorAll("img[src]").length);
         assert(peakSources < 100, `${kind}: distant sources accumulated (${peakSources})`);
@@ -173,12 +209,12 @@
         scroller.scrollTop +=
           target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 20;
         scroller.dispatchEvent(new Event("scroll"));
-        await waitFrames(8, true);
-        ready();
+        const heldFrames = await waitForVisiblePosters({ held: true, focus: target });
+        result.textContent += `${kind}: held row ${row} completed in ${heldFrames} frames.\n`;
       }
       resetVidaaNavigationActivity();
       scheduleVidaaGridPosterWindow(owner, selector);
-      await waitFrames(18);
+      await waitForVisiblePosters();
       // Rebuild with production markup and poster-transfer methods: the loaded
       // node and chosen title must survive without a placeholder flash.
       const loaded = target.querySelector("img");
@@ -191,12 +227,11 @@
         (card) => card.dataset.focusKey === owner.lastFocusedKey
       );
       assert(target.querySelector("img") === loaded, `${kind}: decoded visible image was replaced`);
-      await waitFrames(18);
-      ready();
+      await waitForVisiblePosters({ focus: target });
       const previousColumns = owner.navModel.rows[0].length;
       container.style.width = "1120px";
       window.dispatchEvent(new Event("resize"));
-      await waitFrames(18);
+      await waitForVisiblePosters({ focus: target });
       assert(
         owner.navModel.rows[0].length < previousColumns,
         `${kind}: navigation rows did not follow resize`

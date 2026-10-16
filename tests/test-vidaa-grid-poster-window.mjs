@@ -246,6 +246,8 @@ function surface(rowCount = 1000, columns = 6) {
     }
     scheduleVidaaGridPosterWindow(owner, ".seeall-shell");
     frame();
+    assert.equal(counts.sources, 0, "Geometry and native source assignment run in separate frames");
+    frame();
     assert.equal(
       counts.sources,
       1,

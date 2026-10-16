@@ -85,7 +85,15 @@ function fixture(fallbacks = []) {
     getCurrentFocusedNode: () => node,
     isVidaaHomeLoadingBusy: () => false
   };
-  const hydrate = () => screen.scheduleVidaaHomeLazyImageHydration(node);
+  const hydrate = () => {
+    screen.scheduleVidaaHomeLazyImageHydration(node);
+    // Native requests now enter the shared frame/request budget.
+    for (let pass = 0; frames.size && pass < 10; pass++) {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback());
+    }
+  };
   return { image, screen, hydrate };
 }
 
@@ -214,12 +222,21 @@ for (const posterClass of ["content-poster", "home-continue-bg"]) {
   hydrate();
   image.error();
   cancelVidaaPosterObservation(image);
+  const cancelledSource = image.dataset.src;
+  const cancelledRequests = image.requests.length;
   await flush();
   assert.equal(
     image.dataset.src,
-    undefined,
-    "Released observations must not resurrect pending image hydration"
+    cancelledSource,
+    "Released observations must not change the scheduler's cancelled source"
   );
+  assert.equal(image.src, "", "Cancellation releases the native request");
+  assert.equal(
+    image.requests.length,
+    cancelledRequests,
+    "Late recovery starts no replacement request"
+  );
+  delete image.dataset.src;
   observeVidaaPosterReady(screen, image);
   image.isConnected = false;
   image.error();

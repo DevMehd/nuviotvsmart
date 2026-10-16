@@ -59,6 +59,16 @@ L'importatore usa l'asset Tizen ufficiale con SHA-256 fissato, estrae soltanto l
 due impostazioni Trakt, preserva le altre proprietà e non stampa i valori.
 Il codice applicativo della release non viene copiato nel fork.
 
+Anche il deploy Vercel prepara ora la configurazione con `--if-missing` prima
+di generare il pacchetto: un checkout nuovo non dipende dal file locale ignorato
+presente sul computer di sviluppo. Una coppia Client ID/Secret già valida viene
+conservata senza richieste di rete, anche per un'app personalizzata. Una coppia
+parziale incompatibile resta intatta e blocca la build; download o verifica SHA-256
+falliti bloccano ugualmente il deploy. Il percorso `NUVIO_LOCAL_PROPERTIES`, se
+configurato, è rispettato sia dalla preparazione sia dalla build. I test della
+preparazione usano un archivio sintetico in una cartella temporanea e generano il
+file runtime con lo stesso passaggio impiegato dalla build, senza valori reali.
+
 ## Verifiche reali completate
 
 Login eseguito con l'account autorizzato. Password e token sono rimasti in memoria

@@ -98,8 +98,8 @@ assert.deepEqual(renderedSources("browser", episode), [
   tmdb("w1280", "poster")
 ]);
 assert.deepEqual(renderedSources("vidaa", episode, { cardStyle: "poster" }), [
-  tmdb("w500", "poster"),
-  tmdb("w500", "backdrop")
+  tmdb("w342", "poster"),
+  tmdb("w342", "backdrop")
 ]);
 assert.deepEqual(
   renderedSources("vidaa", { ...episode, episodeThumbnail: tmdb("w300", "small") }),
