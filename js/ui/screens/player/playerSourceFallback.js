@@ -1,4 +1,8 @@
 import { PlayerController, t } from "./playerScreenContext.js";
+import {
+  PlaybackDiagnostics,
+  playbackFailureEntry
+} from "../../../core/diagnostics/playbackDiagnostics.js";
 
 export function createPlayerSourceFallbackMethods() {
   return {
@@ -111,7 +115,8 @@ export function createPlayerSourceFallbackMethods() {
     tryNextStreamCandidate({
       streamCandidate = null,
       playbackUrl = "",
-      sourceAttemptToken = null
+      sourceAttemptToken = null,
+      reason = ""
     } = {}) {
       if (this.isExternalFrameMode()) return false;
       if (!this.isCurrentSourcePlaybackAttempt(sourceAttemptToken)) return true;
@@ -120,6 +125,20 @@ export function createPlayerSourceFallbackMethods() {
       const current = this.getCurrentStreamCandidate();
       if (candidate?.id && current?.id && candidate.id !== current.id) return true;
       const failedUrl = playbackUrl || candidate?.url || "";
+      // Every abandoned source is recorded, whatever path gave up on it (error, stall, refusal).
+      try {
+        PlaybackDiagnostics.record(
+          playbackFailureEntry(this, {
+            candidate,
+            playbackUrl: failedUrl,
+            reason: reason || this.lastSourceFailureReason || "fallback",
+            video: PlayerController.video,
+            engine: PlayerController.playbackEngine
+          })
+        );
+      } catch (_error) {
+        // Diagnostics never block playback.
+      }
       this.markPlaybackSourceFailed(failedUrl, candidate);
       if (candidate?.url && candidate.url !== failedUrl)
         this.failedPlaybackUrls.add(String(candidate.url).trim());

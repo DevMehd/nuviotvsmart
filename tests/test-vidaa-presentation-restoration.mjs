@@ -111,14 +111,14 @@ assert.equal(b.image.getAttribute("src"), undefined, "Home cleanup releases the 
 assert.equal(owner.collectionFocusGifPending, null);
 
 const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "utf8");
-const changelog = parsePersonalChangelog(notes, "1.2.7");
+const changelog = parsePersonalChangelog(notes, "1.2.8");
 assert.equal(changelog.date, "2026-10-16");
-assert.ok(changelog.notes.includes("la télé ignorait les envois du téléphone"));
+assert.ok(changelog.notes.includes("Diagnostic de lecture"));
 assert.ok(
-  !changelog.notes.includes("Envoyer un téléchargement du téléphone à la télé"),
+  !changelog.notes.includes("la télé ignorait les envois du téléphone"),
   "Only the latest entry is included in the TV prompt"
 );
-assert.throws(() => parsePersonalChangelog(notes, "1.2.8"));
+assert.throws(() => parsePersonalChangelog(notes, "1.2.9"));
 console.log(
   "Presentation restoration checks passed: declared badges, safe source labels, bounded GIF lifecycle, preview timing and French changelog."
 );

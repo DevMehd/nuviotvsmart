@@ -236,6 +236,26 @@ export function createPersoCloud(options = {}) {
     }
   }
 
+  /** Private report (crash, error, playback failure) readable by the members of the space. */
+  async function sendReport(id, report) {
+    const token = await accessToken();
+    if (!token || !id) return false;
+    try {
+      const response = await request(
+        "/rest/v1/perso_reports",
+        {
+          method: "POST",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ space_id: id, ...report })
+        },
+        token
+      );
+      return Boolean(response.ok);
+    } catch (_error) {
+      return false;
+    }
+  }
+
   async function events(id, kind, afterId = 0, limit = 200) {
     const token = await accessToken();
     if (!token || !id) return null;
@@ -395,6 +415,7 @@ export function createPersoCloud(options = {}) {
     accessToken,
     spaceId,
     sendEvent,
+    sendReport,
     events,
     putDoc,
     getDocs,

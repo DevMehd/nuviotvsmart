@@ -4,6 +4,7 @@ import {
   createWebPlaybackHeaderDiagnosticSnapshot,
   getStandaloneWebPlaybackCompatibility
 } from "../../../core/player/webPlaybackHeaders.js";
+import { PlaybackDiagnostics, playbackFailureEntry } from "../../../core/diagnostics/playbackDiagnostics.js";
 
 export function createPlayerScreenMethods17() {
   const { PlayerController, Environment, t, cleanPlaybackDiagnosticValue, pushPlaybackDiagnosticLine, extractPlaybackHttpStatus } =
@@ -195,7 +196,38 @@ export function createPlayerScreenMethods17() {
         sourceAttemptToken = null
       } = {}
     ) {
-      if (this.tryNextStreamCandidate?.({ streamCandidate, playbackUrl, sourceAttemptToken })) return;
+      try {
+        PlaybackDiagnostics.record(
+          playbackFailureEntry(this, {
+            candidate:
+              streamCandidate ||
+              this.getStreamCandidateByUrl?.(playbackUrl || this.activePlaybackUrl) ||
+              this.getCurrentStreamCandidate?.(),
+            playbackUrl: playbackUrl || this.activePlaybackUrl,
+            reason: reason || "startup-error",
+            mediaErrorCode,
+            details: [
+              String(message || ""),
+              ...this.getPlaybackErrorDetailLines({
+                mediaErrorCode,
+                detail,
+                error,
+                eventDetail,
+                streamCandidate,
+                playbackUrl,
+                reason,
+                resolverStatus,
+                resolverDetail
+              })
+            ],
+            video: PlayerController.video,
+            engine: PlayerController.playbackEngine
+          })
+        );
+      } catch (_error) {
+        // Diagnostics never block playback.
+      }
+      if (this.tryNextStreamCandidate?.({ streamCandidate, playbackUrl, sourceAttemptToken, reason: reason || "startup-error" })) return;
       if (this.sourceFallbackExhausted) {
         message = t("player_error_no_working_sources", {}, "None of the remaining sources could be played.");
         details = [];
