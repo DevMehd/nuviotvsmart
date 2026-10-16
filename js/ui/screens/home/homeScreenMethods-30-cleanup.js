@@ -3,6 +3,7 @@ import { forgetHomeMarkup } from "./patchHomeMarkup.js";
 import { suspendVidaaHomeCardWindow, discardVidaaHomeCards } from "./vidaaHomeCardWindow.js";
 
 import { cancelVidaaHomePosterPrefetches } from "./vidaaHomePosterPrefetch.js";
+import { clearVidaaHomePosterPreviews } from "./vidaaHomePosterExpansion.js";
 
 export function createHomeScreenMethods30() {
   const { ScreenUtils, Platform, getTvRuntimePerformanceProfile } = internals;
@@ -58,6 +59,7 @@ export function createHomeScreenMethods30() {
       this.cancelFocusedPosterFlow();
       this.clearFocusedPosterFlowState();
       this.collapseFocusedPoster();
+      clearVidaaHomePosterPreviews(this.container);
       this.clearHomeTrailerLayers();
       if (this.activeCollectionFocusGifNode) {
         this.hydrateCollectionFocusGif(this.activeCollectionFocusGifNode, false);

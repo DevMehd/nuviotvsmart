@@ -9,7 +9,9 @@ export function captureVidaaHomeTrackAppendInset(screen, track) {
   const focused = screen.getCurrentFocusedNode?.();
   if (!focused?.isConnected || focused.closest?.(".home-track") !== track) return;
   const previewCamera = getVidaaHomePosterPreviewCamera(focused);
-  const maxScroll = previewCamera?.maxScroll ?? Math.max(0, Number(track.scrollWidth || 0) - Number(track.clientWidth || 0));
+  const maxScroll =
+    previewCamera?.maxScroll ??
+    Math.max(0, Number(track.scrollWidth || 0) - Number(track.clientWidth || 0));
   const scrollLeft = previewCamera?.scrollLeft ?? Number(track.scrollLeft || 0);
   let leftPad = Number.parseFloat(track.dataset?.trackPadAlignLeft || "");
   let rightPad = Number.parseFloat(track.dataset?.trackPadRight || "");
@@ -25,7 +27,10 @@ export function captureVidaaHomeTrackAppendInset(screen, track) {
   // Permit that padding, while leaving ordinary navigation away from the end
   // and already left-aligned focus on its original camera path.
   if (maxScroll - scrollLeft > rightPad + 1) return;
-  const inset = (previewCamera?.cardLeft ?? focused.getBoundingClientRect().left) - track.getBoundingClientRect().left - leftPad;
+  const inset =
+    (previewCamera?.cardLeft ?? focused.getBoundingClientRect().left) -
+    track.getBoundingClientRect().left -
+    leftPad;
   if (inset > Math.max(1, Number(track.clientLeft || 0))) appendInsets.set(track, inset);
 }
 

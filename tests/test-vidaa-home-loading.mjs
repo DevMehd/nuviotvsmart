@@ -28,6 +28,8 @@ const { createHomeScreenMethods19 } =
   await import("../js/ui/screens/home/homeScreenMethods-19-handle-home-dpad.js");
 const { createHomeScreenMethods21 } =
   await import("../js/ui/screens/home/homeScreenMethods-21-load-data.js");
+const { startHomeContinueWatchingLoad } =
+  await import("../js/ui/screens/home/homeContinueWatchingLoad.js");
 const {
   metaRepository,
   mdbListRepository,
@@ -36,7 +38,10 @@ const {
   watchedItemsRepository,
   watchProgressRepository,
   LayoutPreferences,
-  buildCatalogOrderKey
+  buildCatalogOrderKey,
+  buildCollectionHomeRow,
+  StartupSyncService,
+  WatchProgressSource
 } = await import("../js/ui/screens/home/homeScreenContext.js");
 const { heroImagePreloadCache } =
   await import("../js/ui/screens/home/homeScreenHelpers-02-extract-release-date-text.js");
@@ -577,9 +582,171 @@ for (const name of ["vidaa", "tizen", "webos", "browser"]) {
   }
 }
 
-// A resumed Home refresh must use the same input-aware render scheduler as
-// progressive responses. Previously these two completion paths rendered inline
-// despite a held arrow, reattaching the whole catalog during navigation.
+// A usable row releases only VIDAA's full-screen gate while progress remains
+// pending. Empty/error/loading rows must keep the bounded initial loader.
+const readyRow = {
+  result: { status: "success", data: { items: [{ id: "ready", name: "Ready", type: "movie" }] } }
+};
+const collectionRow = buildCollectionHomeRow({
+  id: "fixture-collection",
+  title: "Collection",
+  folders: [{ id: "fixture-folder", title: "Folder" }]
+});
+for (const name of ["vidaa", "tizen", "webos", "browser"]) {
+  for (const [label, rows, ready] of [
+    ["empty", [], false],
+    ["error", [{ result: { status: "error" } }], false],
+    ["loading", [{ result: { status: "loading" }, loadingItems: [{ isLoading: true }] }], false],
+    ["empty success", [{ result: { status: "success", data: { items: [] } } }], false],
+    [
+      "placeholder success",
+      [{ result: { status: "success", data: { items: [{ isLoading: true }] } } }],
+      false
+    ],
+    ["catalog", [readyRow], true],
+    ["collection", [collectionRow], true]
+  ]) {
+    reset(name);
+    const state = {
+      ...createHomeScreenMethods04(),
+      homeLoadToken: 1,
+      rows,
+      isInitialHomeLoading: true,
+      continueWatchingInitialResolved: false,
+      continueWatchingLoading: true
+    };
+    state.scheduleInitialHomeLoadTimeout(1);
+    state.releaseInitialHomeLoading();
+    const released = name === "vidaa" && ready;
+    assert.equal(state.isInitialHomeLoading, !released, `${name} ${label}: usable-row gate policy`);
+    assert.equal(timers.size, released ? 0 : 1, `${name} ${label}: gate deadline lifetime`);
+    assert.equal(
+      state.continueWatchingInitialResolved,
+      false,
+      "Revealing catalogs cannot resolve remote progress"
+    );
+    assert.equal(state.continueWatchingLoading, true, "CW keeps its own placeholder");
+    state.releaseInitialHomeLoading({ force: true });
+    assert.equal(
+      state.isInitialHomeLoading,
+      false,
+      "The explicit deadline/error release remains available"
+    );
+    assert.equal(timers.size, 0);
+  }
+}
+
+// Resolve the real asynchronous CW publication after catalogs have appeared.
+// A late result may focus CW before interaction; after input it must retain the
+// selected catalog and hero while still publishing the fresh progress row.
+{
+  const originals = [
+    [watchProgressRepository, "getContinueWatchingSourceKey"],
+    [watchProgressRepository, "getContinueWatchingRemoteProgressState"],
+    [StartupSyncService, "isCurrentProfilePullPending"],
+    [StartupSyncService, "getCurrentProfilePullPromise"]
+  ].map(([object, key]) => [object, key, object[key]]);
+  const sourceKey = "fixture-progress";
+  watchProgressRepository.getContinueWatchingSourceKey = () => sourceKey;
+  watchProgressRepository.getContinueWatchingRemoteProgressState = () => ({
+    sourceKey,
+    loaded: true
+  });
+  StartupSyncService.isCurrentProfilePullPending = () => false;
+  StartupSyncService.getCurrentProfilePullPromise = () => null;
+  try {
+    for (const interacted of [false, true]) {
+      reset("vidaa");
+      const pendingProgress = deferred();
+      const selected = card("selected-catalog");
+      const previousHero = { id: "selected-hero", type: "movie" };
+      const state = {
+        ...createHomeScreenMethods04(),
+        layoutMode: "modern",
+        layoutPrefs: { continueWatchingEnabled: true },
+        homeLoadToken: 1,
+        rows: [readyRow],
+        hasLoadedOnce: true,
+        isInitialHomeLoading: true,
+        continueWatchingInitialResolved: false,
+        continueWatchingLoading: true,
+        continueWatchingDisplay: [],
+        forceInitialContinueWatchingFocus: false,
+        focused: selected,
+        heroItem: previousHero,
+        refreshWatchedTitleState() {},
+        selectNextUpProgressCandidates: () => [],
+        enrichContinueWatching: async (items) => items,
+        persistContinueWatchingSnapshot() {},
+        clearContinueWatchingSnapshot() {},
+        maybeStartPendingHomeBackgroundRefresh() {},
+        requestBackgroundRender() {},
+        pickInitialHero() {
+          return this.continueWatchingDisplay[0];
+        }
+      };
+      const loading = startHomeContinueWatchingLoad.call(state, {
+        token: 1,
+        watchedItemsPromise: Promise.resolve([]),
+        progressAllPromise: Promise.resolve([]),
+        recentProgressPromise: pendingProgress.promise,
+        progressErrors: {},
+        continueWatchingSourceKey: sourceKey,
+        continueWatchingSource: WatchProgressSource.NUVIO_SYNC,
+        startupSyncPendingAtLoad: false,
+        startupSyncPullPromiseAtLoad: null,
+        nextUpSeedOptions: {},
+        prefs: state.layoutPrefs,
+        background: false,
+        preserveHomeReturnState: false,
+        suppressContinueWatchingLoading: false,
+        hasExistingContinueWatchingDisplay: false
+      });
+      state.releaseInitialHomeLoading();
+      assert.equal(state.isInitialHomeLoading, false);
+      assert.equal(state.continueWatchingInitialResolved, false);
+      state.hasUserInteractedSinceHomePaint = interacted;
+      pendingProgress.resolve([
+        {
+          contentId: "fixture-progress-item",
+          contentType: "movie",
+          title: "Progress title",
+          poster: "https://fixture.invalid/progress.jpg",
+          positionMs: 120000,
+          durationMs: 1200000
+        }
+      ]);
+      await loading;
+      assert.equal(state.continueWatchingDisplay.length, 1);
+      assert.equal(state.continueWatchingInitialResolved, true);
+      assert.equal(state.continueWatchingLoading, false);
+      assert.equal(
+        state.forceInitialContinueWatchingFocus,
+        !interacted,
+        "Late CW focus follows the existing interaction policy"
+      );
+      assert.equal(
+        state.focused,
+        selected,
+        "Publication does not directly change the selected catalog"
+      );
+      if (interacted)
+        assert.equal(
+          state.heroItem,
+          previousHero,
+          "Late progress cannot replace the user's selected hero"
+        );
+    }
+  } finally {
+    originals.forEach(([object, key, original]) => {
+      object[key] = original;
+    });
+  }
+}
+
+// Resumed refreshes and the final cold-load response on VIDAA must use the
+// same input-aware render scheduler as progressive responses. Completing a
+// request must not reattach the catalog during held-arrow navigation.
 const originalAddons = addonRepository.getInstalledAddons;
 const originalWatched = watchedItemsRepository.getAll;
 const originalAllProgress = watchProgressRepository.getAllForContinueWatching;
@@ -666,7 +833,7 @@ try {
             preserveReturnState: true
           });
         const deferred =
-          (name === "vidaa" || inputMode === "rapid-burst") && operation !== "cold-load";
+          name === "vidaa" || (inputMode === "rapid-burst" && operation !== "cold-load");
         assert.equal(renders, deferred ? 0 : 1, `${label}: completion render policy`);
         if (deferred) {
           await paint();
@@ -698,5 +865,5 @@ try {
 }
 
 console.log(
-  "Home loading checks passed: cross-runtime held/tap media settling, unchanged single-tap timing, polling cleanup and stale responses."
+  "Home loading checks passed: ready-row/CW gate, deferred progress and interaction-safe late focus, cross-runtime media settling, cleanup and stale responses."
 );

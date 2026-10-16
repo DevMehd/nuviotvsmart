@@ -10,7 +10,11 @@ function cssPixels(value, fallback) {
 }
 
 function saveStyles(element, properties) {
-  return properties.map((name) => [name, element.style.getPropertyValue(name), element.style.getPropertyPriority(name)]);
+  return properties.map((name) => [
+    name,
+    element.style.getPropertyValue(name),
+    element.style.getPropertyPriority(name)
+  ]);
 }
 
 function restoreStyles(element, declarations) {
@@ -37,12 +41,15 @@ function restorePreviewPoster(position) {
   if (poster.style == null) poster.element.removeAttribute("style");
   else poster.element.setAttribute("style", poster.style);
   if (poster.element.parentElement === position.node && position.node.contains(poster.parent)) {
-    poster.parent.insertBefore(poster.element, poster.next?.parentNode === poster.parent ? poster.next : poster.parent.firstChild);
+    poster.parent.insertBefore(
+      poster.element,
+      poster.next?.parentNode === poster.parent ? poster.next : poster.parent.firstChild
+    );
   }
   position.poster = null;
 }
 
-export function positionVidaaHomePosterPreview(node, viewport = null) {
+export function positionVidaaHomePosterPreview(node, viewport = null, { animate = true } = {}) {
   const track = node.closest?.(".home-track");
   const shell = node.closest?.(".home-screen-shell.home-layout-modern");
   const frame = node.querySelector?.(".home-poster-frame");
@@ -60,33 +67,64 @@ export function positionVidaaHomePosterPreview(node, viewport = null) {
   const trackRect = track.getBoundingClientRect();
   const viewportRect = (viewport || shell).getBoundingClientRect();
   const shellRect = shell.getBoundingClientRect();
-  const documentWidth = Number(globalThis.document?.documentElement?.clientWidth || globalThis.innerWidth || 0);
-  const left = Math.max(0, trackRect.left, viewportRect.left, shellRect.left) + PREVIEW_EDGE_INSET;
-  const right = Math.min(trackRect.right, viewportRect.right, shellRect.right, documentWidth || Infinity) - PREVIEW_EDGE_INSET;
-  const fixedLandscapeWidth = node.classList.contains("is-landscape") && shell.classList.contains("home-modern-landscape-posters");
-  const portraitWidth = cssPixels(styles.getPropertyValue("--home-modern-portrait-poster-width"), collapsedWidth);
-  const requestedWidth = fixedLandscapeWidth ? collapsedWidth : cssPixels(
-    styles.getPropertyValue(node.classList.contains("is-landscape") ? "--home-poster-expanded-width" : "--home-modern-portrait-expanded-width"),
-    portraitWidth * 2.66
+  const documentWidth = Number(
+    globalThis.document?.documentElement?.clientWidth || globalThis.innerWidth || 0
   );
-  const expandedWidth = Math.max(1, Math.min(requestedWidth, right - left - (frameRect.width - collapsedWidth)));
-  const cards = Array.from(track.children).filter((card) => card.classList.contains("home-content-card"));
+  const left = Math.max(0, trackRect.left, viewportRect.left, shellRect.left) + PREVIEW_EDGE_INSET;
+  const right =
+    Math.min(trackRect.right, viewportRect.right, shellRect.right, documentWidth || Infinity) -
+    PREVIEW_EDGE_INSET;
+  const fixedLandscapeWidth =
+    node.classList.contains("is-landscape") &&
+    shell.classList.contains("home-modern-landscape-posters");
+  const portraitWidth = cssPixels(
+    styles.getPropertyValue("--home-modern-portrait-poster-width"),
+    collapsedWidth
+  );
+  const requestedWidth = fixedLandscapeWidth
+    ? collapsedWidth
+    : cssPixels(
+        styles.getPropertyValue(
+          node.classList.contains("is-landscape")
+            ? "--home-poster-expanded-width"
+            : "--home-modern-portrait-expanded-width"
+        ),
+        portraitWidth * 2.66
+      );
+  const expandedWidth = Math.max(
+    1,
+    Math.min(requestedWidth, right - left - (frameRect.width - collapsedWidth))
+  );
+  const cards = Array.from(track.children).filter((card) =>
+    card.classList.contains("home-content-card")
+  );
   const index = cards.indexOf(node);
   // The card window retains parked row slots. Only paint/animate the nearby
   // cards, rather than measuring every catalog item after a long scroll.
   const radius = Math.ceil(Math.max(1, right - left) / Math.max(1, cardRect.width)) + 2;
-  const participants = cards.slice(Math.max(0, index - radius), index + radius + 1)
+  const participants = (animate ? cards : [])
+    .slice(Math.max(0, index - radius), index + radius + 1)
     .filter((card) => !card.classList.contains("vidaa-card-parked"))
     .map((element) => ({ element, rect: element.getBoundingClientRect() }));
   const poster = frame.querySelector(".content-poster");
   const posterRect = poster?.getBoundingClientRect();
   const trackStyles = getComputedStyle(track);
   const position = {
-    node, frame, track, viewport, scrollLeft: track.scrollLeft, expandedScrollLeft: track.scrollLeft,
-    collapsedMaxScroll: Math.max(0, track.scrollWidth - track.clientWidth), cardLeft: cardRect.left,
-    slotStyle: saveStyles(node, [SLOT_WIDTH_PROPERTY]),
+    node,
+    frame,
+    track,
+    viewport,
+    scrollLeft: track.scrollLeft,
+    expandedScrollLeft: track.scrollLeft,
+    collapsedMaxScroll: Math.max(0, track.scrollWidth - track.clientWidth),
+    cardLeft: cardRect.left,
+    slotStyle: saveStyles(node, [SLOT_WIDTH_PROPERTY, "--vidaa-poster-original-width"]),
     paddingStyle: saveStyles(track, ["padding-right"]),
-    animated: [], animationFrame: 0, cleanupTimer: 0, poster: null, onResize: null
+    animated: [],
+    animationFrame: 0,
+    cleanupTimer: 0,
+    poster: null,
+    onResize: null
   };
   positionedPreviews.set(node, position);
   activePreviews.add(node);
@@ -94,9 +132,13 @@ export function positionVidaaHomePosterPreview(node, viewport = null) {
   // Reserve the real flex slot once, as upstream does. FLIP then animates only
   // compositor transforms; no flex/width/margin tween relays out the row.
   node.style.setProperty(SLOT_WIDTH_PROPERTY, `${expandedWidth}px`);
+  if (posterRect) node.style.setProperty("--vidaa-poster-original-width", `${posterRect.width}px`);
   const clippedTrackRight = Math.max(0, trackRect.right - right + PREVIEW_EDGE_INSET);
   if (clippedTrackRight > 0) {
-    track.style.setProperty("padding-right", `${(Number.parseFloat(trackStyles.paddingRight) || 0) + clippedTrackRight}px`);
+    track.style.setProperty(
+      "padding-right",
+      `${(Number.parseFloat(trackStyles.paddingRight) || 0) + clippedTrackRight}px`
+    );
   }
   node.classList.add("is-expanded");
   const finalFrame = frame.getBoundingClientRect();
@@ -109,8 +151,13 @@ export function positionVidaaHomePosterPreview(node, viewport = null) {
   // A late backdrop leaves the original portrait undistorted. Keep that same
   // image (and its decoded resource) outside the scaled preview surface; the
   // backdrop-ready opacity rule still reveals the landscape when it is ready.
-  if (poster && posterRect) {
-    position.poster = { element: poster, parent: frame, next: poster.nextSibling, style: poster.getAttribute("style") };
+  if (animate && poster && posterRect) {
+    position.poster = {
+      element: poster,
+      parent: frame,
+      next: poster.nextSibling,
+      style: poster.getAttribute("style")
+    };
     poster.style.setProperty("left", `${posterRect.left - cardRect.left - node.clientLeft}px`);
     poster.style.setProperty("top", `${posterRect.top - cardRect.top - node.clientTop}px`);
     poster.style.setProperty("right", "auto");
@@ -120,8 +167,13 @@ export function positionVidaaHomePosterPreview(node, viewport = null) {
     poster.style.setProperty("pointer-events", "none");
     node.appendChild(poster);
   }
-  const animate = (element, from, to) => {
-    const saved = saveStyles(element, ["transform", "transform-origin", "transition", "will-change"]);
+  const animateElement = (element, from, to) => {
+    const saved = saveStyles(element, [
+      "transform",
+      "transform-origin",
+      "transition",
+      "will-change"
+    ]);
     position.animated.push({ element, styles: saved, to });
     element.style.setProperty("transition", "none", "important");
     element.style.setProperty("transform-origin", "left top", "important");
@@ -130,9 +182,10 @@ export function positionVidaaHomePosterPreview(node, viewport = null) {
   };
   participants.forEach(({ element, rect }, i) => {
     const shift = rect.left - finalRects[i].left + actualCameraShift;
-    if (Math.abs(shift) > 0.1) animate(element, `translateX(${shift}px)`, "translateX(0px)");
+    if (Math.abs(shift) > 0.1) animateElement(element, `translateX(${shift}px)`, "translateX(0px)");
   });
-  if (Math.abs(finalFrame.width - frameRect.width) > 0.1) animate(frame, `scaleX(${frameRect.width / finalFrame.width})`, "scaleX(1)");
+  if (animate && Math.abs(finalFrame.width - frameRect.width) > 0.1)
+    animateElement(frame, `scaleX(${frameRect.width / finalFrame.width})`, "scaleX(1)");
   if (position.animated.length) {
     node.classList.add("vidaa-poster-expanding");
     // Commit the inverted geometry together. The preview edge and neighboring
@@ -140,18 +193,32 @@ export function positionVidaaHomePosterPreview(node, viewport = null) {
     void frame.offsetWidth;
     position.animationFrame = requestAnimationFrame(() => {
       position.animationFrame = 0;
-      if (positionedPreviews.get(node) !== position || !node.classList.contains("is-expanded")) return;
+      if (positionedPreviews.get(node) !== position || !node.classList.contains("is-expanded"))
+        return;
       position.animated.forEach(({ element, to }) => {
-        element.style.setProperty("transition", `transform ${EXPANSION_DURATION_MS}ms ease-out`, "important");
+        element.style.setProperty(
+          "transition",
+          `transform ${EXPANSION_DURATION_MS}ms ease-out`,
+          "important"
+        );
         element.style.setProperty("transform", to, "important");
       });
-      position.cleanupTimer = setTimeout(() => finishAnimation(position), EXPANSION_DURATION_MS + 40);
+      position.cleanupTimer = setTimeout(
+        () => finishAnimation(position),
+        EXPANSION_DURATION_MS + 40
+      );
     });
   } else restorePreviewPoster(position);
   position.onResize = () => {
-    const shouldReposition = node.isConnected && node.classList.contains("focused") && node.classList.contains("is-expanded");
+    const shouldReposition =
+      node.isConnected &&
+      node.classList.contains("focused") &&
+      node.classList.contains("is-expanded");
     clearVidaaHomePosterPreviewPosition(node);
-    if (shouldReposition) positionVidaaHomePosterPreview(node, viewport?.isConnected === false ? null : viewport);
+    if (shouldReposition)
+      positionVidaaHomePosterPreview(node, viewport?.isConnected === false ? null : viewport, {
+        animate: false
+      });
   };
   globalThis.window?.addEventListener?.("resize", position.onResize);
 }
@@ -161,7 +228,8 @@ export function clearVidaaHomePosterPreviewPosition(node) {
   if (!position) return;
   // Run before removing is-expanded: restore the camera before dirtying layout,
   // without geometry reads on remote input. Preserve intentional later scrolls.
-  if (Math.abs(position.track.scrollLeft - position.expandedScrollLeft) < 1) position.track.scrollLeft = position.scrollLeft;
+  if (Math.abs(position.track.scrollLeft - position.expandedScrollLeft) < 1)
+    position.track.scrollLeft = position.scrollLeft;
   finishAnimation(position);
   restoreStyles(node, position.slotStyle);
   restoreStyles(position.track, position.paddingStyle);
@@ -172,8 +240,26 @@ export function clearVidaaHomePosterPreviewPosition(node) {
 
 export function getVidaaHomePosterPreviewCamera(node) {
   const position = positionedPreviews.get(node);
-  if (!position || Math.abs(position.track.scrollLeft - position.expandedScrollLeft) >= 1) return null;
-  return { scrollLeft: position.scrollLeft, maxScroll: position.collapsedMaxScroll, cardLeft: position.cardLeft };
+  if (!position || Math.abs(position.track.scrollLeft - position.expandedScrollLeft) >= 1)
+    return null;
+  return {
+    scrollLeft: position.scrollLeft,
+    maxScroll: position.collapsedMaxScroll,
+    cardLeft: position.cardLeft
+  };
+}
+
+export function hasVidaaHomePosterPreview(node) {
+  return positionedPreviews.has(node);
+}
+
+export function prepareVidaaHomePosterPreviewsForUpdate(container, previews) {
+  activePreviews.forEach((node) => {
+    if (container.contains(node)) {
+      clearVidaaHomePosterPreviewPosition(node);
+      previews.add(node);
+    }
+  });
 }
 
 export function clearVidaaHomePosterPreviews(container) {

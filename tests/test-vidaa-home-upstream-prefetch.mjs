@@ -20,10 +20,16 @@ const {
   watchedItemsRepository,
   watchProgressRepository,
   LayoutPreferences,
-  CollectionsStore
+  CollectionsStore,
+  HomeCatalogStore,
+  buildCatalogOrderKey,
+  buildCatalogDisableKey,
+  buildCollectionHomeRow
 } = context;
 const { createHomeScreenMethods03 } =
   await import("../js/ui/screens/home/homeScreenMethods-03-is-scroll-animation-active.js");
+const { createHomeScreenMethods04 } =
+  await import("../js/ui/screens/home/homeScreenMethods-04-get-hero-focus-delay.js");
 const { createHomeScreenMethods21 } =
   await import("../js/ui/screens/home/homeScreenMethods-21-load-data.js");
 const { createHomeScreenMethods22 } =
@@ -89,9 +95,16 @@ function fixture({
   batchSize = 8,
   constrained = false,
   legacy = false,
-  actualVidaa = false
+  actualVidaa = false,
+  catalogPrefs = {},
+  collections = []
 } = {}) {
   timers.clear();
+  HomeCatalogStore.set(
+    { order: [], disabled: [], customTitles: {}, ...catalogPrefs },
+    { silentSync: true }
+  );
+  CollectionsStore.get = () => collections;
   const requests = [];
   const commits = [];
   addonRepository.getInstalledAddons = async () => [
@@ -135,6 +148,9 @@ function fixture({
     refreshWatchedTitleState() {},
     retryPendingCatalogRows() {},
     render() {
+      commits.push(this.rows.slice());
+    },
+    requestRender() {
       commits.push(this.rows.slice());
     },
     requestBackgroundRender() {
@@ -216,6 +232,135 @@ test("Actual VIDAA auto performance policy excludes the extra prefetch batch", a
   ui.homeLoadToken++;
   requests.forEach(resolve);
   await loading;
+});
+
+test("Initial requests follow Home order and skip disabled rows before occupying a slot", async () => {
+  const key = (index) => buildCatalogOrderKey("fixture-addon", "movie", `catalog-${index}`);
+  const collection = {
+    id: "fixture-collection",
+    title: "Pinned collection",
+    pinToTop: true,
+    folders: [{ id: "fixture-folder", title: "Folder" }]
+  };
+  const collectionKey = buildCollectionHomeRow(collection).homeCatalogKey;
+  const { ui, requests, commits } = fixture({
+    count: 10,
+    constrained: true,
+    batchSize: 3,
+    collections: [collection],
+    catalogPrefs: {
+      order: [key(8), key(5)],
+      disabled: [
+        key(0),
+        buildCatalogDisableKey("https://fixture.invalid", "movie", "catalog-1", "Row 1")
+      ]
+    }
+  });
+  ui.sortAndFilterRows = createHomeScreenMethods22().sortAndFilterRows;
+  const loading = ui.loadData();
+  await settle();
+  assert.deepEqual(
+    requests.map((request) => request.args.catalogId),
+    ["catalog-8", "catalog-5"]
+  );
+  resolve(requests[0]);
+  await settle();
+  assert.equal(
+    requests.length,
+    2,
+    "The other initial request can stay pending without speculative work"
+  );
+  assert.deepEqual(
+    ui.rows.map((row) => row.homeCatalogKey),
+    [collectionKey, key(8)]
+  );
+  assert.ok(
+    commits.some((rows) => rows.some((row) => row.catalogId === "catalog-8")),
+    "Preferred row publishes progressively before the initial batch completes"
+  );
+
+  // Resolve each bounded deferred batch without advancing any network timeout.
+  let resolved = 1;
+  for (let batch = 0; batch < 5; batch++) {
+    const pending = requests.slice(resolved);
+    resolved = requests.length;
+    pending.forEach(resolve);
+    await settle();
+    await advance(0);
+  }
+  await loading;
+  assert.deepEqual(
+    requests.map((request) => request.args.catalogId),
+    [
+      "catalog-8",
+      "catalog-5",
+      "catalog-2",
+      "catalog-3",
+      "catalog-4",
+      "catalog-6",
+      "catalog-7",
+      "catalog-9"
+    ]
+  );
+  assert.deepEqual(
+    ui.rows.map((row) => row.homeCatalogKey),
+    [collectionKey, key(8), key(5), key(2), key(3), key(4), key(6), key(7), key(9)],
+    "Final Home order and pinned collections remain intact"
+  );
+});
+
+test("Last initial response uses the guarded render queue while VIDAA navigation is active", async () => {
+  const savedRaf = globalThis.requestAnimationFrame;
+  const savedCancelRaf = globalThis.cancelAnimationFrame;
+  const frames = new Map();
+  let frameId = 0;
+  const paint = async () => {
+    const pending = [...frames.values()];
+    frames.clear();
+    pending.forEach((callback) => callback());
+    await settle();
+  };
+  globalThis.requestAnimationFrame = (callback) => {
+    frames.set(++frameId, callback);
+    return frameId;
+  };
+  globalThis.cancelAnimationFrame = (id) => frames.delete(id);
+  try {
+    const { ui, requests, commits } = fixture({ count: 2, constrained: true });
+    ui.container = {};
+    ui.requestRender = createHomeScreenMethods04().requestRender;
+    ui.requestBackgroundRender = () => ui.requestRender();
+    let navigationBusy = false;
+    ui.shouldDeferHomeRenderForInput = () => navigationBusy;
+    const loading = ui.loadData();
+    await settle();
+    resolve(requests[0]);
+    await settle();
+    await paint();
+    assert.equal(commits.length, 1, "The first completed row can paint progressively");
+
+    ui.hasUserInteractedSinceHomePaint = true;
+    navigationBusy = true;
+    resolve(requests[1]);
+    await loading;
+    await settle();
+    assert.equal(
+      commits.length,
+      1,
+      "Completing the initial batch cannot render synchronously over user navigation"
+    );
+    assert.equal(frames.size, 1, "Progressive and final render requests share one frame");
+    await paint();
+    assert.equal(commits.length, 1, "The queued frame must respect the navigation guard");
+    navigationBusy = false;
+    await advance(100);
+    await paint();
+    assert.equal(commits.length, 2, "The pending Home update paints after navigation settles");
+    assert.equal(commits.at(-1).length, 2);
+  } finally {
+    globalThis.requestAnimationFrame = savedRaf;
+    globalThis.cancelAnimationFrame = savedCancelRaf;
+  }
 });
 
 test("Retired deferred responses cannot publish rows after a load token change", async () => {

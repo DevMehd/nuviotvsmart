@@ -951,7 +951,10 @@ html.vidaa-tv .movie-cast-card {
 /* Reserve the expanded flex slot once, matching upstream row spacing. The
    preview helper animates that single layout change with compositor transforms. */
 html.vidaa-tv .home-screen-shell.home-layout-modern .home-poster-card.focused.is-expanded {
-  --vidaa-poster-slot-width: var(--vidaa-poster-expanded-slot-width, var(--home-modern-portrait-expanded-width));
+  --vidaa-poster-slot-width: var(
+    --vidaa-poster-expanded-slot-width,
+    var(--home-modern-portrait-expanded-width)
+  );
   flex-basis: var(--vidaa-poster-slot-width) !important;
   min-width: var(--vidaa-poster-slot-width) !important;
   max-width: var(--vidaa-poster-slot-width) !important;
@@ -963,7 +966,10 @@ html.vidaa-tv .home-screen-shell.home-layout-modern .home-poster-card.focused.is
 html.vidaa-tv
   .home-screen-shell.home-layout-modern
   .home-poster-card.is-landscape.focused.is-expanded {
-  --vidaa-poster-slot-width: var(--vidaa-poster-expanded-slot-width, var(--home-landscape-poster-width));
+  --vidaa-poster-slot-width: var(
+    --vidaa-poster-expanded-slot-width,
+    var(--home-landscape-poster-width)
+  );
 }
 
 /* Landscape preview changes media, not row height. Removing the shared 18px
@@ -979,7 +985,7 @@ html.vidaa-tv
   .home-screen-shell.home-layout-modern
   .home-poster-card:not(.is-landscape).is-expanded
   .content-poster {
-  width: var(--home-modern-portrait-poster-width);
+  width: var(--vidaa-poster-original-width, var(--home-modern-portrait-poster-width));
 }
 
 html.vidaa-tv .home-screen-shell .home-poster-frame,
@@ -1021,9 +1027,18 @@ html.vidaa-tv .home-screen-shell.home-layout-modern .vidaa-poster-expanding .con
   opacity: 1 !important;
 }
 
-html.vidaa-tv .home-screen-shell.home-layout-modern .vidaa-poster-expanding .home-poster-expanded-backdrop,
-html.vidaa-tv .home-screen-shell.home-layout-modern .vidaa-poster-expanding .home-poster-expanded-brand,
-html.vidaa-tv .home-screen-shell.home-layout-modern .vidaa-poster-expanding .home-poster-expanded-gradient {
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .vidaa-poster-expanding
+  .home-poster-expanded-backdrop,
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .vidaa-poster-expanding
+  .home-poster-expanded-brand,
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .vidaa-poster-expanding
+  .home-poster-expanded-gradient {
   opacity: 0 !important;
 }
 
