@@ -111,21 +111,14 @@ assert.equal(b.image.getAttribute("src"), undefined, "Home cleanup releases the 
 assert.equal(owner.collectionFocusGifPending, null);
 
 const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "utf8");
-const changelog = parsePersonalChangelog(notes, "1.2.5");
-assert.equal(changelog.date, "2026-10-15");
-assert.ok(changelog.notes.includes("Notes personnelles"));
-assert.ok(changelog.notes.includes("Découverte (menu de gauche)"));
-assert.ok(changelog.notes.includes("Continuer sur la TV"));
-assert.ok(changelog.notes.includes("Télécommande depuis le téléphone"));
-assert.ok(changelog.notes.includes("Espace perso"));
-assert.ok(changelog.notes.includes("Comparatif v2"));
-assert.ok(changelog.notes.includes("chronomètre de réaction"));
-assert.ok(!changelog.notes.includes("Mise à jour du fork"));
+const changelog = parsePersonalChangelog(notes, "1.2.6");
+assert.equal(changelog.date, "2026-10-16");
+assert.ok(changelog.notes.includes("Envoyer un téléchargement du téléphone à la télé"));
 assert.ok(
-  !changelog.notes.includes("Laboratoire comparatif"),
+  !changelog.notes.includes("Notes personnelles"),
   "Only the latest entry is included in the TV prompt"
 );
-assert.throws(() => parsePersonalChangelog(notes, "1.2.6"));
+assert.throws(() => parsePersonalChangelog(notes, "1.2.7"));
 console.log(
   "Presentation restoration checks passed: declared badges, safe source labels, bounded GIF lifecycle, preview timing and French changelog."
 );
