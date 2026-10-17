@@ -1,3 +1,15 @@
+## 1.2.6
+
+### Improvements & Fixes
+
+- Added Watch Party with realtime sync, invites, host-only control, catch-up for members and shared streams, aligned with Android TV (@WhiteGiso)
+- Added Ambient mode, episode shuffle, MDBList account and library lists, custom posters and media server watched-state import and sync (@WhiteGiso)
+- Improved playback with ASS subtitle placement, subtitle clearance above player controls, stream info overlay, filename-based episode matching and preserved proxy headers across HLS/DASH redirects on webOS (@WhiteGiso)
+- Improved Trakt and Simkl tracking with activity-gated refreshes, Continue Watching kept on failed progress requests and restored tracking sources after signing back in (@WhiteGiso)
+- Kept post-play recommendations available when watched-state lookups fail (@WhiteGiso)
+- Removed Smart-only settings not present on Android TV (effects mode, minimal buffering UI, webOS audio compatibility) and the built-in Cinemeta fallback manifest (@WhiteGiso)
+- Updated and refined Hungarian translations (@ToxicLand)
+
 ## 1.2.5
 
 ### Improvements & Fixes
