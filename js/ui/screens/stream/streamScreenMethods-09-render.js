@@ -24,6 +24,9 @@ export function createStreamScreenMethods09() {
       this.cancelScheduledRender();
       const previousVirtualModel = this.streamVirtualized ? this.streamVirtualModel : null;
       const previousFocusedIndex = Number(this.focusState?.row);
+      // New earlier sources replace the initial first result. Once the user
+      // navigates (or returns from playback), retain the selected identity.
+      const holdFirstResult = this.focusState?.zone === "card" && previousFocusedIndex === 0 && !this.streamUserMovedFocus;
       const previousFocusedKey =
         previousVirtualModel &&
         Number.isInteger(previousFocusedIndex) &&
@@ -31,7 +34,7 @@ export function createStreamScreenMethods09() {
         previousFocusedIndex < previousVirtualModel.keys.length
           ? previousVirtualModel.keys[previousFocusedIndex]
           : "";
-      if (previousVirtualModel && !this.streamVirtualFocusReset && Number(this.listScrollTop || 0) > 0) {
+      if (previousVirtualModel && !holdFirstResult && !this.streamVirtualFocusReset && Number(this.listScrollTop || 0) > 0) {
         const previousAnchorIndex = findStreamVirtualIndex(previousVirtualModel.offsets, Number(this.listScrollTop || 0));
         this.streamVirtualPendingAnchor =
           previousAnchorIndex >= 0
@@ -64,7 +67,7 @@ export function createStreamScreenMethods09() {
       // cards interactive while their images warm in the background; the card
       // renderer already has a text fallback for a missing logo.
       const virtualizedStreamList = Boolean(this.shouldUseStreamVirtualization(allStreams) && filtered.length);
-      if (virtualizedStreamList && previousFocusedKey && !this.streamVirtualFocusReset) {
+      if (virtualizedStreamList && previousFocusedKey && !holdFirstResult && !this.streamVirtualFocusReset) {
         const nextKeys = this.getStreamVirtualKeys(filtered);
         const nextFocusedIndex = nextKeys.indexOf(previousFocusedKey);
         if (nextFocusedIndex >= 0) {
@@ -76,6 +79,7 @@ export function createStreamScreenMethods09() {
           };
         }
       }
+      if (holdFirstResult && !this.streamVirtualFocusReset) this.listScrollTop = 0;
       if (virtualizedStreamList) {
         this.streamVirtualized = true;
       } else if (this.streamVirtualized) {

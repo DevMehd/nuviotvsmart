@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -73,6 +74,10 @@ export function createPlayerScreenMethods24() {
       return true;
     },
     async playNextEpisode({ userInitiated = false } = {}) {
+      if (this.isPartyControlLocked?.()) {
+        if (userInitiated) this.partyBlocksControl();
+        return false;
+      }
       const nextEpisode = this.resolveNextEpisodeInfo();
       const itemType = normalizeItemType(this.params?.itemType || "movie");
       if (!nextEpisode?.videoId || !isSeriesItemType(itemType) || nextEpisode.hasAired === false || this.nextEpisodeLaunching) {
@@ -319,6 +324,7 @@ export function createPlayerScreenMethods24() {
       video.style.setProperty("--player-subtitle-shadow", subtitleShadow);
       video.style.setProperty("--player-subtitle-offset", `${residualOffsetVh.toFixed(2)}vh`);
       this.refreshSubtitleCueStyles();
+      syncHtmlSubtitleClearance(this);
       this.renderBitmapSubtitleAtCurrentTime({ force: true });
       if (refreshTrackRendering) {
         this.refreshSubtitleTrackRendering();

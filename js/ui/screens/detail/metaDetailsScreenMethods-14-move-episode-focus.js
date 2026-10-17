@@ -1,3 +1,4 @@
+import { ProfileManager } from "../../../core/profile/profileManager.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 
@@ -245,6 +246,9 @@ export function createMetaDetailsScreenMethods14() {
       });
     },
     async setEpisodesWatchedState(episodes = [], watched = true) {
+      const profileId = ProfileManager.getActiveProfileId();
+      const token = this.detailLoadToken;
+      const current = () => ProfileManager.getActiveProfileId() === profileId && this.detailLoadToken === token;
       const targets = (episodes || []).filter((episode) => episode?.id);
       if (!targets.length) {
         return false;
@@ -256,7 +260,7 @@ export function createMetaDetailsScreenMethods14() {
       };
       if (watched) {
         const watchedAt = Date.now();
-        await watchedItemsRepository.markBatch(
+        const outcome = await watchedItemsRepository.markBatch(
           targets.map((episode) => ({
             contentId: this.params?.itemId,
             ...providerIds,
@@ -265,36 +269,42 @@ export function createMetaDetailsScreenMethods14() {
             season: episode.season,
             episode: episode.episode,
             videoId: episode.id,
+            released: episode.released,
             watchedAt
           }))
         );
+        if (!current()) return false;
         await watchProgressRepository.saveProgressBatch(
-          targets.map((episode) => ({
-            contentId: this.params?.itemId,
-            ...providerIds,
-            contentType: "series",
-            videoId: episode.id,
-            season: episode.season,
-            episode: episode.episode,
-            title: this.meta?.name || this.params?.fallbackTitle || null,
-            episodeTitle: episode.title || null,
-            positionMs: 100,
-            durationMs: 100,
-            updatedAt: watchedAt
-          }))
+          targets
+            .filter((episode) => outcome.succeeded.some((item) => item.videoId === episode.id))
+            .map((episode) => ({
+              contentId: this.params?.itemId,
+              ...providerIds,
+              contentType: "series",
+              videoId: episode.id,
+              season: episode.season,
+              episode: episode.episode,
+              title: this.meta?.name || this.params?.fallbackTitle || null,
+              episodeTitle: episode.title || null,
+              positionMs: 100,
+              durationMs: 100,
+              updatedAt: watchedAt
+            }))
         );
       } else {
         for (const episode of targets) {
-          await watchedItemsRepository.unmark(this.params?.itemId, {
+          if (!current()) return false;
+          const accepted = await watchedItemsRepository.unmark(this.params?.itemId, {
             ...providerIds,
             contentType: "series",
             season: episode.season,
             episode: episode.episode,
             videoId: episode.id
           });
-          await watchProgressRepository.removeProgress(this.params?.itemId, episode.id);
+          if (accepted !== false) await watchProgressRepository.removeProgress(this.params?.itemId, episode.id);
         }
       }
+      if (!current()) return false;
       if (isSeriesDetailMeta(this.meta, this.episodes)) {
         await watchedSeriesReconciliationService.reconcile(this.params?.itemId, this.params?.itemType || this.meta?.type || "series", {
           meta: this.meta

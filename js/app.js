@@ -1,3 +1,7 @@
+import "./ui/components/serverWatchedNotice.js";
+import { MediaServerSyncService } from "./core/profile/mediaServerSyncService.js";
+import { installCustomPosterFallback } from "./core/poster/customPoster.js";
+import { AmbientMode } from "./ui/ambient/ambientMode.js";
 /* global __NUVIO_APP_VERSION__ */
 
 import "./core/diagnostics/consoleDebugBuffer.js";
@@ -29,6 +33,7 @@ import { shouldShowUpdate } from "./core/update/updateBannerPolicy.js";
 import { showAppUpdatePrompt } from "./ui/components/appUpdatePrompt.js";
 import { resolveExperienceRoute } from "./core/profile/experienceModeRouting.js";
 import { PluginRuntime } from "./core/player/pluginRuntime.js";
+import { installPartyEffects } from "./ui/screens/party/partyEffects.js";
 
 // These legacy Web-only overrides are no longer user settings. Navigation now
 // uses the stable grid algorithm and simulator detection automatically.
@@ -208,14 +213,6 @@ function applyPerformanceMode() {
   );
 }
 
-// Settings exposes a performance mode (auto/full/reduced). Re-apply the
-// root/body classes when the user changes it (see tvRuntimePerformance.js).
-if (typeof globalThis.addEventListener === "function") {
-  globalThis.addEventListener("nuvio:performance-mode", () => {
-    applyPerformanceMode();
-  });
-}
-
 function isAddonRemoteMode() {
   try {
     return new URLSearchParams(window.location.search).get("addonsRemote") === "1";
@@ -371,6 +368,7 @@ function setupWebOsAppLifecycle() {
     }
     void DeviceSessionRegistration.requestForegroundRegistration();
     ProviderCredentialSyncService.requestForegroundPull();
+    MediaServerSyncService.requestForegroundPull();
     StartupSyncService.requestForegroundSync();
     const current = Router.getCurrent();
     if (!current) {
@@ -457,6 +455,7 @@ function setupProviderCredentialForegroundLifecycle() {
     if (!wasBackgrounded) return;
     wasBackgrounded = false;
     ProviderCredentialSyncService.requestForegroundPull();
+    MediaServerSyncService.requestForegroundPull();
     StartupSyncService.requestForegroundSync();
   };
   document.addEventListener("visibilitychange", () => {
@@ -578,6 +577,9 @@ async function bootstrapApp() {
   Router.init();
   PlayerController.init();
 
+  installCustomPosterFallback();
+  MediaServerSyncService.start();
+  AmbientMode.start();
   FocusEngine.init();
   setupProviderCredentialForegroundLifecycle();
   setupTizenPlaybackLifecycle();
@@ -601,12 +603,14 @@ async function bootstrapApp() {
     if (state === AuthState.LOADING) {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
+      void MediaServerSyncService.stop();
       return;
     }
 
     if (state === AuthState.SIGNED_OUT) {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
+      void MediaServerSyncService.stop();
       hasSelectedProfileThisSession = false;
       const shouldBypassQr = Boolean(LocalStore.get(GUEST_QR_BYPASS_KEY, false));
       if (isSignedOutRouteAllowed()) {
@@ -672,6 +676,7 @@ async function bootstrapApp() {
 
   markBootStage("Checking authentication");
   await AuthManager.bootstrap();
+  installPartyEffects();
 }
 
 async function bootstrapAddonRemoteMode() {

@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -78,6 +79,7 @@ export function createPlayerScreenMethods43() {
       }
       renderer.setDelay(this.subtitleDelayMs);
       this.showAssSubtitleContainer();
+      syncHtmlSubtitleClearance(this);
       return { applied: true };
     },
     parseSubtitleCues(content = "") {

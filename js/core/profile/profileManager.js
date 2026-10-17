@@ -197,6 +197,22 @@ export const ProfileManager = {
       return false;
     }
     LocalStore.set(PROFILES_KEY, nextProfiles);
+    // Profile slots can be reused. Never pass a deleted profile's playback URLs
+    // or source credentials to the next owner of that slot.
+    const linkCache = LocalStore.get("streamLinkCache", {});
+    if (
+      linkCache &&
+      typeof linkCache === "object" &&
+      Object.prototype.hasOwnProperty.call(linkCache, normalizedId)
+    ) {
+      delete linkCache[normalizedId];
+      LocalStore.set("streamLinkCache", linkCache);
+    }
+    for (const key of ["mdbListAccounts", "mdbListLibraries", "episodeShuffle"]) {
+      const values = LocalStore.get(key, {});
+      delete values[normalizedId];
+      LocalStore.set(key, values);
+    }
     if (this.getActiveProfileId() === normalizedId) {
       LocalStore.set(ACTIVE_PROFILE_ID_KEY, "1");
     }

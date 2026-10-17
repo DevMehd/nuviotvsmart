@@ -25,7 +25,8 @@ export function resolveSubtitleStyleControlAvailability({
   isWebOsNative = false,
   rendererMode = "none",
   supportsExternalDelay = false,
-  preserveAssStyles = false
+  preserveAssStyles = false,
+  supportsAssPlacement = false
 } = {}) {
   const availability = Object.fromEntries(
     SUBTITLE_STYLE_CONTROL_IDS.map((controlId) => [controlId, true])
@@ -34,6 +35,7 @@ export function resolveSubtitleStyleControlAvailability({
     ASS_STYLE_CONTROL_IDS.forEach((controlId) => {
       availability[controlId] = false;
     });
+    availability.verticalOffset = supportsAssPlacement === true;
   }
   if (isWebOsNative && !["html", "html-callback"].includes(rendererMode)) {
     availability.textOpacity = false;

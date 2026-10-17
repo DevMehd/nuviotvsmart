@@ -208,6 +208,7 @@ export function createSettingsScreenMethods02() {
       title,
       value = "",
       multiline = false,
+      secret = false,
       placeholder = "",
       returnFocusKey,
       saveLabel = t("common.save", {}, "Save"),
@@ -222,6 +223,7 @@ export function createSettingsScreenMethods02() {
         value: String(value ?? ""),
         draft: String(value ?? ""),
         multiline: Boolean(multiline),
+        secret: Boolean(secret),
         placeholder,
         returnFocusKey,
         saveLabel,
@@ -245,18 +247,25 @@ export function createSettingsScreenMethods02() {
       if (typeof onClose === "function") onClose();
       this.focusZone = "content";
     },
-    closeTextDialog() {
+    closeTextDialog({ restoreEditor = true } = {}) {
       if (!this.textDialog) {
         return;
       }
       this.contentFocusKey = this.textDialog.returnFocusKey || this.contentFocusKey;
-      const restoreCustomThemeEditor = Boolean(this.textDialog.restoreCustomThemeEditor && this.customThemeDraft);
+      const restoreCustomThemeEditor = Boolean(restoreEditor && this.textDialog.restoreCustomThemeEditor && this.customThemeDraft);
       this.textDialog = null;
       if (restoreCustomThemeEditor) {
         this.showCustomThemeEditorDialog();
         return;
       }
       this.focusZone = "content";
+    },
+    dismissDialogsForAmbient() {
+      this.closeOptionDialog();
+      this.closeTextDialog({ restoreEditor: false });
+      for (const slot of this.container?.querySelectorAll?.("[data-settings-dialog], [data-trakt-dialog]") || []) {
+        slot.textContent = "";
+      }
     },
     renderOptionDialog() {
       if (!this.optionDialog) {

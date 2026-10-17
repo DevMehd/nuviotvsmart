@@ -110,6 +110,8 @@ export class NuvioDialog {
   }
 
   mount(container = document.body) {
+    this._ambientHandler = () => this._dismiss();
+    document.addEventListener("nuvio:ambient-shown", this._ambientHandler);
     // Backdrop
     const backdrop = document.createElement("div");
     backdrop.className = "nuvio-dialog-backdrop";
@@ -332,6 +334,7 @@ export class NuvioDialog {
   destroy({ afterExit = null } = {}) {
     if (this._destroyed) return;
     this._destroyed = true;
+    document.removeEventListener("nuvio:ambient-shown", this._ambientHandler);
     window.removeEventListener("keydown", this._keyHandler, { capture: true });
     window.removeEventListener("keyup", this._keyUpHandler, { capture: true });
 

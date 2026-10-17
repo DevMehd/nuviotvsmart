@@ -449,7 +449,8 @@ export function createPlayerScreenMethods52() {
         isWebOsNative: usingWebOsNative,
         rendererMode,
         supportsExternalDelay: PlayerController.supportsAvPlayExternalSubtitleDelay?.() === true,
-        preserveAssStyles: assStylesManaged
+        preserveAssStyles: assStylesManaged,
+        supportsAssPlacement: this.assSubtitleRenderer?.supportsPlacement === true
       });
       const unavailableValue = assStylesManaged
         ? t("subtitle_style_preserves_ass", {}, "ASS/SSA styles are preserved")

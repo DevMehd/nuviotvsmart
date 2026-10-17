@@ -6,6 +6,15 @@ export function createPlayerScreenMethods73() {
 
   return {
     cleanup() {
+      this.closeStreamInfo({ restore: false });
+      // Android stopAndRelease(): read the position before playback is torn down.
+      try {
+        this.leavePartyPlayback();
+      } catch (error) {
+        console.warn("[party] leaving playback failed", error);
+      }
+      this.unbindParty();
+      this.partyPanelVisible = false;
       try {
         this.cancelSourceLoad();
         streamRepository.setLocalPluginSearchPaused(true);

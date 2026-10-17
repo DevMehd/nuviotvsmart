@@ -66,6 +66,11 @@ export function createAssRenderer({
   let destroyed = false;
 
   return {
+    get supportsPlacement() {
+      return Boolean(
+        instance && !destroyed && !stale() && typeof instance.setSubtitlePlacement === "function"
+      );
+    },
     get active() {
       return !destroyed && !stale();
     },
@@ -213,6 +218,16 @@ export function createAssRenderer({
       }
       try {
         instance.delay = Number(delayMs || 0) / 1000;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    },
+    setPlacement(placement) {
+      if (!instance || destroyed || stale() || typeof instance.setSubtitlePlacement !== "function")
+        return false;
+      try {
+        instance.setSubtitlePlacement(placement);
         return true;
       } catch (_) {
         return false;

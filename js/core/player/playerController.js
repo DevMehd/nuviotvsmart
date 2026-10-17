@@ -17,10 +17,7 @@ import { dashJsEngine } from "./engines/dashJsEngine.js";
 import { resolvePlatformAvplayEngine } from "./engines/platformAvplayEngine.js";
 import { isTerminalHlsHttpStatus } from "./hlsNetworkErrorPolicy.js";
 import { isShortPlaceholderDuration } from "./naturalPlaybackCompletion.js";
-import {
-  applyWebOsAudioCodecOverrides,
-  detectWebOsAudioCapabilities
-} from "../../platform/webos/webosAudioCapabilities.js";
+import { detectWebOsAudioCapabilities } from "../../platform/webos/webosAudioCapabilities.js";
 import { WebOsLunaService } from "../../platform/webos/webosLunaService.js";
 import { subscribeWebOsCompanionService } from "../../platform/webos/webosCompanionService.js";
 import { WebOSPlayerExtensions } from "../../platform/webos/webosPlayerExtensions.js";
@@ -88,7 +85,6 @@ export {
   resolvePlatformAvplayEngine,
   isTerminalHlsHttpStatus,
   isShortPlaceholderDuration,
-  applyWebOsAudioCodecOverrides,
   detectWebOsAudioCapabilities,
   WebOsLunaService,
   subscribeWebOsCompanionService,
@@ -348,8 +344,6 @@ export const PlayerController = {
   webosDeviceInfoPromise: null,
   webosAudioCapabilities: null,
   webosUnsupportedAudioCodecs: new Set(["dts", "truehd"]),
-  forceDtsAudio: false,
-  forceTrueHdAudio: false,
   viewportSyncHandler: null,
   avplayDisplayRect: null,
   avplayDisplayMethod: "PLAYER_DISPLAY_MODE_FULL_SCREEN",

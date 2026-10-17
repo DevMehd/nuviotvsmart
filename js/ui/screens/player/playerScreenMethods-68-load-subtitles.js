@@ -52,9 +52,7 @@ export function createPlayerScreenMethods68() {
         }
 
         const subtitleSettings = PlayerSettingsStore.get();
-        const preferredOnly =
-          subtitleSettings.addonSubtitleStartupMode === "PREFERRED_ONLY" ||
-          (subtitleSettings.addonSubtitleStartupMode === "ALL_SUBTITLES" && subtitleSettings.subtitleStyle?.showOnlyPreferredLanguages);
+        const preferredOnly = Boolean(subtitleSettings.subtitleStyle?.showOnlyPreferredLanguages);
         if (preferredOnly) {
           const preferredTargets = new Set(this.getStartupPreferredSubtitleLanguageTargets());
           repositorySubtitles = repositorySubtitles.filter((entry) => {
@@ -214,6 +212,15 @@ export function createPlayerScreenMethods68() {
         return;
       }
 
+      if (action === "party") {
+        this.togglePartyPanel();
+        return;
+      }
+
+      if (action === "streamInfo") {
+        this.showStreamInfo();
+        return;
+      }
       if (action === "more") {
         this.stickyProgressFocus = false;
         this.moreActionsVisible = true;

@@ -64,7 +64,6 @@ export function createMetaDetailsScreenMethods06() {
                   ...video,
                   title: episode.title || video.title,
                   overview: episode.overview || video.overview,
-                  released: settings.useReleaseDates ? episode.airDate || video.released : video.released,
                   thumbnail: episode.thumbnail || video.thumbnail,
                   runtime: episode.runtime || video.runtime
                 };
@@ -81,14 +80,8 @@ export function createMetaDetailsScreenMethods06() {
           // languages are available; show the localized text title in that case.
           logo: settings.useArtwork ? enrichment.logo : meta.logo,
           genres: settings.useBasicInfo ? mergeGenreLists(meta.genres, enrichment.genres) : meta.genres,
-          releaseInfo: settings.useReleaseDates
-            ? isSeries
-              ? enrichment.releaseInfo || meta.releaseInfo
-              : meta.releaseInfo || enrichment.releaseInfo
-            : meta.releaseInfo,
-          released: settings.useReleaseDates
-            ? meta.released || meta.releaseDate || meta.release_date || enrichment.released || null
-            : meta.released || meta.releaseDate || meta.release_date || null,
+          // Preserve addon dates, matching Android's TMDB enrichment policy.
+          released: meta.released || meta.releaseDate || meta.release_date || null,
           runtime: settings.useDetails ? enrichment.runtime || meta.runtime : meta.runtime,
           country: settings.useDetails ? enrichment.country || meta.country : meta.country,
           language: settings.useDetails ? enrichment.language || meta.language : meta.language,

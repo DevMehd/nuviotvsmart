@@ -1,3 +1,4 @@
+import { observeProxyRedirects } from "./proxyRedirectObserver.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
 
@@ -28,6 +29,8 @@ export function createPlayerControllerMethods18() {
         preserveTrackSelections = false
       } = {}
     ) {
+      this.cancelProxyRedirectObservation?.();
+      this.cancelProxyRedirectObservation = null;
       if (!this.video) return;
       this.stopWebOsDtsAudioTranscode({ resetFailures: true });
 
@@ -141,6 +144,12 @@ export function createPlayerControllerMethods18() {
         playbackUrl = String(proxyResult?.url || requestedUrl).trim() || requestedUrl;
         if (proxyResult?.proxied) {
           this.currentPlaybackUrl = playbackUrl;
+          this.cancelProxyRedirectObservation = observeProxyRedirects(this, {
+            requestedUrl,
+            playbackUrl,
+            playToken,
+            reportUrl: proxyResult.redirectReportUrl
+          });
           this.startWebOsPlaybackKeepAlive();
           if (Platform.isTizen()) {
             let sourceHost = null;

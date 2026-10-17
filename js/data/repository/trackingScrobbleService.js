@@ -1,7 +1,8 @@
+import { MediaServerScrobbleService } from "../mediaserver/mediaServerScrobbleService.js";
 import { TraktScrobbleService } from "./traktScrobbleService.js";
 import { SimklScrobbleService } from "./simklScrobbleService.js";
 
-const providers = [TraktScrobbleService, SimklScrobbleService];
+const providers = [MediaServerScrobbleService, TraktScrobbleService, SimklScrobbleService];
 
 function enabledProviders() {
   return providers.filter((provider) => provider.isEnabled());

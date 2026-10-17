@@ -83,6 +83,24 @@ export function createRouterMethods02() {
       };
     },
     async navigate(routeName, params = {}, options = {}) {
+      if (routeName === "detail" && params?.itemType === "collection") {
+        const ref = String(params.itemId || "").match(/^server:([^:]+):([^:]+)$/);
+        if (ref) {
+          try {
+            routeName = "catalogSeeAll";
+            params = {
+              addonBaseUrl: `nuvio-server://${decodeURIComponent(ref[1])}`,
+              catalogId: `collection-${decodeURIComponent(ref[2])}`,
+              type: "mixed",
+              catalogName: params.fallbackTitle || params.itemTitle || "",
+              addonName: params.addonName || "",
+              supportsSkip: true
+            };
+          } catch (_) {
+            return;
+          }
+        }
+      }
       if (routeName === "plugins" && Platform.isTizen() && !TizenCapabilities.canUsePlugins()) {
         return;
       }

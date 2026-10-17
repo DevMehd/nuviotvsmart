@@ -1,3 +1,4 @@
+import { StreamInfoMethods } from "./streamInfoOverlay.js";
 import { createPlayerScreenMethods01 } from "./playerScreenMethods-01-mount.js";
 import { createPlayerScreenMethods02 } from "./playerScreenMethods-02-get-post-play-state.js";
 import { createPlayerScreenMethods03 } from "./playerScreenMethods-03-render-post-play-manual-dialog.js";
@@ -72,8 +73,10 @@ import { createPlayerScreenMethods71 } from "./playerScreenMethods-71-on-key-dow
 import { createPlayerScreenMethods72 } from "./playerScreenMethods-72-on-key-up.js";
 import { createPlayerScreenMethods73 } from "./playerScreenMethods-73-cleanup.js";
 
+import { createPlayerPartyMethods } from "./playerParty.js";
 export * from "./playerScreenContext.js";
 export const PlayerScreen = {
+  ...StreamInfoMethods,
   ...createPlayerScreenMethods01(),
   ...createPlayerScreenMethods02(),
   ...createPlayerScreenMethods03(),
@@ -146,5 +149,6 @@ export const PlayerScreen = {
   ...createPlayerScreenMethods70(),
   ...createPlayerScreenMethods71(),
   ...createPlayerScreenMethods72(),
-  ...createPlayerScreenMethods73()
+  ...createPlayerScreenMethods73(),
+  ...createPlayerPartyMethods()
 };

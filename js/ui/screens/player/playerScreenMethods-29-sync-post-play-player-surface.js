@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -205,6 +206,7 @@ export function createPlayerScreenMethods29() {
         this.renderSeekOverlay();
       }
       overlay.classList.toggle("hidden", !this.controlsVisible);
+      this.renderPartyPill?.();
       this.syncPlayerOverlayLayoutState();
       this.updateSkipIntroCountdown(Date.now());
       this.renderSkipIntroButton();
@@ -229,6 +231,7 @@ export function createPlayerScreenMethods29() {
           this.focusPlayerRootForHiddenControls();
         }
       }
+      syncHtmlSubtitleClearance(this);
     },
     focusPlayerRootForHiddenControls() {
       if (this.isExternalFrameMode() || this.controlsVisible || this.isDialogOpen()) {

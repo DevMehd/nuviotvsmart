@@ -192,6 +192,7 @@ export function createHomeScreenMethods12() {
       }
       const activeFrame = container.querySelector("iframe");
       if (activeFrame) {
+        activeFrame.dataset.ambientTrailerPlaying = "false";
         try {
           activeFrame.contentWindow?.postMessage(
             {

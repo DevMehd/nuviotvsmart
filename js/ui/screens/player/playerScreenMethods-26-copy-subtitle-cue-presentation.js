@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -228,6 +229,7 @@ export function createPlayerScreenMethods26() {
       modalBackdrop.classList.toggle("hidden", !hasModal);
       modalBackdrop.classList.toggle("episodes-open", Boolean(this.episodePanelVisible));
       controlsOverlay?.classList.toggle("modal-blocked", hasModal);
+      syncHtmlSubtitleClearance(this);
     }
   };
 }

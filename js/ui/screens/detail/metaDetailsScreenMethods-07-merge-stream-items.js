@@ -1,3 +1,5 @@
+import { hasWatchProgressStarted, isWatchProgressCompleted } from "../../../domain/model/watchProgress.js";
+import { detailShuffleSettings } from "./detailEpisodeShuffle.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 
@@ -107,6 +109,7 @@ export function createMetaDetailsScreenMethods07() {
       });
     },
     getSeriesHeroPlayLabel() {
+      if (detailShuffleSettings(this).enabled && !this.nextEpisodeToWatch) return t("shuffle_change_selection");
       const progress = this.getActiveResumeProgress();
       if (progress) {
         const season = Number(progress.season || this.nextEpisodeToWatch?.season || 0);
@@ -239,6 +242,7 @@ export function createMetaDetailsScreenMethods07() {
                   <span class="series-btn-icon">${renderPlayGlyph()}</span>
                   <span>${escapeHtml(playLabel)}</span>
                 </button>
+                ${LayoutPreferences.get().randomEpisodeEnabled && ["series", "tv"].includes(String(this.params?.itemType || meta.type).toLowerCase()) ? `<button class="series-secondary-btn focusable" data-action="shuffleEpisodes" aria-label="${escapeAttribute(t("random_episode_title"))}">${escapeHtml(t(detailShuffleSettings(this).enabled ? (detailShuffleSettings(this).includeWatched ? "shuffle_enabled_all" : "shuffle_enabled_unwatched") : "random_episode_title"))}</button>` : ""}
                 ${this.getActiveResumeProgress() ? `<button class="series-secondary-btn focusable" data-action="playFromBeginning">${escapeHtml(t("detail.playFromBeginning", {}, "Play from Beginning"))}</button>` : ""}
                 <button class="series-circle-btn focusable${this.isSavedInLibrary ? " is-library-selected" : ""}" data-action="toggleLibrary">
                   ${renderLibraryGlyph(this.isSavedInLibrary)}
@@ -256,6 +260,13 @@ export function createMetaDetailsScreenMethods07() {
         `;
     },
     getActiveResumeProgress() {
+      if (
+        detailShuffleSettings(this).enabled &&
+        this.shuffleResumeProgress &&
+        hasWatchProgressStarted(this.shuffleResumeProgress) &&
+        !isWatchProgressCompleted(this.shuffleResumeProgress)
+      )
+        return this.shuffleResumeProgress;
       const progress = this.resumeProgress || null;
       return progress && isWatchProgressInProgress(progress) ? progress : null;
     },

@@ -101,6 +101,8 @@ export function createPlayerControllerMethods19() {
       this.syncWebOsPlaybackKeepAwake();
     },
     stop({ forceCloudSync = true, allowCloudSync = true, flushProgress = true } = {}) {
+      this.cancelProxyRedirectObservation?.();
+      this.cancelProxyRedirectObservation = null;
       this.stopWebOsDtsAudioTranscode({ resetFailures: true });
       this.stopWebOsPlaybackKeepAlive();
       this.stopWebOsServiceKeepAlive();

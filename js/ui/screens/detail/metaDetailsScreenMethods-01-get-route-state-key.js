@@ -1,3 +1,4 @@
+import { detailShuffleSettings } from "./detailEpisodeShuffle.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 
@@ -46,6 +47,7 @@ export function createMetaDetailsScreenMethods01() {
         pendingFocusRestore: this.captureDetailFocus(),
         contentScrollTop: Number(content?.scrollTop || 0),
         trackScrollLeftByKey: captureHorizontalScrollMap(this.container),
+        episodeShuffleEnabled: detailShuffleSettings(this).enabled,
         episodeProgressEntries: Array.from(this.episodeProgressMap?.entries?.() || []),
         watchedEpisodeKeys: Array.from(this.watchedEpisodeKeys || [])
       };

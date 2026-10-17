@@ -245,6 +245,11 @@ export function createPlayerScreenMethods70() {
         return true;
       }
 
+      if (this.partyPanelVisible) {
+        this.dismissPartyPanel();
+        return true;
+      }
+
       if (this.sourcesPanelVisible) {
         this.closeSourcesPanel();
         return true;

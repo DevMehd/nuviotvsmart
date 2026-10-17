@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -198,6 +199,7 @@ export function createPlayerScreenMethods31() {
       const hidden = !this.isNextEpisodeCardVisible();
 
       card.classList.toggle("hidden", hidden);
+      if (hidden) syncHtmlSubtitleClearance(this);
       if (hidden) {
         card.innerHTML = "";
         this.nextEpisodeCardRenderedKey = "";
@@ -262,6 +264,7 @@ export function createPlayerScreenMethods31() {
         this.nextEpisodeCardRenderedKey = renderKey;
       }
       this.syncNextEpisodeCardFocusState();
+      syncHtmlSubtitleClearance(this);
     }
   };
 }

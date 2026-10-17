@@ -1,3 +1,4 @@
+import { normalizeOpenSubtitlesSpanishCode } from "../player/subtitleLanguageAliases.js";
 import { DebridSettingsStore } from "../../data/local/debridSettingsStore.js";
 
 import { DebridProviders } from "./debridProviders.js";
@@ -96,7 +97,7 @@ export function encodeFromText(parsedCodec, search = "") {
 }
 
 export function languageFor(value = "") {
-  const normalized = String(value || "").toLowerCase();
+  const normalized = normalizeOpenSubtitlesSpanishCode(value) || String(value || "").toLowerCase();
   const compact = normalized.replace(/[^a-z0-9]/g, "");
   return (
     Object.entries(LANGUAGE_LABELS).find(([, [code, label]]) => {

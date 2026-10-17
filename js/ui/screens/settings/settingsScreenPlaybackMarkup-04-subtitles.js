@@ -43,7 +43,6 @@ export function renderPlaybackSubtitleBody(model) {
               subtitle: t("sub_show_only_preferred_languages_desc", {}, "Hide all other subtitles languages from selection list"),
               checked: Boolean(model.player.subtitleStyle?.showOnlyPreferredLanguages)
             })}
-            ${this.renderActionRow({ focusKey: "playback:subtitleStartupMode", title: t("sub_startup_mode_title", {}, "Subtitle startup mode"), subtitle: t("sub_startup_mode_all_desc", {}, "Choose how addon subtitles are loaded at startup"), value: t(model.player.addonSubtitleStartupMode === "FAST_STARTUP" ? "sub_startup_mode_fast" : model.player.addonSubtitleStartupMode === "PREFERRED_ONLY" ? "sub_startup_mode_preferred" : "sub_startup_mode_all") })}
             ${this.renderActionRow({
               focusKey: "playback:subtitleSize",
               title: t("settings.playback.subtitleSize.title", {}, "Subtitle size"),

@@ -43,6 +43,7 @@ export function createStartupSyncServiceMethods02() {
     PluginSyncService,
     ProfileSettingsSyncService,
     ProviderCredentialSyncService,
+    MediaServerSyncService,
     SimklSyncService,
     CollectionSyncService,
     HomeCatalogSettingsSyncService,
@@ -296,6 +297,7 @@ export function createStartupSyncServiceMethods02() {
 
       await Promise.all([
         runSurface("provider credentials", () => ProviderCredentialSyncService.syncFromRemote(activeProfileId)),
+        runSurface("media servers", () => MediaServerSyncService.syncFromRemote(activeProfileId)),
         runSurface("Simkl refresh", () =>
           SimklSyncService.refresh().catch((error) => {
             console.warn("Simkl automatic refresh failed", error);

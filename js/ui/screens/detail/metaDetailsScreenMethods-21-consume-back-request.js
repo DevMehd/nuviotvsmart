@@ -16,6 +16,12 @@ export function createMetaDetailsScreenMethods21() {
 
   return {
     consumeBackRequest() {
+      if (this.shuffleDialog) {
+        this.shuffleDialog.destroy();
+        this.shuffleDialog = null;
+        this.focusDetailDescriptor({ selector: '[data-action="shuffleEpisodes"]' });
+        return true;
+      }
       if (this.seasonHoldMenu) {
         this.closeSeasonHoldMenu();
         return true;
