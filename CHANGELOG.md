@@ -2,12 +2,17 @@
 
 ### Improvements & Fixes
 
-- Added Watch Party with realtime sync, invites, host-only control, catch-up for members and shared streams, aligned with Android TV (@WhiteGiso)
-- Added Ambient mode, episode shuffle, MDBList account and library lists, custom posters and media server watched-state import and sync (@WhiteGiso)
-- Improved playback with ASS subtitle placement, subtitle clearance above player controls, stream info overlay, filename-based episode matching and preserved proxy headers across HLS/DASH redirects on webOS (@WhiteGiso)
-- Improved Trakt and Simkl tracking with activity-gated refreshes, Continue Watching kept on failed progress requests and restored tracking sources after signing back in (@WhiteGiso)
+- Added Watch Party with realtime sync, QR invites, a party preview before joining, host-only control, member catch-up, shared streams and episode switching, aligned with Android TV (@WhiteGiso)
+- Added Ambient mode with idle slideshow, blocked during trailer playback and closing open dialogs when it starts (@WhiteGiso)
+- Added episode shuffle on detail and player screens with persisted history (@WhiteGiso)
+- Added MDBList account sign-in and library lists, including liked, dynamic and external lists with release-date sorting (@WhiteGiso)
+- Added custom poster configuration from the phone companion page with profile sync (@WhiteGiso)
+- Added media server watched-state import and sync, mixed movie/show libraries and server-watched notices (@WhiteGiso)
+- Improved playback with ASS subtitle placement, subtitles kept clear of player controls, a stream info overlay on the Info key, filename-based episode matching and stream link reuse (@WhiteGiso)
+- Preserved playback proxy headers across HLS/DASH redirects and child playlists on webOS (@WhiteGiso)
+- Improved Trakt and Simkl tracking with activity-gated refreshes, Continue Watching kept when progress requests fail, restored tracking sources after signing back in and tracking error messages (@WhiteGiso)
 - Kept post-play recommendations available when watched-state lookups fail (@WhiteGiso)
-- Removed Smart-only settings not present on Android TV (effects mode, minimal buffering UI, webOS audio compatibility) and the built-in Cinemeta fallback manifest (@WhiteGiso)
+- Removed settings not present on Android TV (effects mode, minimal buffering UI, webOS audio compatibility) and the built-in Cinemeta fallback manifest (@WhiteGiso)
 - Updated and refined Hungarian translations (@ToxicLand)
 
 ## 1.2.5
