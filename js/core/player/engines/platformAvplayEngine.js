@@ -1,3 +1,5 @@
+import { wrapAvPlayForTrace } from "./avplayCallTrace.js";
+
 function getAvplayApi() {
   const webapis = globalThis.webapis;
   const avplay =
@@ -9,7 +11,9 @@ function getAvplayApi() {
   if (!avplay || typeof avplay.open !== "function") {
     return null;
   }
-  return avplay;
+  // Trace calls on Samsung's webapis.avplay object (not the legacy DOM
+  // element) so seek failures can show the native call sequence.
+  return avplay === webapis?.avplay ? wrapAvPlayForTrace(avplay) : avplay;
 }
 
 function createEngine(name) {

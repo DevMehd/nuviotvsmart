@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
+import { getAvPlayCallTrace } from "./engines/avplayCallTrace.js";
 
 export function createPlayerControllerMethods10() {
   const { AVPLAY_SEEK_TIMEOUT_MS, logTizenAvPlayDebug } = internals;
@@ -107,6 +108,14 @@ export function createPlayerControllerMethods10() {
             targetMs: normalizedTargetMs,
             error: errorValue?.message || String(errorValue || "")
           });
+          if (!this.avplaySeekTraceDumped) {
+            // One dump per playback: the native call sequence that led to the
+            // first failed seek (later failures repeat the same picture).
+            this.avplaySeekTraceDumped = true;
+            logTizenAvPlayDebug("Tizen AVPlay seek trace before failure", {
+              calls: getAvPlayCallTrace()
+            });
+          }
         }
         if (emitEvents) {
           if (success) {

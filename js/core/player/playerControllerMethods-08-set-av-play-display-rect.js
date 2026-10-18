@@ -98,6 +98,7 @@ export function createPlayerControllerMethods08() {
       this.avplaySeekInFlight = false;
       this.avplayDeferredSeekMs = 0;
       this.avplayStartAfterSeek = null;
+      this.avplaySeekTraceDumped = false;
       const avplay = this.getAvPlay();
 
       this.stopAvPlayTickTimer();
