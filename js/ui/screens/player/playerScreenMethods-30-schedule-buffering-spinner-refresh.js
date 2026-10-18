@@ -346,7 +346,12 @@ export function createPlayerScreenMethods30() {
         this.seekLoadingProgressSeconds = current;
         // The seek itself changes currentTime; only subsequent forward clock
         // movement proves that playback has resumed at the new position.
-        if (previous == null || current - previous <= 0.01 || current - previous >= 1) return false;
+        // AVPlay publishes its clock once per second, so a normal step is ~1s
+        // (scaled by playback speed); only larger jumps are seek discontinuities.
+        const speed = Number(this.getPlaybackSpeed?.() || 1);
+        const maxProgressStepSeconds = 2.5 * (Number.isFinite(speed) && speed > 1 ? speed : 1);
+        const step = current - previous;
+        if (previous == null || step <= 0.01 || step >= maxProgressStepSeconds) return false;
       }
       return this.clearSeekLoading({ hideBuffering: true });
     },

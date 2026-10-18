@@ -262,6 +262,12 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
       this.updateLoadingVisibility();
     }
     this.reapplyPendingWebOsAddonSubtitle?.(true);
+    // AVPlay reports a rejected seek with canplay only (no seeked). Once no
+    // seek is in flight the request has settled either way, so let the
+    // progress check release the seek spinner instead of stranding it.
+    if (this.seekLoading && isTizenAvPlayPlayback() && !PlayerController.avplaySeekInFlight) {
+      this.seekLoadingSettled = true;
+    }
     this.attemptPendingPlaybackRestore();
     this.completeSeekLoadingIfReady();
     this.startupTrackPreferenceReady = true;
