@@ -394,6 +394,7 @@ try {
 
   for (const [name, load] of [
     ["watched movies", () => TraktAuthService.fetchWatchedMovies()],
+    ["last activities", () => TraktAuthService.fetchLastActivities()],
     ["library request", () => authorizedTraktRequest("/sync/watchlist")]
   ]) {
     await check(`${name} keeps its profile across the token await`, async () => {
@@ -549,6 +550,7 @@ try {
         globalThis.clearTimeout = (id) => timers.delete(id);
         Router.getCurrent = () => route;
         const screen = Object.create(prototype);
+        screen.isMounted = true;
         screen.activeSection = "trakt";
         let renders = 0;
         let requests = 0;

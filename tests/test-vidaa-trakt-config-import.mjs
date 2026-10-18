@@ -177,8 +177,9 @@ try {
   const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const commands = vercel.buildCommand.split("&&").map((command) => command.trim());
   assert.match(commands[0], /scripts\/import-official-trakt-config\.mjs --if-missing$/);
+  assert.match(commands[1], /scripts\/import-official-mdblist-config\.mjs --if-missing$/);
   assert.equal(
-    commands[1],
+    commands[2],
     "npm run package:vidaa",
     "Vercel builds only after successful preparation"
   );

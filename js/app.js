@@ -1,3 +1,7 @@
+import "./ui/components/serverWatchedNotice.js";
+import { MediaServerSyncService } from "./core/profile/mediaServerSyncService.js";
+import { installCustomPosterFallback } from "./core/poster/customPoster.js";
+import { AmbientMode } from "./ui/ambient/ambientMode.js";
 /* global __NUVIO_APP_VERSION__ */
 
 import "./core/diagnostics/consoleDebugBuffer.js";
@@ -16,6 +20,7 @@ import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ProviderCredentialSyncService } from "./core/profile/providerCredentialSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
+import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
 import { Platform } from "./platform/index.js";
@@ -29,6 +34,7 @@ import { shouldShowUpdate } from "./core/update/updateBannerPolicy.js";
 import { showAppUpdatePrompt } from "./ui/components/appUpdatePrompt.js";
 import { resolveExperienceRoute } from "./core/profile/experienceModeRouting.js";
 import { PluginRuntime } from "./core/player/pluginRuntime.js";
+import { installPartyEffects } from "./ui/screens/party/partyEffects.js";
 
 // These legacy Web-only overrides are no longer user settings. Navigation now
 // uses the stable grid algorithm and simulator detection automatically.
@@ -216,6 +222,14 @@ if (typeof globalThis.addEventListener === "function") {
   });
 }
 
+function isAddonRemoteMode() {
+  try {
+    return new URLSearchParams(window.location.search).get("addonsRemote") === "1";
+  } catch {
+    return false;
+  }
+}
+
 async function shouldShowProfileSelection() {
   // Login/restoration can start with only the device's fallback profile. Pull
   // the account profile list before deciding whether the picker can be skipped.
@@ -368,6 +382,7 @@ function setupWebOsAppLifecycle() {
     }
     void DeviceSessionRegistration.requestForegroundRegistration();
     ProviderCredentialSyncService.requestForegroundPull();
+    MediaServerSyncService.requestForegroundPull();
     StartupSyncService.requestForegroundSync();
     const current = Router.getCurrent();
     if (!current) {
@@ -454,6 +469,7 @@ function setupProviderCredentialForegroundLifecycle() {
     if (!wasBackgrounded) return;
     wasBackgrounded = false;
     ProviderCredentialSyncService.requestForegroundPull();
+    MediaServerSyncService.requestForegroundPull();
     StartupSyncService.requestForegroundSync();
   };
   document.addEventListener("visibilitychange", () => {
@@ -576,6 +592,9 @@ async function bootstrapApp() {
   Router.init();
   PlayerController.init();
 
+  installCustomPosterFallback();
+  MediaServerSyncService.start();
+  AmbientMode.start();
   FocusEngine.init();
   setupProviderCredentialForegroundLifecycle();
   setupTizenPlaybackLifecycle();
@@ -599,12 +618,14 @@ async function bootstrapApp() {
     if (state === AuthState.LOADING) {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
+      void MediaServerSyncService.stop();
       return;
     }
 
     if (state === AuthState.SIGNED_OUT) {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
+      void MediaServerSyncService.stop();
       hasSelectedProfileThisSession = false;
       const shouldBypassQr = Boolean(LocalStore.get(GUEST_QR_BYPASS_KEY, false));
       if (isSignedOutRouteAllowed()) {
@@ -670,13 +691,19 @@ async function bootstrapApp() {
 
   markBootStage("Checking authentication");
   await AuthManager.bootstrap();
+  installPartyEffects();
+}
+
+async function bootstrapAddonRemoteMode() {
+  await renderAddonRemotePage();
+  appShellRendered = true;
 }
 
 if (document.readyState === "loading") {
   document.addEventListener(
     "DOMContentLoaded",
     () => {
-      const bootstrap = bootstrapApp;
+      const bootstrap = isAddonRemoteMode() ? bootstrapAddonRemoteMode : bootstrapApp;
       bootstrap().catch((error) => {
         console.error("App bootstrap failed", error);
         renderFatalError(error);
@@ -685,7 +712,7 @@ if (document.readyState === "loading") {
     { once: true }
   );
 } else {
-  const bootstrap = bootstrapApp;
+  const bootstrap = isAddonRemoteMode() ? bootstrapAddonRemoteMode : bootstrapApp;
   bootstrap().catch((error) => {
     console.error("App bootstrap failed", error);
     renderFatalError(error);

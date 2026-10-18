@@ -264,6 +264,7 @@ export function normalizeTraktLibrarySourceForAndroid(value) {
   const normalized = String(value || "trakt")
     .trim()
     .toLowerCase();
+  if (normalized === "mdblist") return "MDBLIST";
   if (normalized === "local") return "LOCAL";
   if (normalized === "simkl") return "SIMKL";
   return "TRAKT";
@@ -273,6 +274,7 @@ export function normalizeTraktLibrarySourceForWeb(value) {
   const normalized = String(value || "")
     .trim()
     .toUpperCase();
+  if (normalized === "MDBLIST") return "mdblist";
   if (normalized === "LOCAL") return "local";
   if (normalized === "SIMKL") return "simkl";
   return "trakt";

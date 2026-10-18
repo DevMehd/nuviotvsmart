@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
+const { Router } = await import("../js/ui/navigation/routerState.js");
+Router.getCurrent = () => "home";
 
 const { createHomeRowRenderPass } = await import("../js/ui/screens/home/homeRowRenderCache.js");
 const { renderModernHomeLayout } = await import("../js/ui/screens/home/modernHomeLayout.js");

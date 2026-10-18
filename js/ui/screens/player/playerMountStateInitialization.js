@@ -237,7 +237,8 @@ export function initializePlayerMountState(params, initialStreamUrl) {
     onStopTrailer: () => this.stopPostPlayTrailer()
   });
 
-  this.parentalWarnings = normalizeParentalWarnings(params.parentalWarnings || params.parentalGuide);
+  // Match Android: only show localized warnings resolved by the parental guide API.
+  this.parentalWarnings = [];
   this.parentalGuideVisible = false;
   this.parentalGuideExiting = false;
   this.parentalGuideShown = false;

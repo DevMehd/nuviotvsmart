@@ -1,3 +1,4 @@
+import { continueWatchingRating } from "./continueWatchingRating.js";
 import { renderHeroMdbListRatings } from "./homeMdbListRatings.js";
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
@@ -214,7 +215,12 @@ export function buildHeroDisplayModel(hero, layoutMode) {
   const year = extractYear(hero);
   const localizationPending = isHomeHeroLocalizationPending(hero, layoutMode);
   const mdbListMarkup = renderHeroMdbListRatings(hero, layoutMode);
-  const imdb = mdbListMarkup || hideHomeHeroRatings() ? null : resolveImdbRating(hero);
+  const imdb =
+    mdbListMarkup || hideHomeHeroRatings()
+      ? null
+      : hero?.heroSource === "continueWatching"
+        ? continueWatchingRating(hero, LayoutPreferences.get().detailImdbRatingsVisibility)
+        : resolveImdbRating(hero);
   const genres =
     !localizationPending && Array.isArray(hero?.genres) ? hero.genres.filter(Boolean).slice(0, 3).map(localizedGenreLabel) : [];
   const typeLabel = formatContentTypeLabel(hero?.type || hero?.apiType || "movie", "movie");
@@ -296,7 +302,12 @@ export function buildModernHeroPresentation(hero) {
   const runtimeText = formatRuntimeText(normalized);
   const yearText = extractReleaseDateText(normalized);
   const mdbListMarkup = renderHeroMdbListRatings(normalized, "modern");
-  const imdbText = mdbListMarkup || hideHomeHeroRatings() ? "" : resolveImdbRating(normalized);
+  const imdbText =
+    mdbListMarkup || hideHomeHeroRatings()
+      ? ""
+      : isContinueWatchingHero
+        ? continueWatchingRating(normalized, LayoutPreferences.get().detailImdbRatingsVisibility)
+        : resolveImdbRating(normalized);
   const rawStatus = firstNonEmpty(normalized.status);
   const statusKeys = {
     ended: "ended",

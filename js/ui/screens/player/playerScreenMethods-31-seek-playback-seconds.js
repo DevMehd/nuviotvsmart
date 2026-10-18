@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -18,15 +19,25 @@ export function createPlayerScreenMethods31() {
       this.seekLoadingBaselineSeconds = this.getPlaybackCurrentSeconds();
       this.seekLoadingTargetSeconds = Number(seconds || 0);
       this.seekLoadingSettled = false;
+      this.seekLoadingVisualComplete = false;
       this.seekLoadingProgressSeconds = null;
+      this.seekLoadingProgressAt = 0;
+      this.seekLoadingStartedAt = Date.now();
       this.seekLoading = true;
       this.updateLoadingVisibility();
       this.prepareBitmapSubtitleForSeek(this.seekLoadingTargetSeconds);
       this.prepareWebOsEmbeddedTextSubtitleForSeek(this.seekLoadingTargetSeconds);
       if (typeof PlayerController.seekToSeconds === "function") {
-        const didSeek = Boolean(PlayerController.seekToSeconds(seconds));
+        const didSeek = Boolean(
+          PlayerController.seekToSeconds(seconds, {
+            exact: Boolean(this.isPartySynced?.()),
+            paused: this.getPlaybackControlPaused?.() ?? Boolean(this.paused)
+          })
+        );
         if (!didSeek) {
           this.clearSeekLoading();
+        } else {
+          this.startSeekLoadingWatchdog();
         }
         return didSeek;
       }
@@ -198,6 +209,7 @@ export function createPlayerScreenMethods31() {
       const hidden = !this.isNextEpisodeCardVisible();
 
       card.classList.toggle("hidden", hidden);
+      if (hidden) syncHtmlSubtitleClearance(this);
       if (hidden) {
         card.innerHTML = "";
         this.nextEpisodeCardRenderedKey = "";
@@ -262,6 +274,7 @@ export function createPlayerScreenMethods31() {
         this.nextEpisodeCardRenderedKey = renderKey;
       }
       this.syncNextEpisodeCardFocusState();
+      syncHtmlSubtitleClearance(this);
     }
   };
 }

@@ -14,6 +14,7 @@ function fixture(headers = {}) {
   let initialized = false;
   const player = {
     updateSettings() {},
+    addResponseInterceptor() {},
     addRequestInterceptor(fn) {
       assert.equal(initialized, false, "headers configured before manifest request");
       interceptors.push(fn);

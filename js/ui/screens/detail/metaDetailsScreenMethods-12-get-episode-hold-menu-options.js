@@ -2,7 +2,8 @@
 import * as internals from "./metaDetailsScreenContext.js";
 
 export function createMetaDetailsScreenMethods12() {
-  const { libraryRepository, NuvioDialog, isWatchProgressInProgress, t } = internals;
+  const { libraryRepository, NuvioDialog, isWatchProgressInProgress, t, resolveMetaImdbId, resolveMetaTmdbId, resolveMetaTraktId } =
+    internals;
 
   return {
     getEpisodeHoldMenuOptions() {
@@ -70,6 +71,9 @@ export function createMetaDetailsScreenMethods12() {
       return {
         itemId: this.params?.itemId || this.meta?.id || "",
         itemType: this.params?.itemType || this.meta?.type || "movie",
+        imdbId: resolveMetaImdbId(this.meta, this.params),
+        tmdbId: resolveMetaTmdbId(this.meta, this.params),
+        traktId: resolveMetaTraktId(this.meta, this.params),
         title: this.meta?.name || this.params?.fallbackTitle || this.params?.itemId || "Untitled",
         poster: this.meta?.poster || null,
         background: this.meta?.background || this.meta?.landscapePoster || null,

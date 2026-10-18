@@ -101,9 +101,6 @@ export function renderTmdbIntegrationDetail(model) {
   this.actionMap.set("integration:tmdb:details", () => {
     toggleTmdbSetting("useDetails");
   });
-  this.actionMap.set("integration:tmdb:releaseDates", () => {
-    toggleTmdbSetting("useReleaseDates");
-  });
   this.actionMap.set("integration:tmdb:credits", () => {
     toggleTmdbSetting("useCredits");
   });

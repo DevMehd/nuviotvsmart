@@ -1,3 +1,5 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
+import { MediaServerScrobbleService } from "../../../data/mediaserver/mediaServerScrobbleService.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -7,6 +9,7 @@ export function createPlayerScreenMethods32() {
 
   return {
     updateUiTick() {
+      if (this.playerRouteActive) MediaServerScrobbleService.update(this.buildScrobbleContext());
       if (this.isExternalFrameMode()) {
         return;
       }
@@ -110,6 +113,7 @@ export function createPlayerScreenMethods32() {
 
       this.syncPauseOverlayState();
       this.renderNextEpisodeCard();
+      syncHtmlSubtitleClearance(this);
 
       if (this.seekOverlayVisible && this.seekPreviewSeconds == null) {
         this.renderSeekOverlay();
@@ -141,6 +145,7 @@ export function createPlayerScreenMethods32() {
         uiState.seekDirectionText = nextDirectionText;
       }
 
+      syncHtmlSubtitleClearance(this);
       const percent = duration > 0 ? clamp(currentPreview / duration, 0, 1) : 0;
       const nextSeekWidth = `${Math.round(percent * 10000) / 100}%`;
       if (uiState.seekWidth !== nextSeekWidth) {
@@ -212,8 +217,13 @@ export function createPlayerScreenMethods32() {
       }
 
       if (this.seekPreviewSeconds != null) {
-        this.suppressControlsForHiddenSeek();
-        this.seekPlaybackSeconds(Number(this.seekPreviewSeconds));
+        const requestedMs = Math.round(Number(this.seekPreviewSeconds) * 1000);
+        const targetMs = this.partyUserSeekTarget ? this.partyUserSeekTarget(requestedMs) : requestedMs;
+        if (targetMs != null) {
+          this.suppressControlsForHiddenSeek();
+          this.seekPlaybackSeconds(targetMs / 1000);
+          this.publishPartyPlayback?.({ positionMs: targetMs });
+        }
       }
 
       if (this.stickyProgressFocus && this.controlsVisible) {
@@ -279,6 +289,16 @@ export function createPlayerScreenMethods32() {
       if (this.isExternalFrameMode()) {
         return;
       }
+      if (this.isPartyControlLocked?.()) {
+        this.toggleOwnPlayback();
+        this.renderControlButtons();
+        return;
+      }
+      const wasPaused = this.getPlaybackControlPaused();
+      this.togglePauseLocally({ focusControls, preserveProgressFocus });
+      this.publishPartyPlayback?.({ paused: !wasPaused });
+    },
+    togglePauseLocally({ focusControls = true, preserveProgressFocus = false } = {}) {
       if (this.getPlaybackControlPaused()) {
         this.dismissPauseOverlay();
         PlayerController.resume();

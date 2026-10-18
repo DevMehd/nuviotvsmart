@@ -31,6 +31,12 @@ export async function readOfficialTraktArchive(
   bytes,
   expectedHash = OFFICIAL_TRAKT_CONFIG_RELEASE.sha256
 ) {
+  return parseOfficialTraktRuntimeConfig(
+    await readOfficialRuntimeConfigArchive(bytes, expectedHash)
+  );
+}
+
+export async function readOfficialRuntimeConfigArchive(bytes, expectedHash) {
   const digest = createHash("sha256").update(bytes).digest("hex");
   if (digest !== expectedHash) throw new Error("Official Nuvio package checksum mismatch");
   const archive = await JSZip.loadAsync(bytes);
@@ -38,7 +44,7 @@ export async function readOfficialTraktArchive(
     (entry) => !entry.dir && /(^|\/)nuvio\.env\.js$/.test(entry.name)
   );
   if (configs.length !== 1) throw new Error("Expected one official runtime config in the package");
-  return parseOfficialTraktRuntimeConfig(await configs[0].async("string"));
+  return configs[0].async("string");
 }
 
 export function mergeOfficialTraktProperties(

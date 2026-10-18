@@ -144,6 +144,12 @@ export function createPlayerScreenMethods62() {
       this.resetControlsAutoHide();
     },
     async applyPlaybackSpeed(speed = 1) {
+      if (this.partyBlocksControl?.()) {
+        this.renderControlButtons();
+        this.renderSpeedDialog();
+        return false;
+      }
+      this.partyRateNudge = null;
       let applied = false;
       try {
         applied = typeof PlayerController.setPlaybackRate === "function" ? await PlayerController.setPlaybackRate(speed) : false;
@@ -157,6 +163,7 @@ export function createPlayerScreenMethods62() {
       }
       this.renderControlButtons();
       this.renderSpeedDialog();
+      this.publishPartyPlayback?.({ rate: Number(speed) || 1 });
       return true;
     },
     renderSpeedDialog() {

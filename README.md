@@ -83,6 +83,8 @@ For local development, run `npm run serve:vidaa`.
 
 See [VIDAA verification and test commands](./docs/vidaa-verification.md) for the
 regression suites, recorded device checks, and remaining hardware limitations.
+See [upstream 1.2.7 integration](./docs/upstream-1.2.7-integration.md) for the
+latest features, VIDAA adaptations, and build verification.
 
 ## Build from source
 
@@ -109,6 +111,18 @@ explicit `--replace-trakt` option. Downloads are not part of normal builds.
 Without these build values Trakt remains unavailable; the TV never asks for
 manual application credentials. No account password or user token belongs in
 `local.properties` or a distributed package.
+
+The MDBList account and library-list integration added in 1.2.7 also needs its
+application Client ID. Prepare it from the official 1.2.7 package with:
+
+```bash
+node scripts/import-official-mdblist-config.mjs --if-missing
+```
+
+This verifies the pinned official archive checksum and imports only the MDBList
+application ID. Existing custom configuration is preserved. Vercel prepares both
+application integrations before packaging; users still approve account linking
+from the normal device-code screen.
 
 Personal TMDB credentials override build defaults for the current profile;
 clearing them restores those defaults when available. The client includes the

@@ -306,6 +306,7 @@ export function createPlayerControllerMethods02() {
     resetNativeMediaState() {
       this.nativeAudioTrackSelectionToken = Number(this.nativeAudioTrackSelectionToken || 0) + 1;
       this.nativeTextTrackSelectionToken = Number(this.nativeTextTrackSelectionToken || 0) + 1;
+      this.cancelWebOsExactSeek({ pause: true });
       this.nativeMediaId = "";
       this.nativeMediaIdLookupToken = Number(this.nativeMediaIdLookupToken || 0) + 1;
       this.webOsPlaybackRateRequestToken = Number(this.webOsPlaybackRateRequestToken || 0) + 1;

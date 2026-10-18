@@ -150,8 +150,7 @@ export function createHomeScreenMethods11() {
               ...(settings.useArtwork ? { logo: tmdbEnrichment.logo || null } : {}),
               ...(settings.useDetails && tmdbRuntime > 0 ? { runtimeMinutes: tmdbRuntime } : {}),
               ...(settings.useDetails && tmdbEnrichment.ageRating ? { ageRating: tmdbEnrichment.ageRating } : {}),
-              ...(settings.useDetails && tmdbEnrichment.status ? { status: tmdbEnrichment.status } : {}),
-              ...(settings.useReleaseDates && tmdbEnrichment.releaseInfo ? { releaseInfo: tmdbEnrichment.releaseInfo } : {})
+              ...(settings.useDetails && tmdbEnrichment.status ? { status: tmdbEnrichment.status } : {})
             }
           : {};
         const mergedHero = {

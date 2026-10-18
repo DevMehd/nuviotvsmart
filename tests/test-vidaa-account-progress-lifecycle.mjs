@@ -19,6 +19,7 @@ const {
   ProfileSyncService,
   ProfileSettingsSyncService,
   ProviderCredentialSyncService,
+  MediaServerSyncService,
   SimklSyncService,
   PluginSyncService,
   CollectionSyncService,
@@ -245,6 +246,7 @@ replace(ProfileSyncService, "getLastPullStatus", () => "ok");
 replace(ProfileSettingsSyncService, "pull", async () => false);
 replace(ProfileSettingsSyncService, "getHomeInputSignature", () => "fixture-settings");
 replace(ProviderCredentialSyncService, "syncFromRemote", async () => false);
+replace(MediaServerSyncService, "syncFromRemote", async () => false);
 replace(SimklSyncService, "refresh", async () => false);
 replace(PluginSyncService, "pull", async () => false);
 replace(CollectionSyncService, "pull", async () => false);

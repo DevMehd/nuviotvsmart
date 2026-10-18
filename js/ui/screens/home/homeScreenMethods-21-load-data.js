@@ -109,6 +109,7 @@ export function createHomeScreenMethods21() {
 
       const addons = refreshManifests
         ? await addonRepository.getInstalledAddons({
+            includeMediaServers: true,
             staleWhileRevalidate: true,
             timeoutMs: HOME_ADDON_MANIFEST_TIMEOUT_MS
           })
@@ -373,6 +374,19 @@ export function createHomeScreenMethods21() {
           })
           .catch((error) => {
             console.warn("Deferred home rows load failed", error);
+          });
+      }
+
+      if (!Platform.isVidaa() && this.layoutMode !== "modern") {
+        this.enrichHero(this.heroCandidates[0] || null)
+          .then(() => {
+            if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
+              return;
+            }
+            this.applyHeroToDom();
+          })
+          .catch((error) => {
+            console.warn("Hero async enrichment failed", error);
           });
       }
 

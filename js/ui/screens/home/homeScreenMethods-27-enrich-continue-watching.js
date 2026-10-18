@@ -1,3 +1,4 @@
+import { resolveContinueWatchingEpisodeRating } from "./continueWatchingEpisodeRating.js";
 import * as internals from "./homeScreenContext.js";
 import { homeMetadataSettingsSignature } from "./homeMetadataSettings.js";
 
@@ -38,7 +39,10 @@ export function createHomeScreenMethods27() {
             };
           }
           const cachedItem = applyCachedContinueWatchingEnrichment(item);
-          if (!options?.forceRefreshMetadata && !needsContinueWatchingMetadataRefresh([cachedItem])) {
+          const needsEpisodeRating =
+            isSeriesTypeForContinueWatching(cachedItem.contentType || cachedItem.type) &&
+            !Object.prototype.hasOwnProperty.call(cachedItem, "episodeImdbRating");
+          if (!options?.forceRefreshMetadata && !needsEpisodeRating && !needsContinueWatchingMetadataRefresh([cachedItem])) {
             return cachedItem;
           }
           try {
@@ -61,6 +65,9 @@ export function createHomeScreenMethods27() {
               const runtimeMinutes = parseRuntimeMinutes(
                 episodeEntry?.runtimeMinutes ?? enrichedMeta.episodeRuntime ?? enrichedMeta.runtimeMinutes ?? enrichedMeta.runtime ?? 0
               );
+              const episodeImdbRating = isSeriesTypeForContinueWatching(item.contentType || item.type)
+                ? await resolveContinueWatchingEpisodeRating(item, episodeEntry?.imdbRating ?? item.episodeImdbRating)
+                : null;
               const enriched = {
                 ...item,
                 title: enrichedMeta.name || prettyId(item.contentId),
@@ -75,6 +82,7 @@ export function createHomeScreenMethods27() {
                 description: enrichedMeta.description || "",
                 releaseInfo: enrichedMeta.releaseInfo || "",
                 imdbRating: resolveImdbRating(enrichedMeta),
+                episodeImdbRating,
                 genres: Array.isArray(enrichedMeta.genres) ? enrichedMeta.genres : [],
                 runtimeMinutes,
                 durationMs:

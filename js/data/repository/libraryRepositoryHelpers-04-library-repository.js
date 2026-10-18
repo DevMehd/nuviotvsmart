@@ -1,3 +1,5 @@
+import { MdbListAccount } from "./mdbListAccount.js";
+import { MdbListLibrary } from "./mdbListLibrary.js";
 /* eslint-disable no-unused-vars */
 
 import { AuthManager } from "../../core/auth/authManager.js";
@@ -75,6 +77,9 @@ export class LibraryRepository {
   async getSourceMode() {
     const requestContext = createTraktRequestContext();
     const selectedMode = TraktSettingsStore.get().librarySourceMode;
+    if (selectedMode === TraktLibrarySourceMode.MDBLIST) {
+      return MdbListAccount.connected() ? LibrarySourceMode.MDBLIST : LibrarySourceMode.LOCAL;
+    }
     if (selectedMode === TraktLibrarySourceMode.SIMKL) {
       return SimklAuthService.isAuthenticated() ? LibrarySourceMode.SIMKL : LibrarySourceMode.LOCAL;
     }
@@ -92,6 +97,7 @@ export class LibraryRepository {
   async getListTabs({ sourceMode = null } = {}) {
     const requestContext = createTraktRequestContext();
     const resolvedSourceMode = sourceMode || (await this.getSourceMode());
+    if (resolvedSourceMode === LibrarySourceMode.MDBLIST) return MdbListLibrary.tabs();
     if (resolvedSourceMode === LibrarySourceMode.LOCAL) {
       return [];
     }
@@ -121,6 +127,10 @@ export class LibraryRepository {
   async getItems({ hydrate = true, sourceMode = null } = {}) {
     const requestContext = createTraktRequestContext();
     const resolvedSourceMode = sourceMode || (await this.getSourceMode());
+    if (resolvedSourceMode === LibrarySourceMode.MDBLIST) {
+      const entries = await MdbListLibrary.entries();
+      return hydrate ? hydrateEntries(entries) : entries;
+    }
     if (resolvedSourceMode === LibrarySourceMode.TRAKT) {
       assertTraktRequestContext(requestContext);
       await this.ensureFreshTraktState();
@@ -140,6 +150,7 @@ export class LibraryRepository {
   async getMembershipSnapshot(item, { sourceMode = null } = {}) {
     const requestContext = createTraktRequestContext();
     const resolvedSourceMode = sourceMode || (await this.getSourceMode());
+    if (resolvedSourceMode === LibrarySourceMode.MDBLIST) return MdbListLibrary.membership(item);
     if (resolvedSourceMode === LibrarySourceMode.LOCAL) {
       const exists = await savedLibraryRepository.isSaved(item.itemId || item.id || "");
       return { listMembership: { local: exists } };
@@ -157,14 +168,21 @@ export class LibraryRepository {
 
   async toggleDefault(item, options = {}) {
     const requestContext = createTraktRequestContext();
+    const profileId = ProfileManager.getActiveProfileId();
     const sourceMode = await this.getSourceMode();
+    const mdbListScope = sourceMode === LibrarySourceMode.MDBLIST ? MdbListAccount.scope() : null;
+    if (mdbListScope && mdbListScope.profileId !== String(profileId))
+      throw Object.assign(new Error("Profile changed"), { code: "mdblist_scope_changed" });
     if (sourceMode === LibrarySourceMode.TRAKT) assertTraktRequestContext(requestContext);
     const snapshot = await this.getMembershipSnapshot(item, { sourceMode });
+    if (mdbListScope) MdbListAccount.check(mdbListScope);
     if (sourceMode === LibrarySourceMode.TRAKT) assertTraktRequestContext(requestContext);
     const currentMembership = snapshot?.listMembership || {};
     let desiredMembership;
 
-    if (sourceMode === LibrarySourceMode.TRAKT) {
+    if (sourceMode === LibrarySourceMode.MDBLIST) {
+      desiredMembership = { ...currentMembership, ["mdblist:watchlist"]: currentMembership["mdblist:watchlist"] !== true };
+    } else if (sourceMode === LibrarySourceMode.TRAKT) {
       desiredMembership = {
         ...currentMembership,
         [WATCHLIST_KEY]: currentMembership[WATCHLIST_KEY] !== true
@@ -206,6 +224,7 @@ export class LibraryRepository {
   async applyMembershipChanges(item, changes, options = {}) {
     const requestContext = options.requestContext || createTraktRequestContext();
     const sourceMode = options?.sourceMode || (await this.getSourceMode());
+    if (sourceMode === LibrarySourceMode.MDBLIST) return MdbListLibrary.applyMembershipChanges(item, changes);
     if (sourceMode === LibrarySourceMode.LOCAL) {
       const shouldSave = Object.values(changes?.desiredMembership || {}).some(Boolean);
       if (shouldSave) {
@@ -275,8 +294,19 @@ export class LibraryRepository {
     await writeRemoteState(remoteState);
   }
 
+  async getListWriterMode() {
+    const profileId = ProfileManager.getActiveProfileId();
+    const mode = await this.getSourceMode();
+    if (ProfileManager.getActiveProfileId() !== profileId)
+      throw Object.assign(new Error("Profile changed"), { code: "mdblist_scope_changed" });
+    if (![LibrarySourceMode.TRAKT, LibrarySourceMode.MDBLIST].includes(mode))
+      throw new Error("This provider does not support list management");
+    return mode;
+  }
+
   async createPersonalList(name, description, privacy) {
     const requestContext = createTraktRequestContext();
+    if ((await this.getListWriterMode()) === LibrarySourceMode.MDBLIST) return MdbListLibrary.createList(name, description, privacy);
     const { payload } = await authorizedTraktRequest("/users/me/lists", {
       requestContext,
       method: "POST",
@@ -301,6 +331,8 @@ export class LibraryRepository {
 
   async updatePersonalList(listId, name, description, privacy) {
     const requestContext = createTraktRequestContext();
+    if ((await this.getListWriterMode()) === LibrarySourceMode.MDBLIST)
+      return MdbListLibrary.updateList(listId, name, description, privacy);
     const { payload } = await authorizedTraktRequest(`/users/me/lists/${encodeURIComponent(String(listId))}`, {
       requestContext,
       method: "PUT",
@@ -332,6 +364,7 @@ export class LibraryRepository {
 
   async deletePersonalList(listId) {
     const requestContext = createTraktRequestContext();
+    if ((await this.getListWriterMode()) === LibrarySourceMode.MDBLIST) return MdbListLibrary.deleteList(listId);
     await authorizedTraktRequest(`/users/me/lists/${encodeURIComponent(String(listId))}`, {
       requestContext,
       method: "DELETE",
@@ -352,6 +385,7 @@ export class LibraryRepository {
 
   async reorderPersonalLists(orderedListIds = []) {
     const requestContext = createTraktRequestContext();
+    if ((await this.getListWriterMode()) === LibrarySourceMode.MDBLIST) throw new Error("MDBList does not support list reordering");
     const rank = orderedListIds
       .map((id) => Number(String(id).replace(PERSONAL_KEY_PREFIX, "")))
       .filter((id) => Number.isFinite(id) && id > 0);
@@ -374,6 +408,10 @@ export class LibraryRepository {
   async refreshNow() {
     const requestContext = createTraktRequestContext();
     const sourceMode = await this.getSourceMode();
+    if (sourceMode === LibrarySourceMode.MDBLIST) {
+      await MdbListLibrary.snapshot({ force: true });
+      return true;
+    }
     if (sourceMode === LibrarySourceMode.TRAKT) {
       assertTraktRequestContext(requestContext);
       if (!TraktAuthService.isAuthenticated()) return false;

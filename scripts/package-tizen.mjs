@@ -289,6 +289,10 @@ async function stageTizenPluginService() {
       path.join(stagingDir, tizenPluginServiceRelativePath)
     ),
     cp(
+      path.join(rootDir, "services/custom-poster-config.cjs"),
+      path.join(stagingDir, "services/custom-poster-config.cjs")
+    ),
+    cp(
       path.join(rootDir, tizenPluginServiceSourceRelativePath),
       path.join(stagingDir, tizenPluginServiceSourceRelativePath)
     )
@@ -596,6 +600,7 @@ function requiredTizenServiceFiles({
           tizenEngineFsServiceRelativePath,
           `${tizenEngineFsRuntimeDirRelativePath}/media-http.cjs`,
           `${tizenEngineFsRuntimeDirRelativePath}/playback-proxy-patch.cjs`,
+          `${tizenEngineFsRuntimeDirRelativePath}/proxy-redirect-report-patch.cjs`,
           `${tizenEngineFsRuntimeDirRelativePath}/tx3g-subtitle-parser.cjs`,
           `${tizenEngineFsRuntimeDirRelativePath}/tx3g-subtitle-service.cjs`,
           `${tizenEngineFsRuntimeDirRelativePath}/embedded-text-subtitle-parser.cjs`

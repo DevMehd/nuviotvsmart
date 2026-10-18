@@ -1,3 +1,4 @@
+import { normalizeOpenSubtitlesSpanishCode } from "../player/subtitleLanguageAliases.js";
 import { DebridSettingsStore } from "../../data/local/debridSettingsStore.js";
 
 import { DebridProviders } from "./debridProviders.js";
@@ -129,7 +130,7 @@ const LANGUAGE_FLAG_CODES = {
 };
 
 export function languageFor(value = "") {
-  const normalized = normalizeStreamSearchText(value).trim().toLowerCase();
+  const normalized = (normalizeOpenSubtitlesSpanishCode(value) || normalizeStreamSearchText(value)).trim().toLowerCase();
   const flagCode = normalized.match(/^\[([a-z]{2})\]$/)?.[1]?.toUpperCase();
   if (flagCode && LANGUAGE_FLAG_CODES[flagCode]) return LANGUAGE_FLAG_CODES[flagCode];
   const compact = normalized.replace(/[^a-z0-9]/g, "");

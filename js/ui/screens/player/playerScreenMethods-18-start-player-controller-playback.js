@@ -1,3 +1,4 @@
+import { saveReusableStreamLink } from "../../../core/streams/streamLinkReuse.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -59,6 +60,7 @@ export function createPlayerScreenMethods18() {
         });
         return Promise.resolve();
       }
+      saveReusableStreamLink(this, sourceCandidate || this.getCurrentStreamCandidate(), { url: playbackUrl, headers: requestHeaders });
       PlayerController.setStartupPresentationAudioMuted?.(true);
       this.sourcePlaybackStarting = false;
       this.armSourceFallbackDeadline(sourceCandidate);

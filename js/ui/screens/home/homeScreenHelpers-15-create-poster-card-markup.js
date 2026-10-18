@@ -1,3 +1,4 @@
+import { customPosterForItem } from "../../../core/poster/customPoster.js";
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
 
@@ -287,7 +288,11 @@ export function createPosterCardMarkup(
     `;
   }
   const isLoading = Boolean(item?.isLoading);
-  const normalized = normalizeCatalogItem(item, itemType);
+  const normalized = customPosterForItem(
+    normalizeCatalogItem(item, itemType),
+    Router.getCurrent() === "folderDetail" || rowData?.rowKind === "collection" ? "collections" : "home",
+    layoutMode === "modern" && preferLandscapePoster ? "landscape" : "poster"
+  );
   const subtitle = buildPosterSubtitle(normalized, layoutMode);
   const preferredLandscapePosterSrc = firstNonEmpty(normalized.landscapePoster);
   const useLandscapePoster = layoutMode === "modern" && preferLandscapePoster;
@@ -354,7 +359,7 @@ export function createPosterCardMarkup(
       <div class="home-poster-frame">
         ${
           !isLoading && posterSrc
-            ? `<img class="content-poster" ${buildLazyImageAttributes(cardPosterSrc, { defer: deferCardImages })} alt="${escapeAttribute(normalized.name || "content")}" />`
+            ? `<img class="content-poster" ${buildLazyImageAttributes(cardPosterSrc, { defer: deferCardImages })} data-original-poster="${escapeAttribute((useLandscapePoster ? normalized.rawLandscapePosterUrl : normalized.rawPosterUrl) || "")}" alt="${escapeAttribute(normalized.name || "content")}" />`
             : '<div class="content-poster placeholder"></div>'
         }
         ${

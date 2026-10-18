@@ -1,3 +1,4 @@
+import { MediaServerRepository, parseServerItem } from "../mediaserver/mediaServerRepository.js";
 import { safeApiCall } from "../../core/network/safeApiCall.js";
 import { addonRepository } from "./addonRepository.js";
 import { MetaApi } from "../remote/api/metaApi.js";
@@ -55,6 +56,17 @@ class MetaRepository {
   async getMeta(addonBaseUrl, type, id, options = {}) {
     const signal = options?.signal || null;
     throwIfMetaAborted(signal);
+    if (String(addonBaseUrl || "").startsWith("nuvio-server://")) {
+      if (!parseServerItem(id)) return { status: "error", message: "servers_failure_not_found" };
+      try {
+        const data = await MediaServerRepository.meta(id);
+        return data
+          ? { status: "success", data }
+          : { status: "error", message: "servers_failure_not_found" };
+      } catch (_) {
+        return { status: "error", message: "servers_failure_unreachable" };
+      }
+    }
     const requestedType = String(type || "").trim();
     const normalizedId = String(id || "").trim();
     const inferredType = this.inferCanonicalType(requestedType, normalizedId);
@@ -127,6 +139,16 @@ class MetaRepository {
   async getMetaFromAllAddons(type, id, sourceAddonBaseUrl = null, options = {}) {
     const signal = options?.signal || null;
     throwIfMetaAborted(signal);
+    if (parseServerItem(id)) {
+      try {
+        const data = await MediaServerRepository.meta(id);
+        return data
+          ? { status: "success", data }
+          : { status: "error", message: "servers_failure_not_found" };
+      } catch (_) {
+        return { status: "error", message: "servers_failure_unreachable" };
+      }
+    }
     const requestedType = String(type || "").trim();
     const inferredType = this.inferCanonicalType(requestedType, id);
     const cacheKey = `all:${inferredType.toLowerCase()}:${String(id || "").trim()}`;
@@ -140,7 +162,10 @@ class MetaRepository {
     }
 
     const request = (async () => {
-      const addons = await waitForMetaResult(addonRepository.getInstalledAddons(), signal);
+      const addons = await waitForMetaResult(
+        addonRepository.getInstalledAddons({ includeMediaServers: true }),
+        signal
+      );
       throwIfMetaAborted(signal);
       const normalizedSourceUrl = sourceAddonBaseUrl
         ? addonRepository.canonicalizeUrl(sourceAddonBaseUrl)
@@ -306,6 +331,7 @@ class MetaRepository {
     }
     try {
       const addons = await addonRepository.getInstalledAddons({
+        includeMediaServers: true,
         timeoutMs: INSTALLED_ADDONS_WAIT_MS
       });
       const target = addonRepository.canonicalizeUrl(addonBaseUrl);

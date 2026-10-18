@@ -1,3 +1,4 @@
+import { activeStreamLinkProfile } from "../../../data/local/streamLinkCacheStore.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 
@@ -15,8 +16,9 @@ export function createStreamScreenMethods10() {
   } = internals;
 
   return {
-    async playStream(streamId) {
+    async playStream(streamId, { cachedLink = null } = {}) {
       const loadToken = this.loadToken;
+      const profileId = activeStreamLinkProfile();
       this.cancelAutoPlayCountdown();
       this.cancelAutoPlaySelectionWait();
       const filtered = this.getFilteredStreams();
@@ -56,7 +58,7 @@ export function createStreamScreenMethods10() {
         resumeDurationMs = Number(resumeProgress?.durationMs || 0) || resumeDurationMs;
       }
 
-      if (loadToken !== this.loadToken) return;
+      if (loadToken !== this.loadToken || Router.getCurrent() !== "stream" || profileId !== activeStreamLinkProfile()) return;
       Router.navigate("player", {
         streamUrl: selected.url || selected.externalUrl || null,
         itemId: this.params?.itemId || null,
@@ -64,7 +66,12 @@ export function createStreamScreenMethods10() {
         imdbId: this.params?.imdbId || null,
         tmdbId: this.params?.tmdbId || this.params?.tmdb_id || null,
         traktId: this.params?.traktId || this.params?.trakt_id || null,
-        contentLanguage: this.params?.contentLanguage || this.params?.originalLanguage || this.params?.original_language || null,
+        contentLanguage:
+          cachedLink?.contentLanguage ||
+          this.params?.contentLanguage ||
+          this.params?.originalLanguage ||
+          this.params?.original_language ||
+          null,
         videoId: this.params?.videoId || null,
         resumePositionMs,
         resumeProgressPercent,
@@ -74,7 +81,7 @@ export function createStreamScreenMethods10() {
         playerTitle: this.params?.itemTitle || this.params?.playerTitle || "Untitled",
         playerSubtitle: this.params?.episodeTitle || this.params?.playerSubtitle || "",
         playerEpisodeTitle: this.params?.episodeTitle || "",
-        playerReleaseYear: this.params?.year || "",
+        playerReleaseYear: cachedLink?.year || this.params?.year || "",
         playerBackdropUrl: this.getBackdropUrl() || null,
         playerLogoUrl: this.params?.logo || null,
         parentalWarnings: this.params?.parentalWarnings || null,

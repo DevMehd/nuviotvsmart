@@ -4,6 +4,8 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 
 const { Platform } = await import("../js/platform/index.js");
+const { Router } = await import("../js/ui/navigation/routerState.js");
+Router.getCurrent = () => "home";
 const { limitTmdbImageWidth } = await import("../js/core/tmdb/tmdbImageUrl.js");
 const { createPosterCardMarkup } =
   await import("../js/ui/screens/home/homeScreenHelpers-15-create-poster-card-markup.js");
