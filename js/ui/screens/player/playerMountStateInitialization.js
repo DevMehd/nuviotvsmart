@@ -61,6 +61,7 @@ export function initializePlayerMountState(params, initialStreamUrl) {
   this.startupAudioPreferenceApplied = false;
   this.startupAudioPreferenceApplying = false;
   this.startupAudioFallbackApplied = false;
+  this.startupImplicitAudioFallback = null;
   this.startupAudioTrackSetSignature = "";
   this.startupAudioPreferenceRetryTimer = null;
   this.startupAudioPreferenceRetryDeadline = 0;

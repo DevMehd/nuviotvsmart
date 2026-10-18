@@ -205,13 +205,24 @@ export function createPlayerScreenMethods30() {
     },
     scheduleLoadingCompletionCheck(delayMs = 250, { force = false } = {}) {
       this.clearLoadingCompletionTimer();
-      if (!this.loadingVisible || this.isExternalFrameMode()) {
+      // Recovery and the stall watchdog can hide loading before the normal
+      // presentation callback runs. Its audio mute still needs that callback;
+      // the startup language and resume checks below continue to guard release.
+      if (
+        (!this.loadingVisible && !PlayerController.startupPresentationAudioMuted) ||
+        this.isExternalFrameMode() ||
+        this.isStartupErrorVisible()
+      ) {
         return;
       }
       this.loadingCompletionTimer = setTimeout(
         () => {
           this.loadingCompletionTimer = null;
-          if (!this.loadingVisible || this.isExternalFrameMode()) {
+          if (
+            (!this.loadingVisible && !PlayerController.startupPresentationAudioMuted) ||
+            this.isExternalFrameMode() ||
+            this.isStartupErrorVisible()
+          ) {
             return;
           }
           if (this.isStartupGateReleaseReady()) {

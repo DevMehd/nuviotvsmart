@@ -444,6 +444,56 @@ test("missing language keeps the real bounded fallback and startup without track
   assert.equal(ui.isStartupGateReleaseReady(), true);
   api.stop();
 });
+test("native audio first discovered after an implicit fallback still gets the startup language", async () => {
+  const { ui, video } = fixture([]);
+  ui.startupTrackPreferenceReady = true;
+  assert.equal(ui.applyStartupAudioFallback(), true);
+  assert.equal(ui.startupAudioPreferenceApplied, true);
+  await advance(14000);
+  const en = { id: "en", language: "en", enabled: true };
+  const it = { id: "it", language: "it", enabled: false };
+  video.audioTracks.replace([en, it]);
+  ui.refreshTrackDialogs();
+  await advance(1400);
+  assert.equal(it.enabled, true, "A timeout before any native metadata is not a choice of English");
+  assert.equal(ui.startupAudioPreferenceApplied, true);
+  ui.refreshTrackDialogs();
+  assert.equal(it.enabled, true);
+});
+
+test("late native discovery preserves manual choices, source ownership and presented playback", async () => {
+  for (const supersededBy of ["manual", "source", "presented"]) {
+    const { ui, video } = fixture([]);
+    ui.startupTrackPreferenceReady = true;
+    ui.sourcePlaybackAttemptToken = 1;
+    ui.applyStartupAudioFallback();
+    const en = { id: "en", language: "en", enabled: true };
+    const it = { id: "it", language: "it", enabled: false };
+    video.audioTracks.replace([en, it]);
+    if (supersededBy === "manual") await ui.applyAudioTrack(0, { rememberSelection: true });
+    if (supersededBy === "source") ui.sourcePlaybackAttemptToken++;
+    if (supersededBy === "presented") ui.hasPresentedPlaybackFrame = true;
+    ui.refreshTrackDialogs();
+    await advance(1400);
+    assert.equal(en.enabled, true, `${supersededBy} keeps ownership of audio`);
+    assert.equal(it.enabled, false);
+  }
+});
+
+test("a fallback chosen from actual native tracks stays final after the discovery deadline", async () => {
+  const en = { id: "en", language: "en", enabled: true };
+  const { ui, video } = fixture([en]);
+  ui.startupTrackPreferenceReady = true;
+  ui.applyStartupAudioFallback();
+  await advance(14000);
+  const it = { id: "it", language: "it", enabled: false };
+  video.audioTracks.replace([en, it]);
+  ui.refreshTrackDialogs();
+  await advance(1400);
+  assert.equal(en.enabled, true);
+  assert.equal(it.enabled, false);
+});
+
 test("async startup and its change event issue one request and resolve reordered identity", async () => {
   const delayedFlag = (initial) => {
     let enabled = initial;

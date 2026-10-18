@@ -33,11 +33,78 @@ for (const [decorated, readable] of [
   ["ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡxʏᴢ", "abcdefghijklmnopqrstuvwxyz"],
   ["éàèìòù 1⁺2⁻3 ¼ ² ₄", "éàèìòù 1⁺2⁻3 ¼ 2 4"],
   ["Città 日本語 العربية 👩‍💻", "Città 日本語 العربية 👩‍💻"],
-  ["�T \ud835", "�T \ud835"]
+  ["�T \ud835", "�T \ud835"],
+  ["ɴᴇᴛғʟɪx · ғалым", "netflix · ғалым"]
 ]) {
-  assert.equal(normalizeStreamDisplayText(decorated), readable);
+  assert.equal(normalizeStreamDisplayText(decorated), readable.replace(/✓/g, "OK"));
   assert.equal(normalizeStreamSearchText(decorated), readable);
 }
+
+// Public labels from the reported Conan S1E4 sources, without URL or account data.
+const conanAio = {
+  name: "1080P\u200d\u200d    \u200d\u200d\u200d⚡\u200d\u200d\n  〈Web\u200d-\u200ddl〉\u200d     \u200d\n  ★★★★★",
+  description:
+    "➤ Detective Conan The… s₀₁·ᴇ₀₄\n▣ AVC ♬ DD+ ♯ 2.0\n◈ 270 MB · 3.39 ᴹᵇᵖˢ\n⛉ [TB] Comet · KQRM\n✓ ᴇɴ · ᴇs · ɪᴛ · sᴜʙ (ᴇɴ · ᴇs · ɪᴛ · ʀᴜ)\n » ɴᴇᴛғʟɪx ₁₆₅₀"
+};
+const conanOriginal = structuredClone(conanAio);
+assert.equal(getStreamHeadline(conanAio), "1080P    Bolt");
+assert.deepEqual(getStreamDescriptionLines(conanAio), [
+  "> Detective Conan The… s01·e04",
+  "Video AVC Audio DD+ Channels 2.0",
+  "Size 270 MB · 3.39 Mbps",
+  "Source [TB] Comet · KQRM",
+  "OK en · es · it · sub (en · es · it · ru)",
+  "» netflix 1650"
+]);
+assert.equal(normalizeStreamDisplayText(conanAio.name), "1080P    Bolt\n  <Web-dl>     \n  *****");
+assert.equal(
+  normalizeStreamDisplayText("1080P\n★★★★☆"),
+  "1080P\n****-",
+  "empty rating stars remain distinct from filled stars"
+);
+assert.deepEqual(
+  getStreamDescriptionLines({
+    name: "1080P",
+    description: "✎ Detective.Conan.S01E04.mkv\n⛿ ɪᴛ · ᴇɴ"
+  }),
+  ["File Detective.Conan.S01E04.mkv", "Languages it · en"]
+);
+assert.equal(getStreamHeadline({ name: "🪐 Anime Saturn" }), "Planet Anime Saturn");
+assert.equal(normalizeStreamDisplayText("🌍 🌎 🌏"), "Web Web Web");
+assert.equal(getStreamHeadline({ name: "🤌 Anime World 🌍" }), "Anime World Web");
+assert.equal(getStreamHeadline({ name: "🤌 StreamingCommunity 🍿" }), "StreamingCommunity Cinema");
+assert.deepEqual(
+  getStreamDescriptionLines({
+    title: "🎬 Detective conan ▪ S1E4\n🗣 [ITA]\n🌐 Proxy (ON)",
+    name: "StreamViX"
+  }),
+  ["Video Detective conan - S1E4", "Audio [ITA]", "Web Proxy (ON)"]
+);
+assert.equal(
+  normalizeStreamDisplayText("🎦 🅵🅷🅳 🎞️ HEVC 🎧 AAC 💾 629 MB"),
+  "Video FHD Video HEVC Audio AAC Size 629 MB"
+);
+assert.equal(
+  normalizeStreamDisplayText("☁︎ File\n❖ 660 MB / 6.98 GB"),
+  "Cloud File\nSize 660 MB / 6.98 GB"
+);
+assert.equal(
+  normalizeStreamDisplayText("StreamViX | ElfHosted ⚡ 🌐 📺"),
+  "StreamViX | ElfHosted Bolt Web TV"
+);
+assert.equal(normalizeStreamDisplayText("F♯ music · ♯ 5.1"), "F♯ music · Channels 5.1");
+assert.equal(normalizeStreamDisplayText("👩‍💻 العربية‍العربية क्‍ष"), "👩‍💻 العربية‍العربية क्‍ष");
+assert.equal(
+  normalizeStreamDisplayText("👩‍🚀 🤌🏽 👁️‍🗨️"),
+  "👩‍🚀 🤌🏽 👁️‍🗨️",
+  "icon fallback must preserve emoji joins and modifiers"
+);
+assert.equal(
+  normalizeStreamSearchText("🗣️ 🇮🇹 💾 629 MB"),
+  "🗣️ [IT] 💾 629 MB",
+  "display icon fallback must not alter language or regex input"
+);
+assert.deepEqual(conanAio, conanOriginal, "Actual source metadata remains unchanged");
 
 const styledPattern = new RegExp(normalizeStreamMatchPattern("^(?!.*CAM).*\\b𝐈𝐓\\b$"));
 assert.ok(styledPattern.test("Audio IT"));
@@ -47,6 +114,7 @@ assert.equal(flagPattern.test(normalizeStreamSearchText("🇮🇹")), true);
 assert.equal(flagPattern.test("I"), false, "A flag must not become a character class");
 assert.equal(new RegExp(normalizeStreamMatchPattern("\\🇮🇹")).test("[IT]"), true);
 assert.equal(new RegExp(normalizeStreamMatchPattern("\\bɪᴛ\\b")).test("audio it"), true);
+assert.equal(new RegExp(normalizeStreamMatchPattern("ɴᴇᴛғʟɪx")).test("netflix"), true);
 const flagClass = new RegExp(normalizeStreamMatchPattern("[🇮🇹]"));
 for (const ordinary of ["I", "T", "[", "]"]) assert.equal(flagClass.test(ordinary), false);
 assert.equal(normalizeStreamMatchPattern("[𝐀-𝐙]"), "[𝐀-𝐙]");
@@ -91,7 +159,7 @@ const aioMetadata = {
 };
 assert.deepEqual(getStreamDescriptionLines(aioMetadata), [
   "Teach You A Lesson s01·e10",
-  "✓ it · en · sub (en · itforced)"
+  "OK it · en · sub (en · itforced)"
 ]);
 assert.equal(resolvePlaybackSourceName({ name: "AIO ɪᴛ · s₀₁·ᴇ₁₀" }), "AIO it · s01·e10");
 assert.deepEqual(getStreamDescriptionLines(source), [
@@ -112,10 +180,11 @@ assert.ok(markup.includes("[IT] / English"));
 
 const decoratedAddon = "𝐀𝐝𝐝𝐨𝐧 ɪᴛ";
 assert.equal(getAddonBadgeLabel(decoratedAddon), "AI");
+assert.equal(getAddonBadgeLabel("🎧 日本語"), "A日", "initials retain complete Unicode characters");
 assert.equal(
-  getAddonBadgeLabel("🎧 日本語"),
-  "🎧日",
-  "initials retain complete Unicode characters"
+  getAddonBadgeLabel("🧑 日本語"),
+  "🧑日",
+  "unmapped emoji initials keep their complete code point"
 );
 const addonMarkup = StreamScreen.renderStreamCard.call(
   { isCardActionFocused: () => false },

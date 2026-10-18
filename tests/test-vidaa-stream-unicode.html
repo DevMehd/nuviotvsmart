@@ -47,7 +47,7 @@
       const text = document.getElementById("streams").textContent;
       if (!text.includes("Città 日本語 العربية 👩‍💻")) throw Error("Unrelated text changed");
       if (!text.includes("Teach You A Lesson s01·e10")) throw Error("Episode label not readable");
-      if (!text.includes("✓ it · en · sub (itforced)"))
+      if (!text.includes("OK it · en · sub (itforced)"))
         throw Error("AIO audio/subtitle labels not readable");
       const decoratedAddon = "𝐀𝐝𝐝𝐨𝐧 ɪᴛ";
       const addonLabels = document.createElement("div");
@@ -67,8 +67,39 @@
         throw Error("Addon filter identity changed");
       if (addonLabels.querySelector(".stream-route-addon-name").textContent !== "Addon it")
         throw Error("Addon card label not readable");
-      if (getAddonBadgeLabel(decoratedAddon) !== "AI" || getAddonBadgeLabel("🎧 日本語") !== "🎧日")
+      if (getAddonBadgeLabel(decoratedAddon) !== "AI" || getAddonBadgeLabel("🧑 日本語") !== "🧑日")
         throw Error("Addon initials split a Unicode character");
+      const actualSource = document.createElement("div");
+      actualSource.innerHTML = StreamScreen.renderStreamCard.call(
+        { isCardActionFocused: () => false },
+        {
+          name: "1080P\u200d\u200d    \u200d⚡\u200d\u200d\n★★★★☆",
+          description:
+            "➤ Detective Conan s₀₁·ᴇ₀₄\n▣ AVC ♬ DD+ ♯ 2.0\n◈ 270 MB\n⛉ [TB] Comet\n✓ ɪᴛ · sᴜʙ (ɪᴛ)\nɴᴇᴛғʟɪx ₁₆₅₀\n✎ Detective.Conan.S01E04.mkv\n⛿ ɪᴛ · ᴇɴ\n🪐 Anime Saturn",
+          addonName: "StreamViX | ElfHosted ⚡ 🌐 📺",
+          url: "https://fixture.invalid/conan"
+        },
+        0,
+        false,
+        { showAddonLogo: true }
+      );
+      document.body.appendChild(actualSource);
+      const actualText = actualSource.textContent;
+      for (const expected of [
+        "1080P    Bolt",
+        "Video AVC Audio DD+ Channels 2.0",
+        "Size 270 MB",
+        "Source [TB] Comet",
+        "netflix 1650",
+        "ElfHosted Bolt Web TV",
+        "File Detective.Conan.S01E04.mkv",
+        "Languages it · en",
+        "Planet Anime Saturn"
+      ])
+        if (!actualText.includes(expected))
+          throw Error(`Actual stream label not readable: ${expected}`);
+      if (/[\u200d⚡➤▣♬♯◈⛉✓ғ🌐📺☆✎⛿🪐]/u.test(actualText))
+        throw Error("Actual stream label retained an unsupported metadata symbol");
       if (JSON.stringify(streams) !== original) throw Error("Source metadata changed");
       document.getElementById("result").textContent =
         "PASS: stream descriptions, addon names/filters and Unicode initials are readable; original metadata/filter identities and language matching are preserved";

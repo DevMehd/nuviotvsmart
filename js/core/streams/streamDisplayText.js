@@ -80,10 +80,20 @@ function indicatorLetter(codePoint) {
   return String.fromCharCode(65 + codePoint - REGIONAL_INDICATOR_START);
 }
 
-function plainLabelSymbol(symbol, codePoint) {
+function hasSmallCapitalNeighbor(text, index, length) {
+  return (
+    Object.prototype.hasOwnProperty.call(LATIN_SMALL_CAPITALS, text[index - 1]) ||
+    Object.prototype.hasOwnProperty.call(LATIN_SMALL_CAPITALS, text[index + length])
+  );
+}
+
+function plainLabelSymbol(symbol, codePoint, smallCapitalNeighbor = false) {
   if (Object.prototype.hasOwnProperty.call(LATIN_SMALL_CAPITALS, symbol)) {
     return LATIN_SMALL_CAPITALS[symbol];
   }
+  // AIO's small-cap font spells "netflix" with a Cyrillic ghe for its f.
+  // Fold it only beside decorated Latin letters, never in Cyrillic words.
+  if (symbol === "ғ" && smallCapitalNeighbor) return "f";
   // Negative circled/squared letters have no NFKC decomposition.
   if (codePoint >= 0x1f150 && codePoint <= 0x1f169)
     return String.fromCharCode(65 + codePoint - 0x1f150);
@@ -133,7 +143,11 @@ function normalizeStreamLabel(value) {
       }
     }
     const symbol = text.slice(index, index + current.length);
-    normalized += plainLabelSymbol(symbol, current.codePoint);
+    normalized += plainLabelSymbol(
+      symbol,
+      current.codePoint,
+      hasSmallCapitalNeighbor(text, index, current.length)
+    );
     index += current.length;
   }
   return normalized
@@ -141,9 +155,115 @@ function normalizeStreamLabel(value) {
     .replace(/([A-Za-z0-9])[\ufe0e\ufe0f]+/g, "$1");
 }
 
+// Metadata icons used by AIOStreams and other addon formatters. TV system
+// fonts often lack these glyphs even after decorative letters are folded.
+// Keep the fallback readable without adding a font download to every card.
+const STREAM_METADATA_SYMBOLS = {
+  "☁": "Cloud",
+  "▣": "Video",
+  "♬": "Audio",
+  "♯": "Channels",
+  "❖": "Size",
+  "◈": "Size",
+  "⛉": "Source",
+  "✓": "OK",
+  "✔": "OK",
+  "☑": "OK",
+  "✅": "OK",
+  "⚡": "Bolt",
+  "🚀": "Rocket",
+  "📁": "File",
+  "📃": "File",
+  "📄": "File",
+  "✎": "File",
+  "🎥": "Video",
+  "🎬": "Video",
+  "🎦": "Video",
+  "🎞": "Video",
+  "📺": "TV",
+  "🎧": "Audio",
+  "🔊": "Audio",
+  "🗣": "Audio",
+  "⛿": "Languages",
+  "💾": "Size",
+  "🔍": "Search",
+  "📡": "Source",
+  "🌐": "Web",
+  "🌍": "Web",
+  "🌎": "Web",
+  "🌏": "Web",
+  "🪐": "Planet",
+  "🤌": "",
+  "🍿": "Cinema",
+  "👤": "Peers",
+  "★": "*",
+  "☆": "-",
+  "⭐": "*",
+  "〈": "<",
+  "〉": ">",
+  "➤": ">",
+  "▪": "-"
+};
+
+function isPictographic(codePoint) {
+  return (
+    (codePoint >= 0x2300 && codePoint <= 0x23ff) ||
+    (codePoint >= 0x2600 && codePoint <= 0x27bf) ||
+    (codePoint >= 0x1f000 && codePoint <= 0x1faff)
+  );
+}
+
+function isJoinedEmojiSymbol(text, start, length) {
+  let next = start + length;
+  while (text.charCodeAt(next) === 0xfe0e || text.charCodeAt(next) === 0xfe0f) next++;
+  const modifier = readCodePoint(text, next).codePoint;
+  if (modifier >= 0x1f3fb && modifier <= 0x1f3ff) return true;
+  if (text.charCodeAt(next) === 0x200d) {
+    while (text.charCodeAt(next) === 0x200d) next++;
+    if (isPictographic(readCodePoint(text, next).codePoint)) return true;
+  }
+  let previous = start - 1;
+  if (text.charCodeAt(previous) !== 0x200d) return false;
+  while (text.charCodeAt(previous) === 0x200d) previous--;
+  while (text.charCodeAt(previous) === 0xfe0e || text.charCodeAt(previous) === 0xfe0f) previous--;
+  const codeUnit = text.charCodeAt(previous);
+  if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) previous--;
+  return isPictographic(readCodePoint(text, previous).codePoint);
+}
+
+function normalizeStreamPresentationSymbols(text) {
+  let readable = "";
+  for (let index = 0; index < text.length;) {
+    const current = readCodePoint(text, index);
+    const symbol = text.slice(index, index + current.length);
+    index += current.length;
+    const metadataSymbol = Object.prototype.hasOwnProperty.call(STREAM_METADATA_SYMBOLS, symbol);
+    const separated = index === current.length || /\s/.test(text[index - current.length - 1]);
+    const channelsMarker = symbol !== "♯" || (separated && /^\s*\d/.test(text.slice(index)));
+    if (
+      metadataSymbol &&
+      channelsMarker &&
+      !isJoinedEmojiSymbol(text, index - current.length, current.length)
+    ) {
+      readable += STREAM_METADATA_SYMBOLS[symbol];
+      // A selector for a replaced icon cannot select an ASCII presentation.
+      while (text.charCodeAt(index) === 0xfe0e || text.charCodeAt(index) === 0xfe0f) index++;
+    } else {
+      readable += symbol;
+    }
+  }
+  // AIO labels pad their icons with stand-alone joiners, including at line
+  // endings. Remove them only between ASCII/space/boundaries. Emoji ZWJ
+  // sequences and joins inside Arabic/Indic words keep their original form.
+  return readable.replace(
+    /(^|[\x20-\x7e\s])[\u200b-\u200d\u2060\ufeff]+(?=[\x20-\x7e\s]|$)/g,
+    "$1"
+  );
+}
+
 // Presentation only: never write the result into URLs, stream IDs or payloads.
 export function normalizeStreamDisplayText(value = "") {
-  return normalizeStreamLabel(value);
+  return normalizeStreamPresentationSymbols(normalizeStreamLabel(value)).trim();
 }
 
 export function normalizeStreamSearchText(value = "") {
@@ -194,7 +314,11 @@ export function normalizeStreamMatchPattern(value = "") {
         continue;
       }
     }
-    const plain = plainLabelSymbol(symbol, current.codePoint);
+    const plain = plainLabelSymbol(
+      symbol,
+      current.codePoint,
+      hasSmallCapitalNeighbor(text, index, current.length)
+    );
     if (plain !== symbol) {
       // Non-capturing alternatives retain raw Unicode URL patterns without a
       // second raw-text match that could bypass a negative language lookahead.
