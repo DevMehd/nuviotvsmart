@@ -21,6 +21,8 @@ export function createPlayerScreenMethods31() {
       this.seekLoadingSettled = false;
       this.seekLoadingVisualComplete = false;
       this.seekLoadingProgressSeconds = null;
+      this.seekLoadingProgressAt = 0;
+      this.seekLoadingStartedAt = Date.now();
       this.seekLoading = true;
       this.updateLoadingVisibility();
       this.prepareBitmapSubtitleForSeek(this.seekLoadingTargetSeconds);
@@ -34,6 +36,8 @@ export function createPlayerScreenMethods31() {
         );
         if (!didSeek) {
           this.clearSeekLoading();
+        } else {
+          this.startSeekLoadingWatchdog();
         }
         return didSeek;
       }
