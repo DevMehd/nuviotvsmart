@@ -88,4 +88,17 @@ assert.ok(
 avplay.open("https://other.example/x.mkv");
 assert.equal(getAvPlayCallTrace().length, 1, "a new open() starts a fresh trace");
 
+// The trace wraps webapis.avplay only while Tizen diagnostics are enabled.
+{
+  const { tizenAvplayEngine } = await import("../js/core/player/engines/platformAvplayEngine.js");
+  const nativeAvPlay = { open() {}, getState: () => "NONE" };
+  globalThis.webapis = { avplay: nativeAvPlay };
+  globalThis.__NUVIO_DEBUG_TIZEN_AVPLAY__ = false;
+  assert.equal(tizenAvplayEngine.getApi(), nativeAvPlay, "no wrapper during normal playback");
+  globalThis.__NUVIO_DEBUG_TIZEN_AVPLAY__ = true;
+  assert.notEqual(tizenAvplayEngine.getApi(), nativeAvPlay, "traced while diagnostics are on");
+  delete globalThis.__NUVIO_DEBUG_TIZEN_AVPLAY__;
+  delete globalThis.webapis;
+}
+
 console.log("tizen avplay call trace tests passed");
