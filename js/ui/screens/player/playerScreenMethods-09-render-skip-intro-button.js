@@ -148,10 +148,13 @@ export function createPlayerScreenMethods09() {
         return false;
       }
       const interval = this.activeSkipInterval;
-      const requestedTime = getSkipIntervalTargetSeconds(interval, this.skipIntervals, this.getPlaybackDurationSeconds());
-      if (!Number.isFinite(requestedTime)) {
+      const durationSeconds = this.getPlaybackDurationSeconds();
+      const intervalTarget = getSkipIntervalTargetSeconds(interval, this.skipIntervals, durationSeconds);
+      if (!Number.isFinite(intervalTarget)) {
         return false;
       }
+      // Match Android: never seek past the media duration reported by the player.
+      const requestedTime = durationSeconds > 0 ? Math.min(intervalTarget, durationSeconds) : intervalTarget;
       let targetTime = requestedTime;
       if (this.isPartyControlLocked?.()) {
         const partyTargetMs = this.ownSeekTarget(Math.round(requestedTime * 1000));
