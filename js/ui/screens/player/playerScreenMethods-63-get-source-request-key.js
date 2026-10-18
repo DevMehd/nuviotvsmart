@@ -183,6 +183,7 @@ export function createPlayerScreenMethods63() {
       const orderedSources = this.getOrderedStreamCandidates();
       const filters = this.getSourceFilters(orderedSources);
       const filtered = this.getFilteredSources(orderedSources);
+      const readableText = Environment.isVidaa() || Environment.isWebOS() ? normalizeStreamDisplayText : String;
       const badgeSettings = StreamBadgeSettingsStore.snapshot();
       const showAddonLogo = badgeSettings.showAddonLogo === true;
       const badgePlacement = resolvePlayerSourceBadgePlacement(badgeSettings);
@@ -213,7 +214,7 @@ export function createPlayerScreenMethods63() {
                 const focused = this.sourcesFocus.zone === "filter" && this.sourcesFocus.index === index;
                 return `
                 <div class="player-sources-filter focusable${selected ? " selected" : ""}${focused ? " focused" : ""}" data-sources-zone="filter" data-sources-index="${index}"${vidaaSourceFocusAttributes}>
-                  ${escapeHtml(filter === "all" ? t("subtitle_all", {}, "All") : filter)}
+                  ${escapeHtml(filter === "all" ? t("subtitle_all", {}, "All") : readableText(filter))}
                 </div>
               `;
               })
@@ -239,7 +240,6 @@ export function createPlayerScreenMethods63() {
                       const playingMarker = isCurrent
                         ? `<div class="player-source-playing">${escapeHtml(t("sources_playing", {}, "Playing"))}</div>`
                         : "";
-                      const readableText = Environment.isVidaa() || Environment.isWebOS() ? normalizeStreamDisplayText : String;
                       const sourceLabel = readableText(stream.label || "Stream");
                       const sourceDescription = readableText(stream.description || stream.addonName || "");
                       const sourceAddonName = readableText(stream.addonName || t("nav_addons", {}, "Addon"));

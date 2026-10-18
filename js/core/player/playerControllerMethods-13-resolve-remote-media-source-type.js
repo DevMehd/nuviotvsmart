@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
+import { applyAdaptiveRequestHeaders } from "./adaptiveRequestHeaders.js";
 
 export function createPlayerControllerMethods13() {
   const {
@@ -231,7 +232,7 @@ export function createPlayerControllerMethods13() {
       hls.attachMedia(this.video);
       return true;
     },
-    playWithDashJs(url, playToken = null) {
+    playWithDashJs(url, playToken = null, requestHeaders = this.currentPlaybackHeaders || {}) {
       if (!this.video || !this.canUseDashJs()) {
         return false;
       }
@@ -265,6 +266,10 @@ export function createPlayerControllerMethods13() {
             }
           }
         });
+        const forwardedHeaders = this.normalizePlaybackHeaders(requestHeaders);
+        if (Object.keys(forwardedHeaders).length || String(url).includes("/proxy/")) {
+          player.addRequestInterceptor((request) => applyAdaptiveRequestHeaders(request, forwardedHeaders, url));
+        }
         player.initialize(this.video, url, true);
         const dashEvents = dashJsEngine.getEvents();
         const emitTracksChanged = () => {

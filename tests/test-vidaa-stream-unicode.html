@@ -9,7 +9,7 @@
   <script type="module">
     globalThis.__NUVIO_PLATFORM__ = "vidaa";
     try {
-      const { StreamScreen, selectAutoPlayStream } =
+      const { StreamScreen, selectAutoPlayStream, getAddonBadgeLabel } =
         await import("../js/ui/screens/stream/streamScreen.js");
       const variants = ["𝐈t", "🇮t", "𝘐𝘵", "𝕀𝕋", "ℐ𝒯", "ＩＴ", "🅸🆃", "I\u200bT", "🇮🇹", "ɪᴛ"];
       const streams = variants.map((label, index) => ({
@@ -49,9 +49,29 @@
       if (!text.includes("Teach You A Lesson s01·e10")) throw Error("Episode label not readable");
       if (!text.includes("✓ it · en · sub (itforced)"))
         throw Error("AIO audio/subtitle labels not readable");
+      const decoratedAddon = "𝐀𝐝𝐝𝐨𝐧 ɪᴛ";
+      const addonLabels = document.createElement("div");
+      addonLabels.innerHTML =
+        StreamScreen.renderChip(decoratedAddon, true, "success") +
+        StreamScreen.renderStreamCard.call(
+          { isCardActionFocused: () => false },
+          { ...streams[0], addonName: decoratedAddon },
+          0,
+          false,
+          { showAddonLogo: true }
+        );
+      document.body.appendChild(addonLabels);
+      if (addonLabels.querySelector(".stream-route-chip span").textContent !== "Addon it")
+        throw Error("Addon filter label not readable");
+      if (addonLabels.querySelector(".stream-route-chip").dataset.addon !== decoratedAddon)
+        throw Error("Addon filter identity changed");
+      if (addonLabels.querySelector(".stream-route-addon-name").textContent !== "Addon it")
+        throw Error("Addon card label not readable");
+      if (getAddonBadgeLabel(decoratedAddon) !== "AI" || getAddonBadgeLabel("🎧 日本語") !== "🎧日")
+        throw Error("Addon initials split a Unicode character");
       if (JSON.stringify(streams) !== original) throw Error("Source metadata changed");
       document.getElementById("result").textContent =
-        "PASS: production stream cards show readable styled IT/flags and retain original metadata; canonical language regex selects every fixture";
+        "PASS: stream descriptions, addon names/filters and Unicode initials are readable; original metadata/filter identities and language matching are preserved";
     } catch (error) {
       document.getElementById("result").textContent = `FAIL: ${error.stack || error}`;
     }

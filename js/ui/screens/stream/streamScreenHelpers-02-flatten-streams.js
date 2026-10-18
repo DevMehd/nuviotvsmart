@@ -184,7 +184,7 @@ export function mergeStreamItems(existing = [], incoming = []) {
 }
 
 export function getAddonBadgeLabel(name = "") {
-  const cleaned = String(name || "").trim();
+  const cleaned = (Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText(name) : String(name || "")).trim();
   if (!cleaned) {
     return "A";
   }
@@ -193,10 +193,10 @@ export function getAddonBadgeLabel(name = "") {
   }
   const letters = cleaned
     .split(/\s+/)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("")
-    .slice(0, 2);
-  return letters || cleaned.charAt(0).toUpperCase();
+    .map((part) => Array.from(part)[0].toUpperCase())
+    .slice(0, 2)
+    .join("");
+  return letters;
 }
 
 export async function ensureAddonLogoImageProxyReady() {

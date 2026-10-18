@@ -81,6 +81,9 @@ and storage persistence still require validation on the target TV.
 
 For local development, run `npm run serve:vidaa`.
 
+See [VIDAA verification and test commands](./docs/vidaa-verification.md) for the
+regression suites, recorded device checks, and remaining hardware limitations.
+
 ## Build from source
 
 Configure metadata and tracking in **Settings → Integrations**. TMDB accepts a

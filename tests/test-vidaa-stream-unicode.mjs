@@ -11,7 +11,7 @@ globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.location = { search: "" };
 globalThis.document = { documentElement: { classList: { contains: () => false } } };
 
-const { getStreamHeadline, getStreamDescriptionLines, StreamScreen } =
+const { getStreamHeadline, getStreamDescriptionLines, getAddonBadgeLabel, StreamScreen } =
   await import("../js/ui/screens/stream/streamScreen.js");
 const { createPlayerScreenMethods63 } =
   await import("../js/ui/screens/player/playerScreenMethods-63-get-source-request-key.js");
@@ -110,6 +110,25 @@ assert.ok(markup.includes("Source It"));
 assert.ok(markup.includes("Audio: IT"));
 assert.ok(markup.includes("[IT] / English"));
 
+const decoratedAddon = "𝐀𝐝𝐝𝐨𝐧 ɪᴛ";
+assert.equal(getAddonBadgeLabel(decoratedAddon), "AI");
+assert.equal(
+  getAddonBadgeLabel("🎧 日本語"),
+  "🎧日",
+  "initials retain complete Unicode characters"
+);
+const addonMarkup = StreamScreen.renderStreamCard.call(
+  { isCardActionFocused: () => false },
+  { ...source, addonName: decoratedAddon },
+  0,
+  false,
+  { showAddonLogo: true }
+);
+assert.match(addonMarkup, /class="stream-route-addon-name"[^>]*>Addon it<\/div>/);
+const chipMarkup = StreamScreen.renderChip(decoratedAddon, true, "success");
+assert.match(chipMarkup, /<span[^>]*>Addon it<\/span>/);
+assert.ok(chipMarkup.includes(`data-addon="${decoratedAddon}"`), "filter identity stays original");
+
 const playerSource = { ...source, label: source.name };
 const panel = {
   childNodes: [],
@@ -125,7 +144,7 @@ createPlayerScreenMethods63().renderSourcesPanel.call({
   params: {},
   streamCandidates: [],
   getOrderedStreamCandidates: () => [playerSource],
-  getSourceFilters: () => [],
+  getSourceFilters: () => ["all", decoratedAddon],
   getFilteredSources: () => [playerSource],
   ensureSourcesFocus() {},
   syncSourcesFocusDom() {}
@@ -133,16 +152,18 @@ createPlayerScreenMethods63().renderSourcesPanel.call({
 assert.ok(panel.innerHTML.includes("Source It"));
 assert.ok(panel.innerHTML.includes("Audio: IT"));
 assert.ok(!panel.innerHTML.includes("🅸🆃"));
+assert.match(panel.innerHTML, /class="player-sources-filter[^>]*>\s*Addon it\s*<\/div>/);
 const episodeMarkup = createPlayerScreenMethods67().renderEpisodeStreamsView.call({
   episodes: [],
   episodePanelIndex: 0,
   episodePanelStreamFocus: { zone: "streams", index: 0 },
-  getEpisodePanelStreamFilters: () => [],
+  getEpisodePanelStreamFilters: () => ["all", decoratedAddon],
   getFilteredEpisodePanelStreams: () => [playerSource]
 });
 assert.ok(episodeMarkup.includes("Source It"));
 assert.ok(episodeMarkup.includes("Audio: IT"));
 assert.ok(!episodeMarkup.includes("🅸🆃"));
+assert.match(episodeMarkup, /class="player-episode-stream-filter[^>]*>\s*Addon it\s*<\/button>/);
 assert.deepEqual(source, original, "Readability must not mutate source IDs, URLs or metadata");
 
 console.log(

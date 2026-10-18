@@ -105,7 +105,7 @@ export function createWebPlaybackHeaderDiagnosticSnapshot(headers = {}, { notWeb
   return {
     declaredHeaderNames: [...compatibility.declaredHeaderNames],
     browserSafeHeaderNames,
-    forwardedHeaderNames: engine === "hls.js" ? [...browserSafeHeaderNames] : [],
+    forwardedHeaderNames: ["hls.js", "dash.js"].includes(engine) ? [...browserSafeHeaderNames] : [],
     restrictedHeaderNames: [...compatibility.restrictedHeaderNames],
     notWebReady: compatibility.notWebReady,
     standaloneCompatibility: compatibility.standaloneCompatibility

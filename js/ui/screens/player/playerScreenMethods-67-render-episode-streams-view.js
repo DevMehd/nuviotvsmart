@@ -29,6 +29,7 @@ export function createPlayerScreenMethods67() {
       const selectedEpisode = this.episodes[this.episodePanelIndex] || null;
       const filters = this.getEpisodePanelStreamFilters();
       const streams = this.getFilteredEpisodePanelStreams();
+      const readableText = Environment.isVidaa() || Environment.isWebOS() ? normalizeStreamDisplayText : String;
       const focus = this.episodePanelStreamFocus || { zone: "actions", index: 0 };
       const badgeSettings = StreamBadgeSettingsStore.snapshot();
       const showAddonLogo = badgeSettings.showAddonLogo === true;
@@ -64,7 +65,7 @@ export function createPlayerScreenMethods67() {
                         <button type="button"
                                 class="player-episode-stream-filter focusable${selected ? " selected" : ""}${focused ? " focused" : ""}"
                                 data-episode-stream-filter-index="${index}">
-                          ${escapeHtml(filter === "all" ? t("subtitle_all", {}, "All") : filter)}
+                          ${escapeHtml(filter === "all" ? t("subtitle_all", {}, "All") : readableText(filter))}
                         </button>
                       `;
                     })
@@ -96,7 +97,6 @@ export function createPlayerScreenMethods67() {
                       const addonLogoUrl = showAddonLogo
                         ? getPlayerSourceLogoDisplayUrl(stream.addonLogo, () => this.scheduleSourceLogoRender())
                         : "";
-                      const readableText = Environment.isVidaa() || Environment.isWebOS() ? normalizeStreamDisplayText : String;
                       const sourceLabel = readableText(stream.label || "Stream");
                       const sourceDescription = readableText(stream.description || stream.addonName || "");
                       const sourceAddonName = readableText(stream.addonName || t("nav_addons", {}, "Addon"));
