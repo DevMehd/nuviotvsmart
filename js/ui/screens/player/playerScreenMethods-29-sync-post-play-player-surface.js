@@ -310,7 +310,7 @@ export function createPlayerScreenMethods29() {
         return !this.isStartupLoadingVisible() && !this.isExternalFrameMode() && !this.isStartupErrorVisible();
       }
       if (this.seekLoading) {
-        if (this.isStartupLoadingVisible()) {
+        if (this.isStartupLoadingVisible() || this.seekLoadingVisualComplete) {
           return false;
         }
         return !this.isExternalFrameMode() && !this.isStartupErrorVisible();

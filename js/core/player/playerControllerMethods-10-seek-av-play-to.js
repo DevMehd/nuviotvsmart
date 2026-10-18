@@ -2,7 +2,7 @@
 import * as internals from "./playerController.js";
 
 export function createPlayerControllerMethods10() {
-  const { AVPLAY_SEEK_TIMEOUT_MS, logTizenAvPlayDebug } = internals;
+  const { AVPLAY_SEEK_TIMEOUT_MS, logTizenAvPlayDebug, Platform } = internals;
 
   return {
     seekAvPlayTo(targetMs, { emitEvents = true } = {}) {
@@ -128,7 +128,7 @@ export function createPlayerControllerMethods10() {
         return false;
       }
     },
-    seekToSeconds(targetSeconds) {
+    seekToSeconds(targetSeconds, { exact = false, paused = this.video?.paused } = {}) {
       const seconds = Number(targetSeconds || 0);
       if (!Number.isFinite(seconds) || seconds < 0) {
         return false;
@@ -138,6 +138,10 @@ export function createPlayerControllerMethods10() {
         if (!this.video) {
           return false;
         }
+        if (exact && Platform.isWebOS() && this.playbackEngine === "native-file" && !this.webOsDtsAudioState) {
+          return this.seekWebOsExactly(seconds, { paused });
+        }
+        this.cancelWebOsExactSeek();
         this.video.currentTime = seconds;
         this.scheduleProgressSyncAfterSeek();
         return true;

@@ -28,6 +28,14 @@ export function createPlayerScreenMethods27() {
         lifecycleHandlers;
       const { onWebOsAudioTrackSelectionChanged, onAvPlaySubtitleChange, onError } = eventHandlers;
       const bindings = [
+        [
+          "webosexactseekvisual",
+          (event) => {
+            if (!Environment.isWebOS() || !this.seekLoading) return;
+            this.seekLoadingVisualComplete = event.detail?.moving === true;
+            this.updateLoadingVisibility();
+          }
+        ],
         ["streamredirect", (event) => handleListedStreamRedirect(this, PlayerController, event.detail)],
         ["waiting", onWaiting],
         ["playing", onPlaying],

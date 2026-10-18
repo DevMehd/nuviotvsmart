@@ -19,13 +19,19 @@ export function createPlayerScreenMethods31() {
       this.seekLoadingBaselineSeconds = this.getPlaybackCurrentSeconds();
       this.seekLoadingTargetSeconds = Number(seconds || 0);
       this.seekLoadingSettled = false;
+      this.seekLoadingVisualComplete = false;
       this.seekLoadingProgressSeconds = null;
       this.seekLoading = true;
       this.updateLoadingVisibility();
       this.prepareBitmapSubtitleForSeek(this.seekLoadingTargetSeconds);
       this.prepareWebOsEmbeddedTextSubtitleForSeek(this.seekLoadingTargetSeconds);
       if (typeof PlayerController.seekToSeconds === "function") {
-        const didSeek = Boolean(PlayerController.seekToSeconds(seconds));
+        const didSeek = Boolean(
+          PlayerController.seekToSeconds(seconds, {
+            exact: Boolean(this.isPartySynced?.()),
+            paused: this.getPlaybackControlPaused?.() ?? Boolean(this.paused)
+          })
+        );
         if (!didSeek) {
           this.clearSeekLoading();
         }

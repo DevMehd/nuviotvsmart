@@ -1,4 +1,5 @@
 import { createWebOsDtsAudioMethods } from "../../platform/webos/webosDtsAudioTranscoder.js";
+import { createWebOsExactSeekMethods } from "../../platform/webos/webosExactSeek.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
 import { watchedItemsRepository } from "../../data/repository/watchedItemsRepository.js";
 import { watchedSeriesReconciliationService } from "../../data/repository/watchedSeriesReconciliationService.js";
@@ -376,5 +377,6 @@ export const PlayerController = {
   ...createPlayerControllerMethods18(),
   ...createPlayerControllerMethods19(),
   ...createPlayerControllerMethods20(),
-  ...createWebOsDtsAudioMethods()
+  ...createWebOsDtsAudioMethods(),
+  ...createWebOsExactSeekMethods()
 };

@@ -4,6 +4,7 @@ import * as internals from "./playerScreenContext.js";
 export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback) {
   const { PlayerController, PlayerSettingsStore, Environment, TrackingScrobbleService } = internals;
   const onWaiting = () => {
+    this.seekLoadingVisualComplete = false;
     if (this.isStartupErrorVisible()) {
       return;
     }
@@ -271,13 +272,19 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
     this.updateUiTick();
   };
 
-  const onSeeked = () => {
+  const onSeeked = (event) => {
     if (this.isStartupErrorVisible()) {
       return;
     }
     if (this.seekLoading) {
       this.seekLoadingSettled = true;
       this.seekLoadingProgressSeconds = null;
+      // The webOS adapter already confirmed real decode progress at the target.
+      // Hide only the spinner; Party readiness keeps its existing checks.
+      if (Environment.isWebOS() && event?.detail?.exactNativeSeek === true) {
+        this.seekLoadingVisualComplete = true;
+        this.updateLoadingVisibility();
+      }
     }
     if (this.hasPresentedPlaybackFrame && !this.playbackEngineValidated) {
       this.resetPlaybackEngineValidation();
