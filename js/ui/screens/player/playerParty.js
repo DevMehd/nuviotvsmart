@@ -910,7 +910,25 @@ export function createPlayerPartyMethods() {
       } catch (_) {
         preferred.focus?.();
       }
-      preferred.scrollIntoView?.({ block: "nearest" });
+      // Like Android's panel list, only the panel's own list scrolls. scrollIntoView
+      // would also scroll the overflow-hidden player root while the panel slides in
+      // from off-screen, leaving the whole player UI shifted left.
+      const list = preferred.closest(".player-party-details");
+      if (list) {
+        const nodeRect = preferred.getBoundingClientRect();
+        const listRect = list.getBoundingClientRect();
+        if (nodeRect.top < listRect.top) list.scrollTop -= listRect.top - nodeRect.top;
+        else if (nodeRect.bottom > listRect.bottom)
+          list.scrollTop += nodeRect.bottom - listRect.bottom;
+      }
+      this.resetPartyRootScroll();
+    },
+    resetPartyRootScroll() {
+      const root = this.uiRefs?.root;
+      if (root && (root.scrollLeft || root.scrollTop)) {
+        root.scrollLeft = 0;
+        root.scrollTop = 0;
+      }
     },
     activatePartyPanelAction(node) {
       const party = PartyRepository.getState().party;
@@ -997,6 +1015,7 @@ export function createPlayerPartyMethods() {
       if (keyCode === 38 || keyCode === 40) {
         const focused = moveListFocus(panel, keyCode === 40 ? 1 : -1);
         if (focused) this.partyPanelFocusKey = focused.dataset.focusKey || "";
+        this.resetPartyRootScroll();
         return true;
       }
       if (keyCode === 37 || keyCode === 39) {
