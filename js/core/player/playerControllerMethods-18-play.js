@@ -55,6 +55,7 @@ export function createPlayerControllerMethods18() {
       // matching Android TV's lastKnownDuration contract.
       this.lastKnownDurationSeconds = 0;
       this.lastProgressSnapshot = null;
+      this.watchProgressSession = { completedKeys: new Set() };
       this.lastSavedProgressPositionMs = 0;
       this.playbackSessionActive = true;
       this.applyStartupAudioGateToVideo();

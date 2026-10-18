@@ -205,7 +205,8 @@ export function createPlayerControllerMethods19() {
         background: this.currentItemBackground || null,
         episodeTitle: this.currentEpisodeTitle || null,
         cloudSessionToken: isCloud ? this.currentCloudSessionToken : null,
-        streamIdentity: this.currentStreamIdentity || null
+        streamIdentity: this.currentStreamIdentity || null,
+        progressSession: this.watchProgressSession || (this.watchProgressSession = { completedKeys: new Set() })
       };
     },
     buildProgressSnapshotKey(context = this.createProgressContext()) {
