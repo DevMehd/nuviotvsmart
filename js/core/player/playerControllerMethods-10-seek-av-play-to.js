@@ -16,6 +16,25 @@ export function createPlayerControllerMethods10() {
       }
 
       const normalizedTargetMs = Math.max(0, Math.floor(Number(targetMs) || 0));
+      let nativeState = "";
+      try {
+        nativeState = String(avplay.getState?.() || "").toUpperCase();
+      } catch (_) {
+        nativeState = "";
+      }
+      if (nativeState === "NONE" || nativeState === "IDLE") {
+        // prepareAsync() keeps AVPlay in IDLE, and Samsung forbids any other
+        // AVPlay call until its callback fires. A seekTo() issued here (for
+        // example the resume-position restore) "succeeds" without moving and
+        // leaves the native player rejecting every later seek with
+        // PLAYER_ERROR_INVALID_STATE. Defer it until the player is READY.
+        this.avplayDeferredSeekMs = normalizedTargetMs;
+        logTizenAvPlayDebug("Tizen AVPlay seek deferred until prepared", {
+          targetMs: normalizedTargetMs,
+          state: nativeState
+        });
+        return true;
+      }
       const seekToken = Number(this.avplaySeekRequestToken || 0) + 1;
       const shouldRestartTick = Boolean(this.avplayTickTimer || this.isPlaying);
       const seekStartedAt = Date.now();
@@ -95,6 +114,61 @@ export function createPlayerControllerMethods10() {
           }
           this.emitVideoEvent("canplay", { playbackEngine: this.playbackEngine });
         }
+        // play() was requested while this seek was in flight (startup resume):
+        // start playback only now that Samsung has completed the seek.
+        const pendingStart = this.avplayStartAfterSeek;
+        if (pendingStart && !this.avplaySeekInFlight) {
+          this.avplayStartAfterSeek = null;
+          logTizenAvPlayDebug("Tizen AVPlay seek settled; starting delayed playback", {
+            targetMs: normalizedTargetMs
+          });
+          this.startPreparedAvPlayPlayback(pendingStart);
+        }
+      };
+
+      const isInvalidStateError = (errorValue) =>
+        /INVALID_?STATE/i.test(
+          `${errorValue?.name || ""} ${errorValue?.message || ""} ${typeof errorValue === "string" ? errorValue : ""}`
+        );
+
+      // Some Samsung firmware rejects seekTo() with PLAYER_ERROR_INVALID_STATE
+      // while PLAYING. The relative jump APIs use a different native path, so
+      // try them once before giving up on the seek.
+      const tryJumpFallback = (originalError) => {
+        if (settled || seekToken !== Number(this.avplaySeekRequestToken || 0) || !this.isUsingAvPlay()) {
+          return false;
+        }
+        let currentMs = 0;
+        try {
+          currentMs = Number(avplay.getCurrentTime?.() || 0);
+        } catch (_) {
+          return false;
+        }
+        const deltaMs = normalizedTargetMs - currentMs;
+        const method = deltaMs > 0 ? "jumpForward" : deltaMs < 0 ? "jumpBackward" : "";
+        if (!method) {
+          settle(true);
+          return true;
+        }
+        if (typeof avplay[method] !== "function") {
+          return false;
+        }
+        logTizenAvPlayDebug(`Tizen AVPlay seek retrying with ${method}`, {
+          targetMs: normalizedTargetMs,
+          fromMs: currentMs,
+          deltaMs,
+          seekToError: originalError?.message || String(originalError || "")
+        });
+        try {
+          avplay[method](
+            Math.abs(deltaMs),
+            () => settle(true),
+            (errorValue) => settle(false, errorValue)
+          );
+        } catch (error) {
+          settle(false, error);
+        }
+        return true;
       };
 
       this.avplaySeekTimeoutTimer = setTimeout(() => {
@@ -141,7 +215,12 @@ export function createPlayerControllerMethods10() {
           avplay.seekTo(
             normalizedTargetMs,
             () => settle(true),
-            (errorValue) => settle(false, errorValue)
+            (errorValue) => {
+              if (isInvalidStateError(errorValue) && tryJumpFallback(errorValue)) {
+                return;
+              }
+              settle(false, errorValue);
+            }
           );
         } else {
           const currentMs = Number(avplay.getCurrentTime?.() || 0);

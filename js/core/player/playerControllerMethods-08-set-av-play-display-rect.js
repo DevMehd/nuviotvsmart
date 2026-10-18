@@ -96,6 +96,8 @@ export function createPlayerControllerMethods08() {
       this.clearAvPlaySeekTimeout();
       this.avplaySeekRequestToken = Number(this.avplaySeekRequestToken || 0) + 1;
       this.avplaySeekInFlight = false;
+      this.avplayDeferredSeekMs = 0;
+      this.avplayStartAfterSeek = null;
       const avplay = this.getAvPlay();
 
       this.stopAvPlayTickTimer();
