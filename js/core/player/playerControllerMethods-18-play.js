@@ -1,4 +1,5 @@
 import { observeProxyRedirects } from "./proxyRedirectObserver.js";
+import { describeSourceHost, resolveTizenDirectRedirect } from "../../platform/tizen/tizenRedirectResolver.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
 
@@ -172,6 +173,32 @@ export function createPlayerControllerMethods18() {
           }
         } else if (Platform.isWebOS()) {
           this.stopWebOsPlaybackKeepAlive();
+        }
+      }
+
+      // Direct AVPlay sources are often redirect endpoints. AVPlay plays them
+      // but rejects every seek with PLAYER_ERROR_INVALID_STATE, so hand it the
+      // final media URL when the local proxy is not handling the source.
+      if (
+        Platform.isTizen() &&
+        preferredEngine === this.getPlatformAvplayEngineName() &&
+        playbackUrl === requestedUrl &&
+        !this.isLivePlaybackItemType(itemType || this.currentItemType)
+      ) {
+        const resolution = await resolveTizenDirectRedirect(playbackUrl, requestHeaders);
+        if (!this.isPlaybackRequestActive(playToken, requestedUrl)) {
+          return;
+        }
+        logTizenAvPlayDebug("Tizen AVPlay source checked for redirects", {
+          reason: resolution.reason,
+          redirected: Boolean(resolution.redirected),
+          fromHost: describeSourceHost(requestedUrl),
+          toHost: resolution.redirected ? describeSourceHost(resolution.url) : null,
+          ...(resolution.details || {})
+        });
+        if (resolution.redirected) {
+          playbackUrl = resolution.url;
+          this.currentPlaybackUrl = playbackUrl;
         }
       }
 
