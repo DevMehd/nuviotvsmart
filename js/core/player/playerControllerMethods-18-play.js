@@ -231,7 +231,10 @@ export function createPlayerControllerMethods18() {
           toHost: resolution.redirected ? describeSourceHost(resolution.url) : null,
           ...(resolution.details || {})
         });
-        if (resolution.redirected) {
+        // Same rule as the proxy bypass above: only trust a redirect target
+        // that actually serves the media.
+        const status = Number(resolution.details?.status || 0);
+        if (resolution.redirected && (status === 200 || status === 206)) {
           playbackUrl = resolution.url;
           this.currentPlaybackUrl = playbackUrl;
         }

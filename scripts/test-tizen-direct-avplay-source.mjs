@@ -31,8 +31,8 @@ globalThis.fetch = async (url, init) => {
   fetchCalls.push({ url, init });
   if (fetchPlan === "fail") throw new TypeError("network");
   return {
-    url: fetchPlan === "redirect" ? CDN : url,
-    status: fetchPlan === "forbidden" ? 403 : 206,
+    url: fetchPlan === "redirect" || fetchPlan === "redirect-forbidden" ? CDN : url,
+    status: fetchPlan === "forbidden" || fetchPlan === "redirect-forbidden" ? 403 : 206,
     headers: { get: (name) => ({ "accept-ranges": "bytes" })[name] ?? null },
     body: { cancel() {} }
   };
@@ -105,5 +105,10 @@ assert.equal(fetchCalls.length, 0);
 // 5. Non-AIOStreams redirect endpoint (e.g. debrid resolve link) -> direct CDN.
 fetchPlan = "redirect";
 assert.equal(await playSource("https://addon.example/resolve/rd/abc/1/movie.mkv"), CDN);
+
+// 6. Redirect target refuses the request -> keep the original source URL.
+const RESOLVE = "https://addon.example/resolve/rd/abc/1/movie.mkv";
+fetchPlan = "redirect-forbidden";
+assert.equal(await playSource(RESOLVE), RESOLVE);
 
 console.log("tizen direct avplay source tests passed");
