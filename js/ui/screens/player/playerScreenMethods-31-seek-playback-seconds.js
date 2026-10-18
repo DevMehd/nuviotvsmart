@@ -20,6 +20,8 @@ export function createPlayerScreenMethods31() {
       this.seekLoadingTargetSeconds = Number(seconds || 0);
       this.seekLoadingSettled = false;
       this.seekLoadingProgressSeconds = null;
+      this.seekLoadingProgressAt = 0;
+      this.seekLoadingStartedAt = Date.now();
       this.seekLoading = true;
       this.updateLoadingVisibility();
       this.prepareBitmapSubtitleForSeek(this.seekLoadingTargetSeconds);
@@ -28,6 +30,8 @@ export function createPlayerScreenMethods31() {
         const didSeek = Boolean(PlayerController.seekToSeconds(seconds));
         if (!didSeek) {
           this.clearSeekLoading();
+        } else {
+          this.startSeekLoadingWatchdog();
         }
         return didSeek;
       }

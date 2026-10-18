@@ -18,7 +18,20 @@ export function createPlayerControllerMethods10() {
       const normalizedTargetMs = Math.max(0, Math.floor(Number(targetMs) || 0));
       const seekToken = Number(this.avplaySeekRequestToken || 0) + 1;
       const shouldRestartTick = Boolean(this.avplayTickTimer || this.isPlaying);
+      const seekStartedAt = Date.now();
       let settled = false;
+      let previousCurrentMs = Number(this.avplayCurrentTimeMs || 0);
+      try {
+        previousCurrentMs = Number(avplay.getCurrentTime?.() ?? previousCurrentMs);
+      } catch (_) {
+        // Keep the cached position when the native getter is unavailable.
+      }
+      logTizenAvPlayDebug("Tizen AVPlay seek requested", {
+        targetMs: normalizedTargetMs,
+        fromMs: Number.isFinite(previousCurrentMs) ? previousCurrentMs : null,
+        state: this.getAvPlayState(),
+        api: typeof avplay.seekTo === "function" ? "seekTo" : "jump"
+      });
       this.avplaySeekRequestToken = seekToken;
       this.avplaySeekInFlight = true;
       this.stopAvPlayTickTimer();
@@ -44,7 +57,23 @@ export function createPlayerControllerMethods10() {
         this.clearAvPlaySeekTimeout();
 
         this.avplaySeekInFlight = false;
+        // Record every completed native seek, including failed ones. Failed
+        // seeks do not emit "seeked", so the player UI uses this marker to stop
+        // waiting for a seek that Samsung has already finished.
+        this.avplaySeekSettledAt = Date.now();
+        this.avplayLastSeekOutcome = {
+          success: Boolean(success),
+          targetMs: normalizedTargetMs,
+          elapsedMs: Math.max(0, this.avplaySeekSettledAt - seekStartedAt)
+        };
         this.refreshAvPlayTimeline();
+        logTizenAvPlayDebug("Tizen AVPlay seek settled", {
+          success: Boolean(success),
+          targetMs: normalizedTargetMs,
+          currentMs: Number(this.avplayCurrentTimeMs || 0),
+          elapsedMs: this.avplayLastSeekOutcome.elapsedMs,
+          state: this.getAvPlayState()
+        });
         this.avplayReady = true;
         this.reapplyAvPlayPlaybackRate();
         this.retryPendingAvPlayStartupAudioTrackSelection();
@@ -77,6 +106,13 @@ export function createPlayerControllerMethods10() {
           return;
         }
         this.clearAvPlaySeekTimeout();
+        this.avplaySeekSettledAt = Date.now();
+        this.avplayLastSeekOutcome = {
+          success: false,
+          targetMs: normalizedTargetMs,
+          elapsedMs: Math.max(0, this.avplaySeekSettledAt - seekStartedAt),
+          timedOut: true
+        };
 
         const failedPlaybackEngine = this.playbackEngine;
         const timeoutError = "PLAYER_ERROR_SEEK_FAILED (timeout)";

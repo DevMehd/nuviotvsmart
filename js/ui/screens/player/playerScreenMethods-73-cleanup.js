@@ -115,6 +115,7 @@ export function createPlayerScreenMethods73() {
         this.clearPlaybackStallGuard();
         this.bufferingActive = false;
         this.clearBufferingSpinnerTimer();
+        this.stopSeekLoadingWatchdog();
         // The loading-completion poll self-reschedules; without this it
         // survives the route change and janks the next menu on Tizen.
         if (this.loadingCompletionTimer) {
