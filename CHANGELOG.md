@@ -1,3 +1,14 @@
+## 1.2.7
+
+### Improvements & Fixes
+
+- Fixed seeking and resume on Samsung Tizen AVPlay: addon redirect sources now play directly instead of through the local proxy, resume seeks wait until the player is prepared, and the seek spinner no longer gets stuck (@Riccardo1451, @WhiteGiso)
+- Made Watch Party seeks land exactly on the requested position with the webOS native file player (@WhiteGiso)
+- Kept an episode marked as watched for the rest of the playback after it completes, aligned with Android TV (@WhiteGiso)
+- Kept the player layout in place while browsing the Watch Party panel (@WhiteGiso)
+- Prevented Skip Intro from seeking past the end of the video (@WhiteGiso)
+- Added AVPlay seek and source diagnostics to Console Debug on Tizen (@Riccardo1451)
+
 ## 1.2.6
 
 ### Improvements & Fixes
