@@ -16,6 +16,7 @@ const defaultFixtures = [
   "test-vidaa-grid-poster-window.html",
   "test-vidaa-stream-unicode.html",
   "test-vidaa-account-dom.html",
+  "test-vidaa-tracking-dom.html",
   "test-vidaa-trailer-dom.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;

@@ -10,6 +10,7 @@ tests/*
 !tests/helpers/*.mjs
 !tests/test-vidaa-home-patching.html
 !tests/test-vidaa-account-dom.html
+!tests/test-vidaa-tracking-dom.html
 !tests/test-vidaa-trailer-dom.html
 !tests/test-vidaa-home-row-updates.html
 !tests/test-vidaa-home-window.html
