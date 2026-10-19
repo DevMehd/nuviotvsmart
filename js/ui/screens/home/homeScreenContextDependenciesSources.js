@@ -358,3 +358,5 @@ export {
 } from "./homeScreenHelpers-14-get-home-grid-column-count.js";
 
 export { createPosterCardMarkup } from "./homeScreenHelpers-15-create-poster-card-markup.js";
+
+export { TitleRatings } from "../../../core/perso/titleRatings.js";

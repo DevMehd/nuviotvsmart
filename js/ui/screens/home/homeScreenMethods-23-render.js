@@ -1,4 +1,5 @@
 import { ensureHeroMdbListRatings } from "./homeHeroMdbListLoad.js";
+import { personalHomeRows } from "../perso/personalUi.js";
 import * as internals from "./homeScreenContext.js";
 import { Platform } from "../../../platform/index.js";
 import { hasMountedHomeDom, updateHomeDom } from "./homeDomUpdate.js";
@@ -45,6 +46,7 @@ export function createHomeScreenMethods23() {
 
   return {
     render() {
+      if (!this.hasUserInteractedSinceHomePaint) this.rows = personalHomeRows(this.rows || []);
       const renderStart = HOME_PERF_DEBUG ? homePerfNow() : 0;
       this.cancelScheduledRender();
       const liveFocusedNode = this.getCurrentFocusedNode();

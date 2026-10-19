@@ -1,3 +1,4 @@
+import { personalContext, isCurrentContext } from "../../core/perso/personalContext.js";
 // Remote-friendly rating dialog and the "Découverte" card deck (nuv-035 / nuv-036).
 // Both are self-contained overlays that capture keys first, like the hand-off prompt.
 import { I18n } from "../../i18n/index.js";
@@ -55,7 +56,7 @@ function overlayRoot() {
   root.className = "perso-rating-overlay";
   root.setAttribute(
     "style",
-    "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.78);color:#fff;font-family:inherit"
+    "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.78);color:var(--text-color);font-family:inherit"
   );
   return root;
 }
@@ -63,7 +64,7 @@ function overlayRoot() {
 function choicesMarkup() {
   return RATING_SCALE.map(
     (entry, index) => `
-      <div data-index="${index}" style="flex:1;min-width:0;padding:18px 8px;border-radius:20px;text-align:center;border:3px solid transparent;background:rgba(255,255,255,.08)">
+      <div class="perso-rating-choice" data-index="${index}" style="flex:1;min-width:0;padding:18px 8px;border-radius:20px;text-align:center;border:3px solid transparent;background:rgba(255,255,255,.08)">
         <div style="font-size:44px;line-height:1.2">${entry.emoji}</div>
         <div style="font-size:20px;margin-top:6px;opacity:.85">${escapeHtml(t(entry.key, {}, entry.fallback))}</div>
       </div>`
@@ -72,10 +73,11 @@ function choicesMarkup() {
 
 /** Rating dialog: ←/→ choose, OK confirms (OK on the current rating removes it), 1–5 direct. */
 export function showRatingDialog({ type, id, name, poster, fromPlaybackEnd = false, onDone } = {}) {
+  const ctx = personalContext();
   const current = TitleRatings.valueOf(type, id);
   const root = overlayRoot();
   root.innerHTML = `
-    <div style="width:62vw;max-width:1100px;border-radius:28px;background:#141414;padding:36px 44px;box-shadow:0 30px 80px rgba(0,0,0,.6)">
+    <div style="width:62vw;max-width:1100px;border-radius:28px;background:var(--bg-elevated);padding:36px 44px;box-shadow:0 30px 80px rgba(0,0,0,.6)">
       <div style="font-size:36px;font-weight:800">${escapeHtml(fromPlaybackEnd ? t("perso_rating_after", { name }, `Qu'as-tu pensé de ${name} ?`) : name)}</div>
       <div style="font-size:20px;opacity:.65;margin:8px 0 26px">${escapeHtml(t("perso_rating_hint", {}, "Privé : sert à tes recommandations, partagé entre tes appareils. Touches 1 à 5 ou ← → puis OK."))}</div>
       <div style="display:flex;gap:16px">${choicesMarkup()}</div>
@@ -89,18 +91,28 @@ export function showRatingDialog({ type, id, name, poster, fromPlaybackEnd = fal
     root.querySelectorAll("[data-index]").forEach((node) => {
       const i = Number(node.getAttribute("data-index"));
       const isCurrent = RATING_SCALE[i].value === current;
-      node.style.borderColor = i === index ? "#fff" : "transparent";
+      node.style.borderColor = i === index ? "var(--focus-color)" : "transparent";
       node.style.background = isCurrent
-        ? "rgba(155,92,255,.45)"
+        ? "var(--focus-bg)"
         : i === index
-          ? "rgba(255,255,255,.18)"
+          ? "rgba(var(--focus-color-rgb-legacy),.18)"
           : "rgba(255,255,255,.08)";
       node.style.transform = i === index ? "scale(1.06)" : "none";
     });
   };
   const choose = (value) => {
+    if (!isCurrentContext(ctx)) return closeRatingOverlay();
     const next = value === current ? null : value;
     TitleRatings.rate(type, id, name, poster, next);
+    // A personal rating also follows into each joined list containing this title.
+    void import("../../core/perso/sharedLists.js").then(({ SharedLists }) => {
+      if (!isCurrentContext(ctx)) return;
+      const key = `${type}:${id}`;
+      for (const list of Object.values(SharedLists.all(ctx))) {
+        if (list.items[key] && list.items[key].addedAt > list.items[key].removedAt)
+          SharedLists.mutate(list.code, key, "rating", next, ctx);
+      }
+    });
     closeRatingOverlay();
     onDone?.(next);
   };
@@ -123,8 +135,9 @@ export function showRatingDialog({ type, id, name, poster, fromPlaybackEnd = fal
 
 /** Découverte: one card at a time; → 👍, ← 👎, ↑ 💜, ↓ skip, OK opens the detail, 1–5 the full scale. */
 export async function showDiscovery({ openDetail } = {}) {
+  const discoveryContext = personalContext();
   const root = overlayRoot();
-  root.style.background = "rgba(8,8,10,0.96)";
+  root.style.background = "var(--bg-color)";
   root.innerHTML = `<div style="font-size:30px;opacity:.8">${escapeHtml(t("perso_discovery_loading", {}, "Chargement des découvertes…"))}</div>`;
   let cards = [];
   let index = 0;
@@ -146,7 +159,7 @@ export async function showDiscovery({ openDetail } = {}) {
       .join("   ·   ");
     root.innerHTML = `
       <div style="display:flex;gap:56px;align-items:center;max-width:1500px;width:84vw">
-        <div data-card style="flex:none;width:30vw;max-width:460px;aspect-ratio:2/3;border-radius:28px;background:#222 center/cover no-repeat ${card.poster ? `url('${escapeHtml(card.poster)}')` : "none"};box-shadow:0 30px 80px rgba(0,0,0,.6);transition:transform .22s ease-out, opacity .22s ease-out"></div>
+        <div class="perso-discovery-card" data-card style="flex:none;width:30vw;max-width:460px;aspect-ratio:2/3;border-radius:28px;background:var(--card-bg) center/cover no-repeat ${card.poster ? `url('${escapeHtml(card.poster)}')` : "none"};box-shadow:0 30px 80px rgba(0,0,0,.6)"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:22px;opacity:.6">${escapeHtml(t("perso_discovery_title", {}, "Découverte"))} · ${escapeHtml(t("perso_discovery_count", { count: rated }, `${rated} notés`))}</div>
           <div style="font-size:56px;font-weight:800;margin:12px 0">${escapeHtml(card.name)}</div>
@@ -185,6 +198,7 @@ export async function showDiscovery({ openDetail } = {}) {
       openDetail?.(card);
       return;
     }
+    if (!isCurrentContext(discoveryContext)) return closeRatingOverlay();
     if (action.type === "rate") {
       TitleRatings.rate(card.type, card.id, card.name, card.poster, action.value);
       rated += 1;
@@ -195,8 +209,22 @@ export async function showDiscovery({ openDetail } = {}) {
   };
   mount(root, onKey);
   try {
-    await TitleRatings.pull();
-    cards = await TitleRatings.recommendations();
+    const [{ Recommendations }, { personalContext, isCurrentContext }] = await Promise.all([
+      import("../../core/perso/personalRecommendations.js"),
+      import("../../core/perso/personalContext.js")
+    ]);
+    const ctx = personalContext();
+    const unrated = () =>
+      Recommendations.snapshot(ctx).forYou.filter(
+        (title) => TitleRatings.valueOf(title.type, title.id) == null
+      );
+    cards = unrated();
+    if (!cards.length) {
+      await Recommendations.refresh({ ctx });
+      if (!isCurrentContext(ctx) || active?.root !== root) return;
+      cards = unrated();
+    }
+    if (!cards.length) cards = await TitleRatings.recommendations();
   } catch (_error) {
     cards = [];
   }

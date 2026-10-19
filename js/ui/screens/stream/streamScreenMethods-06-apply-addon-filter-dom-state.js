@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
+import { reorderStreamNodes } from "./streamDomUpdate.js";
 
 export function createStreamScreenMethods06() {
   const { ScreenUtils, Environment, isStreamEmptyStateVisible, clamp } = internals;
@@ -23,6 +24,10 @@ export function createStreamScreenMethods06() {
       }
 
       const rowsByKey = new Map(rows.map((row) => [String(row.dataset.streamKey || ""), row]));
+      const streamKeys = this.getStreamVirtualKeys(allStreams);
+      if (rowsByKey.size !== allStreams.length || streamKeys.some((key) => !rowsByKey.has(key))) {
+        return false;
+      }
       const streamIndices = new Map();
       allStreams.forEach((stream, index) => {
         const indices = streamIndices.get(stream) || [];
@@ -34,7 +39,7 @@ export function createStreamScreenMethods06() {
       for (const stream of visibleStreams) {
         const indices = streamIndices.get(stream) || [];
         const occurrence = Number(streamOccurrences.get(stream) || 0);
-        const row = rowsByKey.get(String(indices[occurrence] ?? ""));
+        const row = rowsByKey.get(streamKeys[indices[occurrence]]);
         if (!row) {
           return false;
         }
@@ -60,10 +65,16 @@ export function createStreamScreenMethods06() {
         });
       });
 
-      // Appending existing keyed rows changes only their order; it does not
-      // reparse the card markup. This is the Web equivalent of Android's
-      // LazyColumn retaining keyed items while the filtered state changes.
-      visibleRows.forEach((row) => list.appendChild(row));
+      // Filtering keeps the relative source order. Preserve the focused row's
+      // attachment and move only genuinely reordered siblings.
+      reorderStreamNodes(
+        list,
+        [
+          ...streamKeys.map((key) => rowsByKey.get(key)),
+          ...Array.from(list.children).filter((node) => !node.hasAttribute("data-stream-key"))
+        ],
+        this.focusedElement
+      );
 
       this.container?.querySelectorAll(".stream-route-chip[data-addon]").forEach((chip) => {
         const selected = String(chip.dataset.addon || "all") === targetFilter;
@@ -87,12 +98,6 @@ export function createStreamScreenMethods06() {
         emptyState.hidden = !visible;
         emptyState.style.display = visible ? "" : "none";
       }
-      if (loadingRow) {
-        list.appendChild(loadingRow);
-      }
-      if (emptyState) {
-        list.appendChild(emptyState);
-      }
       return true;
     },
     applyAddonFilterInPlace({ filterChanged = true } = {}) {
@@ -110,6 +115,7 @@ export function createStreamScreenMethods06() {
       if (!this.applyAddonFilterDomState(filtered, allStreams)) {
         return false;
       }
+      this.renderedStreamListItems = filtered;
       if (!filterChanged) {
         this.streamFocusDomCache = null;
         this.hydrateVisibleStreamBadges();
@@ -286,7 +292,12 @@ export function createStreamScreenMethods06() {
         const maxScrollTop = Math.max(0, Number(listNode.scrollHeight || 0) - Number(listNode.clientHeight || 0));
         const normalized = clamp(Number(nextScrollTop || 0), 0, maxScrollTop);
         listNode.scrollTop = normalized;
-        if (typeof listNode.scrollTo === "function") {
+        // VIDAA's native scroller has already applied this value. Retain the
+        // old fallback only when readback demonstrates that it is needed.
+        if (
+          (!Environment.isVidaa() || Math.abs(Number(listNode.scrollTop || 0) - normalized) > 1) &&
+          typeof listNode.scrollTo === "function"
+        ) {
           try {
             listNode.scrollTo(0, normalized);
           } catch (_) {

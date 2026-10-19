@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 import { renderPersoRatingButtons } from "./persoRatingButtons.js";
+import { renderPersonalPrediction } from "../perso/personalUi.js";
 
 export function createMetaDetailsScreenMethods07() {
   const {
@@ -247,8 +248,10 @@ export function createMetaDetailsScreenMethods07() {
                 ${showWatchedButton ? `<button class="series-circle-btn focusable${this.isMarkedWatched ? " is-selected" : ""}" data-action="toggleWatched" aria-label="${escapeAttribute(this.isMarkedWatched ? t("common.markUnwatched", {}, "Mark Unwatched") : t("common.markWatched", {}, "Mark Watched"))}">${renderWatchedGlyph(this.isMarkedWatched)}</button>` : ""}
                 ${trailerButton}
                 ${renderPersoRatingButtons(this.meta?.type || this.params?.itemType, this.params?.itemId || this.meta?.id)}
+                <button class="series-circle-btn focusable" data-action="persoList" aria-label="Ajouter à une liste partagée" title="Liste partagée"><span class="material-icons" aria-hidden="true">playlist_add</span></button>
               </div>
               ${this.renderResumeIndicator()}
+              ${renderPersonalPrediction(meta)}
               ${creditLine ? `<p class="series-detail-support">${escapeHtml(creditPrefix)}: ${escapeHtml(creditLine)}</p>` : ""}
               ${externalRatings}
               <p class="series-detail-description" dir="${contentTextDirection(heroDescription)}">${escapeHtml(heroDescription)}</p>

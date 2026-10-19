@@ -16,7 +16,9 @@ const defaultFixtures = [
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(
-  [...defaultFixtures, "test-vidaa-comparison.html"].map((fixture) => fixture.split("?")[0])
+  [...defaultFixtures, "test-vidaa-comparison.html", "test-perso-space.html"].map(
+    (fixture) => fixture.split("?")[0]
+  )
 );
 for (const fixture of fixtures) {
   if (!allowedFixtures.has(fixture.split("?")[0]))

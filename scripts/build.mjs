@@ -594,6 +594,14 @@ async function buildPluginRuntimeAssets() {
 async function buildBundle() {
   const { version } = await readAppMetadata();
   const personalChangelog = await readPersonalChangelog(rootDir, version);
+  await build({
+    entryPoints: [path.join(rootDir, "js/core/perso/personalRecommendationWorker.js")],
+    outfile: path.join(distDir, "assets/runtime/personal-recommendations-worker.js"),
+    bundle: true,
+    minify: true,
+    format: "iife",
+    target: [`chrome${compatibilityPolicy.chromiumVersion}`]
+  });
 
   await build({
     entryPoints: [path.join(rootDir, "js/core/streams/streamBadgeWorker.js")],

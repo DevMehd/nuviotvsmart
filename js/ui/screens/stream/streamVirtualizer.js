@@ -3,7 +3,7 @@
 // window is mounted in the DOM. The calculations in this module are pure so
 // they can be exercised without a TV DOM or a browser-specific observer API.
 
-export const STREAM_VIRTUALIZATION_THRESHOLD = 100;
+export const STREAM_VIRTUALIZATION_THRESHOLD = 40;
 export const STREAM_VIRTUALIZATION_MIN_WINDOW = 20;
 export const STREAM_VIRTUALIZATION_OVERSCAN_PX = 720;
 export const STREAM_VIRTUALIZATION_DEFAULT_ROW_EXTENT = 232;

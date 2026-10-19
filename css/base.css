@@ -1,5 +1,51 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap");
-@import url("https://fonts.googleapis.com/icon?family=Material+Icons");
+@font-face {
+  font-family: "JetBrains Sans";
+  src: url("../assets/fonts/jetbrains_sans_regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Sans";
+  src: url("../assets/fonts/jetbrains_sans_semibold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Sans";
+  src: url("../assets/fonts/jetbrains_sans_bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Material Icons";
+  font-style: normal;
+  font-weight: 400;
+  src: url("../assets/fonts/MaterialIcons-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+
+.material-icons {
+  font-family: "Material Icons";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
 
 :root {
   --bg-color: #0d0d0d;
@@ -13,16 +59,23 @@
   --secondary-color-rgb: 245 245 245;
   --secondary-variant: #e0e0e0;
   --on-secondary: #111111;
-  --error-color: #cf6679;
-  --error-bg: rgba(207, 102, 121, 0.18);
-  --text-color: #ffffff;
-  --text-secondary: #b3b3b3;
-  --text-tertiary: #808080;
+  --error-color: #e36a8a;
+  --error-bg: rgba(227, 106, 138, 0.18);
+  --text-color: #f5f7f8;
+  --text-secondary: #b8bec5;
+  --text-tertiary: #969ca3;
   --focus-color: #ffffff;
   --focus-color-rgb: 255 255 255;
+  --focus-color-rgb-legacy: 255, 255, 255;
   --focus-bg: #303030;
-  --border-color: #333333;
-  --app-font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  --border-color: #252a2a;
+  --app-font-family: "JetBrains Sans", "Segoe UI", Arial, sans-serif;
+  --success-color: #66bb6a;
+  --warning-color: #ffc857;
+  --info-color: #42a5f5;
+  --motion-fast: 150ms;
+  --motion-normal: 220ms;
+  --motion-standard: cubic-bezier(0.2, 0, 0, 1);
   --tv-safe-gutter: 32px;
   --tv-safe-gutter: clamp(28px, 3vw, 56px);
   --tv-safe-gutter-wide: 40px;
@@ -183,14 +236,12 @@ html.vidaa-tv #app > .screen:not(#player) {
   background: #222;
   border-radius: 8px;
   overflow: hidden;
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s;
+  transition: transform var(--motion-fast) var(--motion-standard);
 }
 
 .card.focused {
   transform: scale(1.1);
-  box-shadow: 0 0 0 2px rgba(245, 249, 255, 0.9);
+  box-shadow: 0 0 0 2px var(--focus-color);
 }
 
 /* Tizen fast path: the old `*:focus` selector forced a full-tree style

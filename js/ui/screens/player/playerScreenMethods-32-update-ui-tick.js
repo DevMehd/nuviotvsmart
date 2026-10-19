@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { WatchJournal } from "../../../core/perso/watchJournal.js";
 
 export function createPlayerScreenMethods32() {
   const { PlayerController, deltaMsForKeyRepeat, calculateRemainingPlaybackMilliseconds, t, formatTime, formatClock, formatEndsAt, clamp } =
@@ -19,6 +20,15 @@ export function createPlayerScreenMethods32() {
       this.updateSkipIntroCountdown(Date.now());
       const displayCurrent = this.getPlaybackDisplayCurrentSeconds();
       const duration = this.getPlaybackDisplayDurationSeconds();
+      WatchJournal.tick(this.personalWatchRun, {
+        at: performance.now(),
+        position: current,
+        duration,
+        rate: this.getPlaybackSpeed(),
+        paused: PlayerController.video?.paused !== false,
+        seeking: Boolean(PlayerController.video?.seeking),
+        hidden: document.hidden
+      });
       this.evaluatePostPlayRecommendation();
       const effectiveProgressSeconds =
         this.controlsVisible && this.controlFocusZone === "progress" && this.seekPreviewSeconds != null

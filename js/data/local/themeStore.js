@@ -79,6 +79,8 @@ function normalizeTheme(settings = {}) {
     ...DEFAULT_THEME,
     ...settings,
     themeName,
+    // Keep explicit legacy/cloud choices; missing font settings retain the TV fallback.
+    fontFamily: String(settings?.fontFamily || DEFAULT_THEME.fontFamily).toUpperCase(),
     accentColor: normalizedAccent,
     customThemeColors: encodeCustomThemeColors(settings?.customThemeColors),
     settingsUiStyle: ["CLASSIC", "HORIZON", "ZEN"].includes(

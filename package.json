@@ -2,7 +2,7 @@
   "name": "nuvio-tv-smart",
   "private": true,
   "type": "module",
-  "version": "1.2.8",
+  "version": "1.3.0",
   "scripts": {
     "build": "node ./scripts/build.mjs",
     "test": "npm run test:plugins",
@@ -33,7 +33,8 @@
     "test:vidaa:live": "node ./tests/test-vidaa-shared-backend.mjs --live --no-email-confirmation",
     "build:comparison": "node scripts/build-comparison.mjs",
     "build:comparison:wasm": "node scripts/build-comparison-wasm.mjs",
-    "test:comparison": "node tests/test-vidaa-comparison.mjs && npm run build:comparison && node tests/run-vidaa-home-dom-tests.mjs test-vidaa-comparison.html?engine=dom test-vidaa-comparison.html?engine=react test-vidaa-comparison.html?engine=vue test-vidaa-comparison.html?engine=svelte test-vidaa-comparison.html?engine=solid test-vidaa-comparison.html?engine=canvas2d test-vidaa-comparison.html?engine=lightning-webgl test-vidaa-comparison.html?engine=lightning-canvas test-vidaa-comparison.html?engine=compute"
+    "test:comparison": "node tests/test-vidaa-comparison.mjs && npm run build:comparison && node tests/run-vidaa-home-dom-tests.mjs test-vidaa-comparison.html?engine=dom test-vidaa-comparison.html?engine=react test-vidaa-comparison.html?engine=vue test-vidaa-comparison.html?engine=svelte test-vidaa-comparison.html?engine=solid test-vidaa-comparison.html?engine=canvas2d test-vidaa-comparison.html?engine=lightning-webgl test-vidaa-comparison.html?engine=lightning-canvas test-vidaa-comparison.html?engine=compute",
+    "test:perso": "node scripts/test-perso.mjs"
   },
   "devDependencies": {
     "@csstools/postcss-global-data": "^4.0.0",

@@ -1,5 +1,17 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-19 — 1.3.0
+
+- « Mon espace » rejoint le menu de la télé : Pour toi, Que regarder ?, Mes goûts, Calendrier, Statistiques et Listes partagées.
+- La télé prépare ses propres recommandations à partir des notes, de la bibliothèque et du visionnage. Les résultats enregistrés restent accessibles pendant l’actualisation.
+- Que regarder ? tient compte du temps disponible et de l’humeur, avec priorité aux épisodes en cours. Les fiches affichent une prédiction quand le profil est suffisamment renseigné.
+- Calendrier des séries suivies et statistiques par période, avec réunion du journal de tes appareils associés. Les pauses et déplacements dans une vidéo ne gonflent pas le temps regardé.
+- Listes partagées : créer, rejoindre par code, ajouter depuis une fiche, aimer, noter et marquer vu. Les changements hors connexion restent en attente d’envoi.
+- « Pas pour moi » : un appui long sur une affiche permet de refuser un titre (ou d’annuler le refus), synchronisé avec tes recommandations sur le téléphone.
+- Présentation rapprochée du mobile : couleurs, contrastes, surfaces et animations courtes. Les cinq notes sont regroupées dans un seul bouton pour laisser Lecture bien visible. Polices et icônes embarquées dans l’application (plus de chargement depuis Google Fonts).
+- Liste des sources : seules les lignes modifiées sont redessinées, la liste est allégée dès 40 sources et libérée à l’ouverture du lecteur.
+- Retour à la sélection de Mon espace, isolation par profil et délais de synchronisation bornés. Les contrôles de lecture depuis le téléphone restent disponibles.
+
 ## 2026-10-16 — 1.2.8
 
 - Diagnostic de lecture : chaque source que la télé n'arrive pas à lire (erreur, démarrage trop long, lien refusé) est notée avec la raison exacte, le format annoncé et ce que la télé sait décoder. Visible dans Paramètres → À propos → Console de débogage, et envoyé aux rapports privés de ton espace perso.

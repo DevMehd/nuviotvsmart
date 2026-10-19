@@ -1,10 +1,12 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 import { reconcileStreamVirtualRows } from "./streamVirtualDom.js";
+import { registerStreamDomTree, streamDomOptions } from "./streamDomUpdate.js";
 
 export function createStreamScreenMethods01() {
   const {
     ScreenUtils,
+    Environment,
     DebridSettingsStore,
     StreamBadgeSettingsStore,
     buildStreamVirtualModel,
@@ -18,6 +20,12 @@ export function createStreamScreenMethods01() {
 
   return {
     cancelScheduledRender() {
+      if (this.streamVisibilityFrame) {
+        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.streamVisibilityFrame);
+        else clearTimeout(this.streamVisibilityFrame);
+        this.streamVisibilityFrame = null;
+      }
+      this.streamVisibilityTarget = null;
       if (this.renderDelayTimer) {
         clearTimeout(this.renderDelayTimer);
         this.renderDelayTimer = null;
@@ -315,7 +323,8 @@ export function createStreamScreenMethods01() {
             virtualRowGap: model.rowGap,
             virtualLast: index === streams.length - 1
           });
-        }
+        },
+        Environment.isVidaa() ? (row) => registerStreamDomTree(row, streamDomOptions(streams, badgeSettings)) : null
       );
       this.streamVirtualRowRecords = reconciled.records;
       const topSpacer = track.querySelector('[data-stream-virtual-spacer="top"]');

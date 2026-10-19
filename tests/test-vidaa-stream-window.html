@@ -22,11 +22,31 @@
   .badges.ready {
     height: 65px;
   }
+  #stream .stream-route-card {
+    min-height: 110px;
+    height: auto;
+  }
+  #stream .stream-route-stream-badge img {
+    width: 40px;
+    height: 30px;
+  }
+  #stream .stream-route-logo {
+    width: 80px;
+    height: 30px;
+  }
 </style>
 <pre id="result">RUNNING</pre>
 <div id="fixture"></div>
+<div id="stream"></div>
+<script>
+  globalThis.__NUVIO_PLATFORM__ = "vidaa";
+</script>
 <script type="module">
-  import { StreamScreen, StreamBadgeSettingsStore } from "../js/ui/screens/stream/streamScreen.js";
+  import {
+    StreamScreen,
+    StreamBadgeSettingsStore,
+    Router
+  } from "../js/ui/screens/stream/streamScreen.js";
 
   const result = document.getElementById("result");
   const container = document.getElementById("fixture");
@@ -78,6 +98,297 @@
       screen.hydrateVisibleStreamBadges();
       screen.measureStreamVirtualRows();
       screen.cancelStreamVirtualizationWork();
+    }
+  }
+  async function verifyIncrementalRoute() {
+    const routeContainer = document.getElementById("stream");
+    const imageUrl = new URL("../assets/brand/app_logo_mark.png", location.href).href;
+    const oldCurrent = Router.getCurrent;
+    Router.getCurrent = () => "stream";
+    let settings = {
+      rules: { imports: [] },
+      showAddonLogo: false,
+      showFileSizeBadges: true,
+      badgePlacement: "BOTTOM"
+    };
+    StreamBadgeSettingsStore.snapshot = () => settings;
+    const createStream = (index, addonName = "A") => ({
+      id: `real-${index}`,
+      title: `Source ${index}`,
+      quality: "1080p",
+      addonName,
+      badges: [{ name: "Original badge", imageURL: imageUrl }],
+      behaviorHints: { videoSize: 1024 }
+    });
+    const route = {
+      ...StreamScreen,
+      container: routeContainer,
+      params: { itemId: "fixture-film", itemType: "movie", itemTitle: "Fixture", logo: imageUrl },
+      streams: Array.from({ length: 8 }, (_, index) => createStream(index, index % 2 ? "B" : "A")),
+      sourceChips: [
+        { name: "A", orderIndex: 0, status: "success" },
+        { name: "B", orderIndex: 1, status: "loading" }
+      ],
+      addonFilter: "all",
+      addonLogoLookup: {},
+      loading: false,
+      error: "",
+      streamSearchCompleted: true,
+      focusState: { zone: "card", row: 0, action: "play" },
+      listScrollTop: 0,
+      streamVirtualHeights: new Map(),
+      hasRenderedStreamRouteShell: false
+    };
+    const drain = () => {
+      for (let pass = 0; pass < 30; pass++) {
+        route.hydrateVisibleStreamBadges();
+        route.measureStreamVirtualRows();
+        route.cancelScheduledRender();
+      }
+    };
+    const rowFor = (id) =>
+      [...routeContainer.querySelectorAll("[data-stream-id]")]
+        .find((node) => node.dataset.streamId === id)
+        ?.closest(".stream-route-card-row");
+    try {
+      route.render();
+      drain();
+      const shell = routeContainer.querySelector(".stream-route-shell");
+      const list = routeContainer.querySelector(".stream-route-list");
+      const logo = routeContainer.querySelector(".stream-route-logo");
+      const firstRow = rowFor("real-0");
+      const firstCard = firstRow.querySelector("[data-card-action]");
+      const badge = firstRow.querySelector(".stream-route-card-badges img");
+      assert(badge, "actual card renderer supplies the declared badge");
+      await badge.decode();
+      route.focusElement(firstCard, { ensureVisible: false });
+      let focusLosses = 0;
+      firstCard.addEventListener("blur", () => focusLosses++);
+      let removedRows = 0;
+      const mutations = new MutationObserver((entries) => {
+        for (const entry of entries)
+          for (const node of entry.removedNodes) {
+            if (
+              node.nodeType === 1 &&
+              (node.matches(".stream-route-card-row[data-stream-key]") ||
+                node.querySelector(".stream-route-card-row[data-stream-key]"))
+            )
+              removedRows++;
+          }
+      });
+      mutations.observe(routeContainer, { childList: true, subtree: true });
+      route.streams = [...route.streams, createStream(8)];
+      route.sourceChips = route.sourceChips.map((chip) => ({ ...chip, status: "success" }));
+      route.render();
+      drain();
+      await Promise.resolve();
+      mutations.disconnect();
+      assert(
+        routeContainer.querySelector(".stream-route-shell") === shell &&
+          routeContainer.querySelector(".stream-route-list") === list,
+        "arrival preserves shell and native list"
+      );
+      assert(
+        routeContainer.querySelector(".stream-route-logo") === logo,
+        "arrival preserves decoded header logo"
+      );
+      assert(
+        rowFor("real-0") === firstRow && firstRow.querySelector("img") === badge,
+        "arrival preserves source and decoded badge"
+      );
+      assert(
+        document.activeElement === firstCard && focusLosses === 0,
+        "arrival never detaches the focused card"
+      );
+      assert(removedRows === 0, `arrival removes ${removedRows} existing rows`);
+
+      // Metadata changes must update content without evicting matching images.
+      route.streams = route.streams.map((stream) =>
+        stream.id === "real-0" ? { ...stream, title: "Updated source" } : stream
+      );
+      route.render();
+      drain();
+      assert(
+        firstRow.textContent.includes("Updated source") && firstRow.querySelector("img") === badge,
+        "metadata patch retains unaffected badge"
+      );
+      // A changed badge has the same lazy placeholder markup; its input identity
+      // must still invalidate hydration, even when no other HTML changes.
+      route.streams = route.streams.map((stream) =>
+        stream.id === "real-0"
+          ? { ...stream, badges: [{ name: "Changed badge", imageURL: imageUrl }] }
+          : stream
+      );
+      route.render();
+      drain();
+      assert(
+        rowFor("real-0") === firstRow && firstRow.querySelector("img")?.alt === "Changed badge",
+        "same-markup badge update is not stale"
+      );
+      assert(!badge.isConnected, "only the changed badge is replaced");
+
+      route.setAddonFilter("B", "card", 0);
+      drain();
+      assert(
+        [...list.querySelectorAll("[data-stream-key]:not([hidden])")].every(
+          (row) => row.querySelector("[data-stream-id]").dataset.streamId !== "real-0"
+        ),
+        "filter excludes other addon rows"
+      );
+      const selectedFilteredRow = rowFor("real-1");
+      const selectedFilteredCard = selectedFilteredRow.querySelector("[data-card-action]");
+      route.focusElement(selectedFilteredCard, { ensureVisible: false });
+      route.streams = [createStream(-2, "A"), ...route.streams];
+      route.render();
+      drain();
+      assert(
+        document.activeElement === selectedFilteredCard && route.focusState.row === 0,
+        "arrival in another addon preserves the filtered selection"
+      );
+      assert(
+        selectedFilteredRow.dataset.streamRow === "0" &&
+          selectedFilteredRow.querySelector("[data-lazy-stream-badges]").dataset.streamBadgeRow ===
+            "0",
+        "filtered cards and lazy badges keep the same visible index"
+      );
+      settings = { ...settings, showFileSizeBadges: false, badgePlacement: "TOP" };
+      route.render();
+      drain();
+      assert(
+        !selectedFilteredRow.querySelector(".stream-route-stream-badge.size"),
+        "changing badge settings removes stale file sizes"
+      );
+      const selectedCopy = selectedFilteredRow.querySelector(".stream-route-card-copy");
+      assert(
+        selectedCopy.children[1].matches(".stream-route-card-badges"),
+        "badge placement updates in retained cards"
+      );
+      route.setAddonFilter("all", "card", 0);
+      drain();
+      assert(rowFor("real-0") === firstRow && !firstRow.hidden, "All restores retained rows");
+
+      // An errored image is retained by incremental updates. A changed source
+      // must restore the image and remove the previous fallback listener.
+      const logoHost = document.createElement("div");
+      logoHost.className = "stream-route-addon-badge";
+      logoHost.innerHTML = `<img src="${imageUrl}?logo-test=1" data-addon-logo="${imageUrl}?logo-test=1"><span hidden>Addon</span>`;
+      routeContainer.appendChild(logoHost);
+      const retainedLogo = logoHost.firstElementChild;
+      route.bindAddonLogoFallbacks();
+      retainedLogo.dispatchEvent(new Event("error"));
+      assert(
+        retainedLogo.hidden && !retainedLogo.nextElementSibling.hidden,
+        "failed addon logo shows its text fallback"
+      );
+      retainedLogo.src = imageUrl + "?logo-test=2";
+      retainedLogo.dataset.addonLogo = imageUrl + "?logo-test=2";
+      route.bindAddonLogoFallbacks();
+      assert(
+        !retainedLogo.hidden && retainedLogo.nextElementSibling.hidden,
+        "replacement logo recovers without replacing the row"
+      );
+      retainedLogo.dispatchEvent(new Event("error"));
+      assert(
+        retainedLogo.hidden && !retainedLogo.nextElementSibling.hidden,
+        "replacement logo retains its own failure fallback"
+      );
+      logoHost.remove();
+
+      route.streams = Array.from({ length: 240 }, (_, index) => createStream(index));
+      route.sourceChips = [{ name: "A", orderIndex: 0, status: "success" }];
+      route.render();
+      drain();
+      const virtualRow = rowFor("real-0");
+      const virtualBadge = virtualRow.querySelector("img");
+      route.streams = [createStream(-1), ...route.streams];
+      route.render();
+      drain();
+      assert(
+        rowFor("real-0") === virtualRow && virtualRow.querySelector("img") === virtualBadge,
+        "virtual prepend retains row and badge identity"
+      );
+      assert(
+        route.focusState.row === 1 && rowFor("real-0").querySelector(".focused"),
+        "virtual prepend follows selected source identity"
+      );
+      assert(
+        list.querySelectorAll("[data-stream-key]").length < 50,
+        "production render keeps the virtual window bounded"
+      );
+
+      // Real geometry is used, with spies only on redundant accessors/writes.
+      const target = rowFor("real-0").querySelector("[data-card-action]");
+      let offsets = 0,
+        rects = 0,
+        scrollToCalls = 0;
+      const originalRect = target.getBoundingClientRect.bind(target);
+      target.getBoundingClientRect = () => {
+        rects++;
+        return originalRect();
+      };
+      for (const property of ["offsetTop", "offsetHeight"]) {
+        const getter = Object.getOwnPropertyDescriptor(HTMLElement.prototype, property).get;
+        Object.defineProperty(target, property, {
+          configurable: true,
+          get() {
+            offsets++;
+            return getter.call(this);
+          }
+        });
+      }
+      route.ensureListItemVisible(list, target);
+      assert(
+        rects === 1 && offsets === 0,
+        `focus geometry uses ${rects} target rects and ${offsets} offset reads`
+      );
+      const originalScrollTo = list.scrollTo.bind(list);
+      list.scrollTo = (...args) => {
+        scrollToCalls++;
+        originalScrollTo(...args);
+      };
+      route.setListScrollTop(list, 400);
+      assert(
+        list.scrollTop === 400 && scrollToCalls === 0,
+        "VIDAA native scrolling avoids duplicate scrollTo"
+      );
+      route.cancelScheduledRender();
+      const ensure = route.ensureListItemVisible;
+      let deferredChecks = 0;
+      route.ensureListItemVisible = function (...args) {
+        deferredChecks++;
+        return ensure.apply(this, args);
+      };
+      route.scheduleFocusedListItemVisibilityCheck(
+        list,
+        virtualRow.querySelector("[data-card-action]")
+      );
+      route.scheduleFocusedListItemVisibilityCheck(list, target);
+      await new Promise(requestAnimationFrame);
+      assert(deferredChecks === 1, "pending visibility checks coalesce to the latest focus");
+      route.ensureListItemVisible = ensure;
+      route.cancelScheduledRender();
+      const captured = route.captureRouteState();
+      route.cleanup();
+      await route.mount(captured.params, {
+        isBackNavigation: true,
+        previousRoute: "player",
+        restoredState: captured
+      });
+      drain();
+      assert(
+        route.focusState.row === captured.focusState.row &&
+          route.autoPlayAttempted &&
+          route.autoResumeAttempted,
+        "player return restores selection without autoplay"
+      );
+      assert(
+        routeContainer.querySelector(".focused")?.dataset.streamId === "real-0",
+        "player return keeps the chosen source"
+      );
+      return `arrival: 0 row removals, 0 focus losses; geometry: 1 target rect, 0 offset reads, 0 duplicate scrollTo; virtual rows=${routeContainer.querySelectorAll("[data-stream-key]").length}`;
+    } finally {
+      route.cleanup();
+      Router.getCurrent = oldCurrent;
     }
   }
   try {
@@ -164,8 +475,10 @@
       list.querySelectorAll(".stream-route-card-row").length < 50,
       "long list remains bounded"
     );
+    screen.stopStreamVirtualization();
+    const routeEvidence = await verifyIncrementalRoute();
     result.dataset.status = "passed";
-    result.textContent = `PASS: retained source rows, badge images, focus, filter updates and scroll anchor; initial settled renders=${quiet.rendered}, hydrations=${quiet.hydrated}`;
+    result.textContent = `PASS: retained source rows, badge images, focus, filter updates and scroll anchor; initial settled renders=${quiet.rendered}, hydrations=${quiet.hydrated}; ${routeEvidence}`;
   } catch (error) {
     result.dataset.status = "failed";
     result.textContent = `FAIL: ${error.message}`;

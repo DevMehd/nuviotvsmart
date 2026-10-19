@@ -29,6 +29,7 @@ import { Platform } from "../../platform/index.js";
 import { TizenCapabilities } from "../../platform/tizen/tizenCapabilities.js";
 import { RouteStateStore } from "./routeStateStore.js";
 import { Router } from "./routerState.js";
+import { PersoScreen } from "../screens/perso/persoScreen.js";
 import { LocalStore } from "../../core/storage/localStore.js";
 
 import { createRouterMethods01 } from "./routerMethods-01-get-route-state-key.js";
@@ -162,6 +163,7 @@ Object.assign(Router, {
   pendingHistoryReturn: null,
   pendingPostPlayNavigation: null,
   routes: {
+    perso: PersoScreen,
     home: HomeScreen,
     player: PlayerScreen,
     account: AccountScreen,

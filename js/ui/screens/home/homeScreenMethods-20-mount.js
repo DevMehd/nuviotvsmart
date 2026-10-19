@@ -1,4 +1,5 @@
 import * as internals from "./homeScreenContext.js";
+import { refreshPersonalHome } from "../perso/personalUi.js";
 
 export function createHomeScreenMethods20() {
   const {
@@ -157,6 +158,7 @@ export function createHomeScreenMethods20() {
         this.scheduleHomeLazyImageHydration();
         this.scheduleReturnFocusRestore();
         this.ensureStartupSyncSubscription();
+        refreshPersonalHome(this);
         this.refreshHomeAfterRouteReturn({
           preserveReturnState: true,
           reason: "route-resume"
@@ -186,6 +188,7 @@ export function createHomeScreenMethods20() {
         this.homeLoadToken = (this.homeLoadToken || 0) + 1;
         this.render();
         this.ensureStartupSyncSubscription();
+        refreshPersonalHome(this);
         this.refreshHomeAfterRouteReturn({
           preserveReturnState: Boolean(navigationContext?.isBackNavigation || returnFocusState?.layoutMode),
           reason: "route-return"
@@ -237,6 +240,7 @@ export function createHomeScreenMethods20() {
           if (loadToken !== this.homeLoadToken || Router.getCurrent() !== "home") {
             return;
           }
+          refreshPersonalHome(this);
           if (this.homeBackgroundRefreshPending) {
             void this.requestHomeBackgroundRefresh({
               preserveReturnState: true,

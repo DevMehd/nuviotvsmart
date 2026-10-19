@@ -1,0 +1,251 @@
+.perso-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-family: var(--app-font-family);
+}
+.perso-shell {
+  height: 100%;
+  padding: 42px 58px;
+  box-sizing: border-box;
+}
+.perso-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 115px;
+  margin-bottom: 22px;
+}
+.perso-eyebrow {
+  color: var(--secondary-color);
+  font-size: 20px;
+  margin: 0 0 5px;
+}
+.perso-header h1 {
+  font-size: 46px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -1px;
+}
+.perso-layout {
+  display: flex;
+  height: calc(100% - 137px);
+  gap: 40px;
+}
+.perso-layout nav {
+  width: 280px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 4px;
+}
+.perso-layout nav button {
+  text-align: left;
+  min-height: 65px;
+}
+.perso-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px 18px 80px;
+  scrollbar-width: none;
+}
+.perso-content::-webkit-scrollbar {
+  display: none;
+}
+.perso-content h2 {
+  font-size: 28px;
+  margin: 25px 0 16px;
+  font-weight: 600;
+}
+.perso-status,
+.perso-help {
+  color: var(--text-secondary);
+  font-size: 20px;
+  line-height: 1.5;
+}
+.perso-status {
+  min-height: 30px;
+  margin-top: 0;
+}
+.perso-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.perso-button,
+.perso-title-card,
+.perso-screen input {
+  font-family: inherit;
+  color: inherit;
+  background: var(--card-bg);
+  border: 2px solid transparent;
+  border-radius: 16px;
+  padding: 14px 20px;
+  font-size: 22px;
+  text-align: left;
+}
+.perso-button {
+  cursor: pointer;
+}
+.perso-button.selected {
+  background: var(--focus-bg);
+  color: var(--secondary-color);
+}
+.perso-screen [data-key] {
+  outline: none;
+  transition:
+    transform 150ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 150ms;
+}
+.perso-screen [data-key].focused {
+  border-color: var(--focus-color);
+  box-shadow: 0 0 0 2px var(--focus-color);
+}
+.perso-title-card.focused {
+  transform: translateY(-3px);
+}
+.perso-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 4px;
+}
+.perso-title-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  padding: 12px;
+  cursor: pointer;
+}
+.perso-title-card img,
+.perso-poster-placeholder {
+  width: 94px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 12px;
+  flex: none;
+  background: var(--bg-elevated);
+}
+.perso-poster-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 50px;
+  opacity: 0.5;
+}
+.perso-title-card strong {
+  display: block;
+  font-size: 24px;
+  line-height: 1.25;
+  overflow: hidden;
+  max-height: 90px;
+}
+.perso-title-card small {
+  display: block;
+  margin-top: 12px;
+  font-size: 18px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.perso-empty {
+  padding: 35px;
+  border-radius: 24px;
+  background: var(--bg-elevated);
+  margin: 20px 0;
+}
+.perso-empty p {
+  font-size: 22px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 850px;
+}
+.perso-portrait-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.perso-portrait {
+  background: var(--bg-elevated);
+  border-radius: 24px;
+  padding: 10px 24px 22px;
+}
+.perso-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 15px 0;
+  font-size: 20px;
+}
+.perso-bar span {
+  width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.perso-bar > div {
+  flex: 1;
+  height: 8px;
+  border-radius: 6px;
+  background: var(--card-bg);
+  overflow: hidden;
+}
+.perso-bar i {
+  display: block;
+  height: 100%;
+  background: var(--secondary-color);
+}
+.perso-bar small {
+  min-width: 45px;
+  color: var(--text-secondary);
+}
+.perso-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+.perso-metrics article {
+  border-radius: 24px;
+  background: var(--bg-elevated);
+  padding: 25px;
+}
+.perso-metrics strong {
+  display: block;
+  font-size: 34px;
+  color: var(--secondary-color);
+}
+.perso-metrics span {
+  display: block;
+  margin-top: 12px;
+  font-size: 20px;
+}
+.perso-list-items article {
+  padding: 18px;
+  background: var(--bg-elevated);
+  border-radius: 24px;
+  margin-bottom: 18px;
+}
+.perso-list-items article > button {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.perso-screen input {
+  width: 235px;
+}
+.perso-prediction {
+  color: var(--secondary-color);
+  font-size: 22px;
+  line-height: 1.4;
+  margin: 16px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .perso-screen [data-key] {
+    transition: none;
+    transform: none !important;
+  }
+}

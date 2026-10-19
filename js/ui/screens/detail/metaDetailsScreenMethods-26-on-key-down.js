@@ -351,6 +351,19 @@ export function createMetaDetailsScreenMethods26() {
         return;
       }
 
+      if (action === "persoList") {
+        Router.navigate("perso", {
+          tab: "lists",
+          addCandidate: {
+            type: this.meta?.type || this.params?.itemType || "movie",
+            id: this.params?.itemId || this.meta?.id,
+            name: this.meta?.name || "",
+            poster: this.meta?.poster || null,
+            year: this.meta?.releaseInfo || null
+          }
+        });
+        return;
+      }
       if (action === "persoRate") {
         handlePersoRate(this.container, current, {
           type: this.meta?.type || this.params?.itemType,

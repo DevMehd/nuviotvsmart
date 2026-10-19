@@ -156,3 +156,17 @@ assert.equal(ntfyMessageText(JSON.stringify({ event: "keepalive" })), null);
 assert.equal(ntfyMessageText(JSON.stringify({ event: "message", message: "x" })), "x");
 
 console.log("perso cloud tests passed");
+
+// A black-holed request must release the shared token promise for a later retry.
+{
+  let signal;
+  let healthy = false;
+  const backend = fakeBackend();
+  const cloud = createPersoCloud({ url: "https://x.supabase.co", key: "pk", storage: memoryStorage(), requestTimeoutMs: 5,
+    fetch: (url, init) => { signal = init.signal; return healthy ? backend.fetch(url, init) : new Promise(() => {}); } });
+  assert.equal(await cloud.accessToken(), null);
+  assert.equal(signal.aborted, true);
+  healthy = true;
+  assert.equal(await cloud.accessToken(), "at1");
+}
+console.log("PASS: personal cloud request timeout and recovery");

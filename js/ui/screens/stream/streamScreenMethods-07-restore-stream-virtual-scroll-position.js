@@ -52,8 +52,8 @@ export function createStreamScreenMethods07() {
         return;
       }
       const viewTop = this.getListScrollTop(listNode);
-      let itemTop = Number(target.offsetTop || 0);
-      let itemBottom = itemTop + Number(target.offsetHeight || 0);
+      let itemTop;
+      let itemBottom;
       if (typeof listNode.getBoundingClientRect === "function" && typeof target.getBoundingClientRect === "function") {
         const listRect = listNode.getBoundingClientRect();
         const targetRect = target.getBoundingClientRect();
@@ -61,6 +61,12 @@ export function createStreamScreenMethods07() {
           itemTop = viewTop + (targetRect.top - listRect.top);
           itemBottom = viewTop + (targetRect.bottom - listRect.top);
         }
+      }
+      // Rects include the current focus transform. Offset geometry is only a
+      // compatibility fallback; reading both sets on every keypress is wasted.
+      if (!Number.isFinite(itemTop) || !Number.isFinite(itemBottom)) {
+        itemTop = Number(target.offsetTop || 0);
+        itemBottom = itemTop + Number(target.offsetHeight || 0);
       }
       const viewHeight = Number(listNode.clientHeight || 0);
       if (!viewHeight) {
@@ -78,7 +84,14 @@ export function createStreamScreenMethods07() {
       if (!listNode || !target) {
         return;
       }
+      this.streamVisibilityTarget = { listNode, target };
+      if (this.streamVisibilityFrame) return;
       const run = () => {
+        this.streamVisibilityFrame = null;
+        const pending = this.streamVisibilityTarget;
+        this.streamVisibilityTarget = null;
+        if (!pending) return;
+        const { listNode, target } = pending;
         const root = document.documentElement || document.body;
         if (!this.container || !root?.contains?.(listNode) || !root?.contains?.(target)) {
           return;
@@ -87,10 +100,10 @@ export function createStreamScreenMethods07() {
         this.requestStreamBadgeHydration();
       };
       if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(run);
+        this.streamVisibilityFrame = requestAnimationFrame(run);
         return;
       }
-      setTimeout(run, 0);
+      this.streamVisibilityFrame = setTimeout(run, 0);
     },
     getFocusLists() {
       const listNode = this.container?.querySelector(".stream-route-list") || null;

@@ -46,6 +46,8 @@ export function createStreamScreenMethods03() {
       this.renderedStreamListStable = false;
       this.renderedStreamListStreams = null;
       this.renderedStreamListSourceChips = null;
+      this.renderedStreamListItems = null;
+      this.renderedStreamBadgeSignature = null;
       // Returning here from the player is a back navigation, not a fresh open, so
       // do not auto-resume or auto-play again. Otherwise exiting the player drops
       // back onto the stream list and immediately relaunches, looping forever.

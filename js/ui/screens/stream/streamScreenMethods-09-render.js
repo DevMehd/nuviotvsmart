@@ -1,6 +1,11 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 import { bindCachedBadgeImages } from "../../../core/media/cachedBadgeImages.js";
+import { streamDomOptions, updateStreamDom } from "./streamDomUpdate.js";
+
+// Retained rows also retain image elements. Track their current URL so a logo
+// that failed earlier can recover when an addon supplies a replacement.
+const addonLogoFallbacks = new WeakMap();
 
 export function createStreamScreenMethods09() {
   const {
@@ -23,13 +28,14 @@ export function createStreamScreenMethods09() {
     render() {
       this.cancelScheduledRender();
       const previousVirtualModel = this.streamVirtualized ? this.streamVirtualModel : null;
+      const previousStreams = this.renderedStreamListItems || [];
       const previousFocusedIndex = Number(this.focusState?.row);
       const previousFocusedKey =
-        previousVirtualModel &&
+        this.focusState?.zone === "card" &&
         Number.isInteger(previousFocusedIndex) &&
         previousFocusedIndex >= 0 &&
-        previousFocusedIndex < previousVirtualModel.keys.length
-          ? previousVirtualModel.keys[previousFocusedIndex]
+        previousFocusedIndex < previousStreams.length
+          ? this.getStreamVirtualKeys(previousStreams)[previousFocusedIndex]
           : "";
       if (previousVirtualModel && !this.streamVirtualFocusReset && Number(this.listScrollTop || 0) > 0) {
         const previousAnchorIndex = findStreamVirtualIndex(previousVirtualModel.offsets, Number(this.listScrollTop || 0));
@@ -64,7 +70,7 @@ export function createStreamScreenMethods09() {
       // cards interactive while their images warm in the background; the card
       // renderer already has a text fallback for a missing logo.
       const virtualizedStreamList = Boolean(this.shouldUseStreamVirtualization(allStreams) && filtered.length);
-      if (virtualizedStreamList && previousFocusedKey && !this.streamVirtualFocusReset) {
+      if (filtered.length && previousFocusedKey && !this.streamVirtualFocusReset) {
         const nextKeys = this.getStreamVirtualKeys(filtered);
         const nextFocusedIndex = nextKeys.indexOf(previousFocusedKey);
         if (nextFocusedIndex >= 0) {
@@ -90,19 +96,29 @@ export function createStreamScreenMethods09() {
       }
 
       let body = "";
+      const renderedStreams = stableStreamList ? allStreams : filtered;
+      const renderedKeys = this.getStreamVirtualKeys(renderedStreams);
       if (virtualizedStreamList) {
         body = this.renderStreamVirtualMarkup(filtered, streamBadgesEnabled, badgeSettings);
         if (hasPendingForFilter) {
           body += this.renderLoadingCards(1);
         }
       } else if (stableStreamList) {
-        body = allStreams.map((stream, index) => this.renderStreamCard(stream, index, streamBadgesEnabled, badgeSettings)).join("");
+        body = allStreams
+          .map((stream, index) =>
+            this.renderStreamCard(stream, index, streamBadgesEnabled, badgeSettings, { streamKey: renderedKeys[index] })
+          )
+          .join("");
         if (hasPendingForFilter) {
           body += this.renderStableStreamLoadingRow();
         }
         body += this.renderStableStreamEmptyState();
       } else if (filtered.length) {
-        body = filtered.map((stream, index) => this.renderStreamCard(stream, index, streamBadgesEnabled, badgeSettings)).join("");
+        body = filtered
+          .map((stream, index) =>
+            this.renderStreamCard(stream, index, streamBadgesEnabled, badgeSettings, { streamKey: renderedKeys[index] })
+          )
+          .join("");
         if (hasPendingForFilter) {
           body += this.renderLoadingCards(1);
         }
@@ -158,18 +174,40 @@ export function createStreamScreenMethods09() {
       // here because stream/addon text is part of the string and collisions could
       // otherwise cause a genuinely changed list to retain stale DOM.
       const shellMounted = Boolean(this.container.querySelector(".stream-route-shell"));
-      const markupUnchanged = shellMounted && this.renderedMarkup === nextMarkup;
+      const domOptions = Environment.isVidaa() ? streamDomOptions(renderedStreams, badgeSettings) : null;
+      const badgeSignature =
+        domOptions && streamBadgesEnabled
+          ? domOptions.presentationSignature(
+              virtualizedStreamList ? this.streamVirtualWindow.start : 0,
+              virtualizedStreamList ? this.streamVirtualWindow.end : renderedStreams.length - 1
+            )
+          : "";
+      const markupUnchanged = shellMounted && this.renderedMarkup === nextMarkup && this.renderedStreamBadgeSignature === badgeSignature;
 
       if (!markupUnchanged) {
-        this.container.innerHTML = nextMarkup;
+        if (this.renderedStreamListStable && !stableStreamList) {
+          this.container.querySelectorAll("[data-stream-key], [data-card-action]").forEach((node) => {
+            node.hidden = false;
+            node.style.display = "";
+          });
+        }
+        if (domOptions) {
+          updateStreamDom(this.container, nextMarkup, {
+            ...domOptions,
+            incremental: this.hasRenderedStreamRouteShell,
+            focusedNode: this.focusedElement || this.container.ownerDocument.activeElement
+          });
+        } else this.container.innerHTML = nextMarkup;
         this.renderedMarkup = nextMarkup;
+        this.renderedStreamBadgeSignature = badgeSignature;
         this.streamFocusDomCache = null;
-        this.focusedElement = null;
+        if (!this.container.contains(this.focusedElement)) this.focusedElement = null;
       }
 
       this.renderedStreamListStable = stableStreamList;
       this.renderedStreamListStreams = this.streams;
       this.renderedStreamListSourceChips = this.sourceChips;
+      this.renderedStreamListItems = filtered;
       if (stableStreamList) {
         this.applyAddonFilterDomState(filtered, allStreams);
       }
@@ -304,11 +342,17 @@ export function createStreamScreenMethods09() {
     bindAddonLogoFallbacks() {
       bindCachedBadgeImages(this.container);
       this.container?.querySelectorAll(".stream-route-addon-badge img[data-addon-logo]").forEach((node) => {
-        if (!(node instanceof HTMLImageElement) || node.dataset.fallbackBound === "true") {
+        if (!(node instanceof HTMLImageElement)) {
           return;
         }
+        const source = `${node.getAttribute("src") || ""}|${node.dataset.addonLogo || ""}`;
+        const previous = addonLogoFallbacks.get(node);
+        if (previous?.source === source) return;
+        if (previous) node.removeEventListener("error", previous.handler);
         node.dataset.fallbackBound = "true";
         const fallback = node.nextElementSibling;
+        node.hidden = false;
+        if (fallback instanceof HTMLElement) fallback.hidden = true;
         const applyFallback = () => {
           rememberFailedAddonLogo(node.dataset.addonLogo || node.getAttribute("src") || "");
           node.hidden = true;
@@ -316,6 +360,7 @@ export function createStreamScreenMethods09() {
             fallback.hidden = false;
           }
         };
+        addonLogoFallbacks.set(node, { source, handler: applyFallback });
         node.addEventListener("error", applyFallback, { once: true });
       });
     }

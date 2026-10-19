@@ -32,10 +32,16 @@ export function createStreamScreenMethods11() {
       this.renderedStreamListStable = false;
       this.renderedStreamListStreams = null;
       this.renderedStreamListSourceChips = null;
+      this.renderedStreamListItems = null;
+      this.renderedStreamBadgeSignature = null;
       this.boundStreamListNode = null;
       this.streamFocusDomCache = null;
       this.focusedElement = null;
       this.streamLastNavigationRepeatAt = 0;
+      const listNode = this.container?.querySelector?.(".stream-route-list");
+      if (listNode) {
+        listNode.innerHTML = "";
+      }
       ScreenUtils.hide(this.container);
     }
   };

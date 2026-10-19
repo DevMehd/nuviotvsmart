@@ -1,5 +1,6 @@
 /* global __NUVIO_APP_VERSION__ */
 import * as internals from "./playerScreenContext.js";
+import { WatchJournal } from "../../../core/perso/watchJournal.js";
 import { initializePlayerMountState } from "./playerMountStateInitialization.js";
 
 export function createPlayerScreenMethods01() {
@@ -71,6 +72,8 @@ export function createPlayerScreenMethods01() {
         }
       }
       this.params = params;
+      WatchJournal.finish(this.personalWatchRun);
+      this.personalWatchRun = WatchJournal.start(params);
       this.trackPreferenceContentId = this.getTrackPreferenceContentId();
       this.subtitleDelayPreferenceVideoId = this.getSubtitleDelayPreferenceVideoId();
       this.rememberedAudioTrackPreference = TrackPreferencesStore.getAudio(this.trackPreferenceContentId);

@@ -8,6 +8,7 @@ import { watchedSeriesReconciliationService } from "../../data/repository/watche
 import { supportsMembershipFor } from "../../core/tracking/trackingLibraryMembership.js";
 import { NuvioDialog } from "./nuvioDialog.js";
 import { buildWatchedTitleIdSet, isTitleItemWatched } from "./watchedTitleBadge.js";
+import { TitleRatings } from "../../core/perso/titleRatings.js";
 
 function t(key, params = {}, fallback = key) {
   return I18n.t(key, params, { fallback });
@@ -91,6 +92,7 @@ export async function createPosterOptionsState(item, options = {}) {
       isInMembership(membershipSnapshot) ||
       (await savedLibraryRepository.isSaved(item.id).catch(() => false)),
     isWatched: isTitleItemWatched(item, buildWatchedTitleIdSet(projectedWatchedItems)),
+    isDisliked: TitleRatings.valueOf(item.type, item.id) === -1,
     optionIndex: 0,
     focusKey: options.focusKey || "",
     itemIndex: Number.isFinite(Number(options.itemIndex)) ? Number(options.itemIndex) : -1
@@ -127,6 +129,12 @@ export function getPosterOptions(state, options = {}) {
         : t("hero_mark_watched", {}, "Mark as watched")
     });
   }
+  actions.push({
+    action: "toggleDisliked",
+    label: state.isDisliked
+      ? t("perso_action_undo_dislike", {}, "Annuler le refus")
+      : t("perso_rating_disliked", {}, "Pas pour moi")
+  });
   return actions;
 }
 
@@ -196,6 +204,11 @@ export async function activatePosterOption(state, action, _options = {}) {
       updatedAt: Date.now()
     });
     return { type: "updated", state: { ...state, isWatched: true } };
+  }
+  if (action === "toggleDisliked") {
+    const nextValue = state.isDisliked ? null : -1;
+    TitleRatings.rate(item.type, item.id, item.title, item.poster, nextValue);
+    return { type: "updated", state: { ...state, isDisliked: !state.isDisliked } };
   }
   return { type: "noop" };
 }

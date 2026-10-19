@@ -7,7 +7,8 @@ export function reconcileStreamVirtualRows(
   keys,
   start,
   end,
-  renderRow
+  renderRow,
+  registerRow = null
 ) {
   const existing = new Map(
     Array.from(windowNode.children, (node) => [node.dataset.streamKey, node])
@@ -23,6 +24,7 @@ export function reconcileStreamVirtualRows(
       const template = windowNode.ownerDocument.createElement("template");
       template.innerHTML = renderRow(index);
       row = template.content.firstElementChild;
+      registerRow?.(row);
     }
     desired.push(row);
     nextRecords.set(key, { stream: streams[index], index });
