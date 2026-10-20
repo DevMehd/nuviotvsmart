@@ -1,5 +1,6 @@
 import { Router } from "../../navigation/routerState.js";
 
+import { episodeReleaseLocalDay } from "../../../core/util/episodeReleaseTime.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 
 import { metaRepository } from "../../../data/repository/metaRepository.js";
@@ -290,12 +291,9 @@ export function formatEpisodeCardDate(value = "") {
   if (!raw) {
     return "";
   }
-  const localDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
-  const parsed =
-    localDateMatch && !raw.includes("T")
-      ? new Date(Number(localDateMatch[1]), Number(localDateMatch[2]) - 1, Number(localDateMatch[3]))
-      : new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
+  // The day the episode reaches the viewer (nuv-087): a bare US date shows the next day.
+  const parsed = episodeReleaseLocalDay(raw);
+  if (!parsed || Number.isNaN(parsed.getTime())) {
     return "";
   }
   return parsed.toLocaleDateString(undefined, {

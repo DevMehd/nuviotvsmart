@@ -11,6 +11,7 @@
 - Présentation rapprochée du mobile : couleurs, contrastes, surfaces et animations courtes. Les cinq notes sont regroupées dans un seul bouton pour laisser Lecture bien visible. Polices et icônes embarquées dans l’application (plus de chargement depuis Google Fonts).
 - Liste des sources : seules les lignes modifiées sont redessinées, la liste est allégée dès 40 sources et libérée à l’ouverture du lecteur.
 - Retour à la sélection de Mon espace, isolation par profil et délais de synchronisation bornés. Les contrôles de lecture depuis le téléphone restent disponibles.
+- Dates de sortie des épisodes corrigées : une date américaine sans heure (ex. VisionQuest le 20) n’apparaît plus « aujourd’hui » en France ; l’épisode compte comme sorti la nuit suivante. Quand l’heure exacte est connue (TVmaze), le calendrier et « Diffusion demain » l’affichent, par exemple « Diffusion demain · 03:00 ».
 
 ## 2026-10-16 — 1.2.8
 

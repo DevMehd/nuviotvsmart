@@ -1,4 +1,6 @@
 /* eslint-disable no-unused-vars */
+import { episodeReleaseEpochMs, episodeReleaseLocalDay, withEpisodeReleaseTime } from "../../../core/util/episodeReleaseTime.js";
+
 import { Router } from "../../navigation/routerState.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
@@ -237,25 +239,9 @@ export function hasEpisodeAiredForContinueWatching(released) {
 }
 
 export function parseEpisodeReleaseDateForContinueWatching(released) {
-  const raw = String(released || "").trim();
-  if (!raw) {
-    return null;
-  }
-  // Only a strict ISO 8601 date-time parses identically across engines, so keep
-  // its exact time. For any other string, use the extracted ISO date portion:
-  // Date.parse on non-ISO / space separated / locale date strings is
-  // implementation and timezone dependent, and on some TV browsers resolved a
-  // day or more off, which made Continue Watching treat episodes as aired
-  // before their real release date.
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) {
-    const exactTime = Date.parse(raw);
-    if (Number.isFinite(exactTime)) {
-      return exactTime;
-    }
-  }
-  const datePortion = raw.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0];
-  const parsedTime = datePortion ? Date.parse(datePortion) : NaN;
-  return Number.isFinite(parsedTime) ? parsedTime : null;
+  // Shared rule (nuv-087): an exact time keeps its instant, a bare US date counts as released
+  // the next night (02:00 UTC). No engine-dependent Date.parse on free text.
+  return episodeReleaseEpochMs(released);
 }
 
 export function resolveNextUpReleaseState(item = {}) {
@@ -294,20 +280,8 @@ export function refreshContinueWatchingReleaseState(item = {}) {
 }
 
 export function parseEpisodeReleaseCalendarDateForContinueWatching(released) {
-  const raw = String(released || "").trim();
-  if (!raw) {
-    return null;
-  }
-  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateOnlyMatch) {
-    return new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]));
-  }
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
-  }
-  const embeddedDate = raw.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
-  return embeddedDate ? new Date(Number(embeddedDate[1]), Number(embeddedDate[2]) - 1, Number(embeddedDate[3])) : null;
+  // Local midnight of the day the episode reaches the viewer (nuv-087).
+  return episodeReleaseLocalDay(released);
 }
 
 export function continueWatchingCalendarDayNumber(date) {
@@ -324,14 +298,15 @@ export function buildNextUpAirDateStatus(item = {}) {
   if (daysUntil < 0) {
     return "";
   }
+  // The local release time follows when it is known exactly: "Diffusion demain · 03:00".
   if (daysUntil === 0) {
-    return t("cw_airs_today", {}, "Airs Today");
+    return withEpisodeReleaseTime(t("cw_airs_today", {}, "Airs Today"), releaseValue);
   }
   if (daysUntil === 1) {
-    return t("cw_airs_tomorrow", {}, "Airs Tomorrow");
+    return withEpisodeReleaseTime(t("cw_airs_tomorrow", {}, "Airs Tomorrow"), releaseValue);
   }
   if (daysUntil <= 7) {
-    return t("cw_airs_in_days", [daysUntil], "Airs in %1$d Days");
+    return withEpisodeReleaseTime(t("cw_airs_in_days", [daysUntil], "Airs in %1$d Days"), releaseValue);
   }
   let dateLabel = "";
   try {

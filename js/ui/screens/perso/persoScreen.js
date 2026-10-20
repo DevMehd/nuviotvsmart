@@ -23,6 +23,18 @@ const TABS = [
   ["stats", "Statistiques"],
   ["lists", "Listes partagées"]
 ];
+
+/** "Aujourd'hui", "Demain" or the date, for a calendar day "YYYY-MM-DD" (nuv-087). */
+function calendarDayLabel(date, nowMs = Date.now()) {
+  const day = Date.parse(`${date}T00:00:00Z`);
+  const now = new Date(nowMs);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((day - today) / 86_400_000);
+  if (diff === 0) return `Aujourd'hui · ${date}`;
+  if (diff === 1) return `Demain · ${date}`;
+  return date;
+}
+
 export const MOODS = [
   ["Tout", []],
   ["Léger", ["comedy", "comédie", "animation", "family", "familial", "romance"]],
@@ -248,9 +260,9 @@ export const PersoScreen = {
             id: ep.showId,
             name: ep.showTitle,
             poster: ep.poster,
-            subtitle: `${ep.seasonNumber == null ? "" : `S${ep.seasonNumber} E${ep.episodeNumber}`} · ${ep.episodeTitle || "Nouvel épisode"}`
+            subtitle: `${ep.seasonNumber == null ? "" : `S${ep.seasonNumber} E${ep.episodeNumber}`} · ${ep.episodeTitle || "Nouvel épisode"}${ep.releaseTime ? ` · ${ep.releaseTime}` : ""}`
           })),
-          date
+          calendarDayLabel(date)
         );
       }
       if (!episodes.length)

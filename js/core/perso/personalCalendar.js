@@ -6,6 +6,11 @@ import {
   boundedMap,
   safeArtwork
 } from "./personalContext.js";
+import {
+  enrichEpisodeReleaseTimes,
+  episodeReleaseLocalDate,
+  episodeReleaseLocalTime
+} from "../util/episodeReleaseTime.js";
 
 const DAY_MS = 86_400_000;
 export const CALENDAR_LIMITS = Object.freeze({
@@ -35,18 +40,12 @@ export function calendarDayIndex(value) {
   return validDate(value) ? Date.parse(`${value}T00:00:00Z`) / DAY_MS : null;
 }
 
-/** Plain dates stay unchanged; an instant belongs to the viewer's local day. */
+/**
+ * The viewer's local day of a release (nuv-087): an exact instant by its local date, a bare US
+ * date (or midnight UTC) by the night it reaches the viewer, 02:00 UTC the next day.
+ */
 export function calendarReleaseDate(raw) {
-  const value = String(raw || "").trim();
-  if (validDate(value)) return value;
-  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-    if (!validDate(value.slice(0, 10))) return null;
-    const date = new Date(value);
-    if (Number.isFinite(date.getTime())) return localDate(date);
-    return null;
-  }
-  const embedded = value.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0];
-  return embedded && validDate(embedded) ? embedded : null;
+  return episodeReleaseLocalDate(raw);
 }
 
 export function followedCalendarShows(library, progress, nowMs = Date.now()) {
@@ -96,6 +95,7 @@ export function calendarEpisodes(meta, show, nowMs = Date.now()) {
         episodeNumber: video.episode ?? null,
         episodeTitle: video.title || video.name || null,
         releaseDate,
+        releaseTime: episodeReleaseLocalTime(video.released),
         sources: [...show.sources],
         videoId
       }
@@ -117,10 +117,11 @@ const defaultSources = {
     const { metaRepository } = await import("../../data/repository/metaRepository.js");
     if (!valid()) return null;
     const cached = metaRepository.getCachedMeta(show.type, show.id);
-    if (cached) return cached;
+    if (cached) return enrichEpisodeReleaseTimes(cached, show.id);
     const result = await metaRepository.getMetaFromAllAddons(show.type, show.id);
     if (result.status !== "success") throw new Error("Episode metadata unavailable");
-    return result.data;
+    // Exact air times (TVmaze) for recent and upcoming episodes; unchanged on failure.
+    return enrichEpisodeReleaseTimes(result.data, show.id);
   }
 };
 

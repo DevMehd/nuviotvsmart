@@ -1,5 +1,6 @@
 import { PlayerController } from "../../../core/player/playerController.js";
 
+import { episodeReleaseLocalDay, withEpisodeReleaseTime } from "../../../core/util/episodeReleaseTime.js";
 import {
   audioTrackLabelConflictsWithCodec,
   formatAudioCodecName,
@@ -400,11 +401,9 @@ export function formatEpisodePanelDate(value = "") {
     return "";
   }
   const localDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
-  const parsed =
-    localDateMatch && !raw.includes("T")
-      ? new Date(Number(localDateMatch[1]), Number(localDateMatch[2]) - 1, Number(localDateMatch[3]))
-      : new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
+  // The day the episode reaches the viewer (nuv-087): a bare US date shows the next day.
+  const parsed = episodeReleaseLocalDay(raw);
+  if (!parsed || Number.isNaN(parsed.getTime())) {
     return "";
   }
   try {
@@ -422,7 +421,9 @@ export function formatNextEpisodeAirDate(value = "") {
   const raw = String(value || "").trim();
   const datePortion = raw.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || "";
   const dateLabel = formatEpisodePanelDate(raw) || formatEpisodePanelDate(datePortion);
-  return dateLabel ? t("cw_airs_date", [dateLabel], "Airs %1$s") : t("next_episode_not_aired_yet", {}, "Next episode hasn't aired yet");
+  return dateLabel
+    ? withEpisodeReleaseTime(t("cw_airs_date", [dateLabel], "Airs %1$s"), raw)
+    : t("next_episode_not_aired_yet", {}, "Next episode hasn't aired yet");
 }
 
 export function episodeDisplayCode(episode = {}) {

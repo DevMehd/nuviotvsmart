@@ -1,25 +1,11 @@
+import { episodeReleaseEpochMs } from "../../../core/util/episodeReleaseTime.js";
+
 const VALID_NEXT_EPISODE_THRESHOLD_MODES = new Set(["PERCENTAGE", "MINUTES_BEFORE_END"]);
 const OUTRO_SEGMENT_TYPES = new Set(["outro", "ed", "mixed-ed"]);
-const ISO_DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/;
 
 function parseEpisodeReleaseInstant(value) {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return null;
-  }
-
-  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
-  const parsed = Date.parse(dateOnly ? `${raw}T00:00:00.000Z` : raw);
-  if (Number.isFinite(parsed)) {
-    return parsed;
-  }
-
-  const embeddedDate = raw.match(ISO_DATE_PATTERN)?.[0] || "";
-  if (!embeddedDate) {
-    return null;
-  }
-  const embeddedParsed = Date.parse(`${embeddedDate}T00:00:00.000Z`);
-  return Number.isFinite(embeddedParsed) ? embeddedParsed : null;
+  // Shared rule (nuv-087): a bare US date is released the next night (02:00 UTC).
+  return episodeReleaseEpochMs(value);
 }
 
 function hasEpisodeAired(value, now = Date.now()) {

@@ -2,6 +2,7 @@ import { safeApiCall } from "../../core/network/safeApiCall.js";
 import { addonRepository } from "./addonRepository.js";
 import { MetaApi } from "../remote/api/metaApi.js";
 import { BoundedMap } from "../../core/storage/boundedMap.js";
+import { enrichEpisodeReleaseTimes } from "../../core/util/episodeReleaseTime.js";
 
 const INSTALLED_ADDONS_WAIT_MS = 750;
 
@@ -192,6 +193,7 @@ class MetaRepository {
         const result = await this.getMeta(addon.baseUrl, candidateType, id);
         if (result.status === "success") {
           this.metaCache.set(cacheKey, result.data);
+          this.scheduleEpisodeReleaseTimes(cacheKey, result.data, id);
           return result;
         }
       }
@@ -205,6 +207,21 @@ class MetaRepository {
     } finally {
       this.inFlightMetaAll.delete(cacheKey);
     }
+  }
+
+  /**
+   * Exact air times (TVmaze) for recent and upcoming episodes, applied in the background so a
+   * metadata request never waits for them; later reads of the cache get the exact times (nuv-087).
+   */
+  scheduleEpisodeReleaseTimes(cacheKey, meta, id) {
+    if (!Array.isArray(meta?.videos) || !meta.videos.length) {
+      return;
+    }
+    enrichEpisodeReleaseTimes(meta, id).then((timed) => {
+      if (timed !== meta && this.metaCache.get(cacheKey) === meta) {
+        this.metaCache.set(cacheKey, timed);
+      }
+    });
   }
 
   getCachedMeta(type, id) {

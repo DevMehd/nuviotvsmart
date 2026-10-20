@@ -1,3 +1,5 @@
+import { episodeReleaseEpochMs } from "../../../core/util/episodeReleaseTime.js";
+
 /**
  * Whether a series the tracker no longer lists as watching may still offer a next episode.
  *
@@ -22,8 +24,7 @@ function parseReleaseEpochMs(released) {
   if (typeof released === "number") {
     return Number.isFinite(released) ? released : null;
   }
-  const parsed = Date.parse(String(released));
-  return Number.isNaN(parsed) ? null : parsed;
+  return episodeReleaseEpochMs(released);
 }
 
 export function shouldSurfaceNextUpForUntrackedSeries({
