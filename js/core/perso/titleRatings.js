@@ -56,16 +56,36 @@ export function createTitleRatings({
   space = PersoSpace,
   cloud = PersoCloud,
   now = () => Date.now(),
-  profileIndex = () => 1
+  profileIndex = () => 1,
+  timeoutMs = 10000,
+  pushDelayMs = 3000
 } = {}) {
-  let pushTimer = null;
+  const pushTimers = new Map();
+  const pendingPulls = new Map();
+  const timeout = async (callback) => {
+    let timer;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(callback),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Rating synchronization timeout")), timeoutMs);
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const listeners = new Set();
 
-  const cacheKey = () => `persoRatings_${profileIndex()}`;
-  const docKey = () => `ratings:${profileIndex()}`;
-  const all = () => store.get(cacheKey(), null) || {};
-  const save = (next) => {
-    store.set(cacheKey(), next);
+  const capture = () => ({ profileIndex: profileIndex(), space: { ...space.get() } });
+  const contextKey = (ctx) => `${ctx.space.spaceCode || ""}:${ctx.profileIndex}`;
+  const sameSpace = (ctx) => ctx.space.spaceCode === space.get().spaceCode;
+  const cacheKey = (ctx) => `persoRatings_${ctx?.profileIndex ?? profileIndex()}`;
+  const docKey = (ctx) => `ratings:${ctx?.profileIndex ?? profileIndex()}`;
+  const all = (ctx) => store.get(cacheKey(ctx), null) || {};
+  const save = (next, ctx) => {
+    store.set(cacheKey(ctx), next);
+    if (ctx && (ctx.profileIndex !== profileIndex() || !sameSpace(ctx))) return;
     listeners.forEach((fn) => {
       try {
         fn(next);
@@ -75,19 +95,21 @@ export function createTitleRatings({
     });
   };
 
-  async function spaceId() {
-    const config = space.get();
+  async function spaceId(ctx) {
+    const config = ctx?.space || space.get();
     if (!config.spaceCode || !cloud.available) return null;
-    return cloud.spaceId(config.spaceCode, "space", {
-      name: config.deviceName || "TV",
-      device: "vidaa"
-    });
+    return timeout(() =>
+      cloud.spaceId(config.spaceCode, "space", {
+        name: config.deviceName || "TV",
+        device: "vidaa"
+      })
+    );
   }
 
-  async function push() {
-    const id = await spaceId();
-    if (!id) return false;
-    return cloud.putDoc(id, docKey(), space.get().deviceId || "vidaa", all());
+  async function push(ctx) {
+    const id = await spaceId(ctx);
+    if (!id || !sameSpace(ctx)) return false;
+    return timeout(() => cloud.putDoc(id, docKey(ctx), ctx.space.deviceId || "vidaa", all(ctx)));
   }
 
   return {
@@ -96,30 +118,52 @@ export function createTitleRatings({
       return activeValue(all()[`${type}:${id}`]);
     },
     rate(type, id, name, poster, value) {
+      const ctx = capture();
       const key = `${type}:${id}`;
-      save({ ...all(), [key]: makeStamp(value, name, poster, now()) });
-      if (pushTimer) clearTimeout(pushTimer);
-      pushTimer = setTimeout(() => {
-        pushTimer = null;
-        push().catch(() => {});
-      }, 3000);
+      save({ ...all(ctx), [key]: makeStamp(value, name, poster, now()) }, ctx);
+      const timerKey = contextKey(ctx);
+      clearTimeout(pushTimers.get(timerKey));
+      pushTimers.set(
+        timerKey,
+        setTimeout(() => {
+          pushTimers.delete(timerKey);
+          push(ctx).catch(() => {});
+        }, pushDelayMs)
+      );
     },
-    async pull() {
-      const id = await spaceId();
-      if (!id) return false;
-      const docs = await cloud.getDocs(id, docKey());
-      if (!docs) return false;
-      let merged = all();
-      for (const payload of Object.values(docs)) merged = mergeRatings(merged, payload);
-      save(merged);
-      return true;
+    async pull(ctx = capture()) {
+      const key = contextKey(ctx);
+      if (pendingPulls.has(key)) return pendingPulls.get(key);
+      const work = (async () => {
+        try {
+          const id = await spaceId(ctx);
+          if (!id || !sameSpace(ctx)) return false;
+          const docs = await timeout(() => cloud.getDocs(id, docKey(ctx)));
+          if (!docs || !sameSpace(ctx)) return false;
+          let merged = all(ctx);
+          for (const payload of Object.values(docs)) merged = mergeRatings(merged, payload);
+          save(merged, ctx);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      })();
+      pendingPulls.set(key, work);
+      try {
+        return await work;
+      } finally {
+        pendingPulls.delete(key);
+      }
     },
     async recommendations() {
-      const id = await spaceId();
+      const ctx = capture();
+      const id = await spaceId(ctx);
       if (!id) return [];
-      const docs = await cloud.getDocs(id, `reco:${profileIndex()}`);
+      const docs = await timeout(() => cloud.getDocs(id, `reco:${ctx.profileIndex}`));
+      if (ctx.profileIndex !== profileIndex() || ctx.space.spaceCode !== space.get().spaceCode)
+        return [];
       const latest = pickLatestReco(docs || {});
-      const rated = all();
+      const rated = all(ctx);
       return (latest?.forYou || []).filter(
         (title) => title && title.id && activeValue(rated[`${title.type}:${title.id}`]) == null
       );

@@ -51,10 +51,12 @@ function nativeTextKeyIdentity(event) {
 
 const BACK_DEBOUNCE_MS = 250;
 const VIDAA_SELECT_KEY_CODE = 13;
+const VIDAA_ARROW_REPEAT_THROTTLE_MS = 90;
 
 export const FocusEngine = {
   lastBackHandledAt: 0,
   lastPointerFocusTarget: null,
+  lastVidaaArrowDispatchedAt: 0,
   pointerMoveFrame: null,
   pendingPointerMoveEvent: null,
   activeKeyDownStartedAt: new Map(),
@@ -191,6 +193,16 @@ export const FocusEngine = {
       if (normalizedEvent.keyCode === VIDAA_SELECT_KEY_CODE && normalizedEvent.repeat) {
         return;
       }
+      if (isArrowKey) {
+        const now = Date.now();
+        if (
+          normalizedEvent.repeat &&
+          now - this.lastVidaaArrowDispatchedAt < VIDAA_ARROW_REPEAT_THROTTLE_MS
+        ) {
+          return;
+        }
+        this.lastVidaaArrowDispatchedAt = now;
+      }
     }
 
     const currentScreen = Router.getCurrentScreen();
@@ -215,6 +227,9 @@ export const FocusEngine = {
       return;
     }
     noteVidaaNavigationKeyUp(normalizedEvent.keyCode);
+    if (normalizedEvent.keyCode >= 37 && normalizedEvent.keyCode <= 40) {
+      this.lastVidaaArrowDispatchedAt = 0;
+    }
     const keyIdentity = this.getKeyIdentity(normalizedEvent);
     if (
       Platform.isBackEvent({

@@ -1,5 +1,12 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-19 — 1.3.1
+
+- Typographie et icônes locales : JetBrains Sans et Material Icons sont désormais embarquées directement sur la télé, sans dépendre d'appels réseau Google Fonts externes. Démarrage et affichage plus fluides et réactifs.
+- Action « Pas pour moi » : appui long sur une affiche permet désormais de marquer un titre « Pas pour moi » (ou d'annuler le refus) directement sur la télé, synchronisé avec les recommandations personnelles partagées avec le mobile.
+- Performances d'affichage : hachage FNV-1a optimisé pour la réconciliation des flux et régulateur anti-patinage de 90 ms sur les répétitions de la télécommande pour un défilement ultra-fluide sans à-coups sur MT9602.
+- Optimisations mémoire et fluidité : activation de la virtualisation des listes de flux dès 40 éléments (au lieu de 100), libération instantanée des textures graphiques de flux lors du lancement du lecteur vidéo pour préserver la mémoire du décodeur 4K/HDR, et suspension des notifications réseau superflues lors des défilements continus à la télécommande.
+
 ## 2026-10-16 — 1.2.8
 
 - Diagnostic de lecture : chaque source que la télé n'arrive pas à lire (erreur, démarrage trop long, lien refusé) est notée avec la raison exacte, le format annoncé et ce que la télé sait décoder. Visible dans Paramètres → À propos → Console de débogage, et envoyé aux rapports privés de ton espace perso.

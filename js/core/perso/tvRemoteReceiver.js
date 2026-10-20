@@ -298,8 +298,13 @@ function handleCommand(text) {
   } catch (_error) {
     console.warn("Remote command failed", message.cmd, _error);
   }
-  // Let the player settle before reporting.
-  setTimeout(publishNow, plan.action === "state" ? 0 : 400);
+  // Only report state for explicit requests or playback-altering commands,
+  // avoiding network storms during fast remote D-pad navigation.
+  if (plan.action === "state") {
+    publishNow();
+  } else if (plan.action !== "key" && plan.action !== "home") {
+    setTimeout(publishNow, 400);
+  }
 }
 
 export const TvRemoteReceiver = {

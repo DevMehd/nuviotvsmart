@@ -1,0 +1,95 @@
+/* Mobile semantic identity, with the existing TV dimensions and cached bounds.
+   Keep image swaps/windowing in their owners: these rules add no layout tween,
+   blur, will-change layer or blanket animation reset (badge GIFs stay intact). */
+html.vidaa-tv .home-screen-shell .home-poster-card.focused .home-poster-frame {
+  border-color: var(--focus-color) !important;
+  box-shadow: 0 0 0 3px var(--focus-color) !important;
+}
+html.vidaa-tv .home-screen-shell .home-continue-card.focused .home-continue-media {
+  box-shadow:
+    inset 0 0 0 2px var(--focus-color),
+    0 0 0 3px var(--focus-color) !important;
+}
+html.vidaa-tv .stream-route-card.focused {
+  border-color: var(--focus-color);
+  background: var(--focus-bg);
+  box-shadow:
+    inset 0 0 0 2px var(--focus-color),
+    0 0 0 5px var(--focus-color);
+}
+html.vidaa-tv .series-primary-btn.focused {
+  background: var(--secondary-color);
+  color: var(--on-secondary);
+  border-color: var(--focus-color);
+}
+html.vidaa-tv .settings-action-row {
+  color: var(--text-color);
+}
+html.vidaa-tv .vidaa-detail-preview {
+  background: var(--bg-color);
+}
+
+/* Match mobile's fast feedback on the inner artwork, never outer card bounds.
+   Existing modern card expansion and its navigation timing remain authoritative. */
+html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-poster-frame,
+html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-continue-media,
+html.vidaa-tv .library-action-button,
+html.vidaa-tv .stream-route-card,
+html.vidaa-tv .series-detail-actions .series-primary-btn,
+html.vidaa-tv .series-detail-actions .series-circle-btn,
+html.vidaa-tv .series-season-btn,
+html.vidaa-tv .series-insight-tab,
+html.vidaa-tv .detail-morelike-card,
+html.vidaa-tv .movie-cast-card,
+html.vidaa-tv .settings-action-row {
+  transition: transform var(--motion-fast) var(--motion-standard) !important;
+  transition-delay: 0ms !important;
+}
+html.vidaa-tv.vidaa-balanced-motion .home-route-content-enter,
+html.vidaa-tv.vidaa-balanced-motion .addons-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .search-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .library-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .settings-route-enter,
+html.vidaa-tv.vidaa-balanced-motion .settings-slide-panel {
+  animation: vidaa-soft-reveal var(--motion-normal) var(--motion-standard) both !important;
+}
+html.vidaa-tv.vidaa-balanced-motion .vidaa-detail-preview-copy {
+  animation: vidaa-copy-enter var(--motion-normal) var(--motion-standard) both;
+}
+
+.perso-rating-overlay .perso-rating-choice {
+  transition: transform var(--motion-fast) var(--motion-standard);
+}
+.perso-rating-overlay .perso-discovery-card {
+  transition:
+    transform var(--motion-normal) var(--motion-standard),
+    opacity var(--motion-normal) var(--motion-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.vidaa-tv.vidaa-balanced-motion .home-route-content-enter,
+  html.vidaa-tv.vidaa-balanced-motion .addons-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .search-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .library-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .settings-route-enter,
+  html.vidaa-tv.vidaa-balanced-motion .settings-slide-panel,
+  html.vidaa-tv.vidaa-balanced-motion .vidaa-detail-preview-copy {
+    animation: none !important;
+  }
+  html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-poster-frame,
+  html.vidaa-tv.vidaa-balanced-motion .home-screen-shell .home-continue-media,
+  html.vidaa-tv .library-action-button,
+  html.vidaa-tv .stream-route-card,
+  html.vidaa-tv .series-detail-actions .series-primary-btn,
+  html.vidaa-tv .series-detail-actions .series-circle-btn,
+  html.vidaa-tv .series-season-btn,
+  html.vidaa-tv .series-insight-tab,
+  html.vidaa-tv .detail-morelike-card,
+  html.vidaa-tv .movie-cast-card,
+  html.vidaa-tv .settings-action-row,
+  .perso-rating-overlay .perso-rating-choice,
+  .perso-rating-overlay .perso-discovery-card {
+    transition: none !important;
+    transform: none !important;
+  }
+}

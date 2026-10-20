@@ -1,7 +1,8 @@
-// Five focusable rating buttons in the detail actions row (nuv-035). OK rates;
-// OK on the current rating removes it. Updates in place, no screen re-render.
-import { I18n } from "../../../i18n/index.js";
-import { RATING_SCALE, TitleRatings } from "../../../core/perso/titleRatings.js";
+// One secondary action opens the same five-level picker as mobile.
+// Keep the primary playback action readable instead of adding five focus stops.
+import { TitleRatings, ratingFor } from "../../../core/perso/titleRatings.js";
+import { showRatingDialog } from "../../components/persoRatingOverlays.js";
+import { renderPersonalPrediction } from "../perso/personalUi.js";
 
 function attr(value = "") {
   return String(value).replace(
@@ -9,22 +10,28 @@ function attr(value = "") {
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
 }
-
 export function renderPersoRatingButtons(type, id) {
   if (!type || !id) return "";
-  const current = TitleRatings.valueOf(type, id);
-  return RATING_SCALE.map((entry) => {
-    const label = I18n.t(entry.key, {}, { fallback: entry.fallback });
-    return `<button class="series-circle-btn focusable perso-rating-btn${entry.value === current ? " is-selected" : ""}" data-action="persoRate" data-rating="${entry.value}" aria-label="${attr(label)}" title="${attr(label)}" style="font-size:22px;line-height:1">${entry.emoji}</button>`;
-  }).join("");
+  const current = ratingFor(TitleRatings.valueOf(type, id));
+  const label = current ? `Ta note : ${current.fallback} · modifier` : "Noter ce titre";
+  return `<button class="series-circle-btn focusable perso-rating-btn${current ? " is-selected" : ""}" data-action="persoRate" aria-label="${attr(label)}" title="${attr(label)}" style="font-size:22px;line-height:1">${current?.emoji || "☆"}</button>`;
 }
-
-export function handlePersoRate(container, node, { type, id, name, poster }) {
-  const value = Number(node?.dataset?.rating);
-  if (!Number.isInteger(value) || !type || !id) return;
-  const next = TitleRatings.valueOf(type, id) === value ? null : value;
-  TitleRatings.rate(type, id, name, poster, next);
-  container?.querySelectorAll?.("[data-action='persoRate']").forEach((button) => {
-    button.classList.toggle("is-selected", next != null && Number(button.dataset.rating) === next);
+export function handlePersoRate(container, node, title) {
+  if (!title.type || !title.id) return;
+  showRatingDialog({
+    ...title,
+    onDone: () => {
+      if (!container?.contains(node)) return;
+      const current = ratingFor(TitleRatings.valueOf(title.type, title.id));
+      node.textContent = current?.emoji || "☆";
+      node.classList.toggle("is-selected", Boolean(current));
+      node.setAttribute(
+        "aria-label",
+        current ? `Ta note : ${current.fallback} · modifier` : "Noter ce titre"
+      );
+      node.title = node.getAttribute("aria-label");
+      const line = container.querySelector(".perso-prediction");
+      if (line) line.outerHTML = renderPersonalPrediction(title);
+    }
   });
 }

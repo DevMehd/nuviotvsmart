@@ -14,7 +14,8 @@ export function createHomeScreenMethods09() {
     isTitleItemWatched,
     isSeriesTypeForContinueWatching,
     normalizeContinueWatchingItem,
-    isCloudContinueWatchingItem
+    isCloudContinueWatchingItem,
+    TitleRatings
   } = internals;
 
   return {
@@ -284,6 +285,12 @@ export function createHomeScreenMethods09() {
         return this.openPosterListPicker(item);
       } else if (option.action === "toggleWatched") {
         await this.togglePosterWatched(item);
+      } else if (option.action === "toggleDisliked") {
+        const nextValue = this.posterHoldMenu?.isDisliked ? null : -1;
+        TitleRatings.rate(item.type, item.id, item.name || item.id || "Untitled", item.poster, nextValue);
+        if (this.posterHoldMenu) {
+          this.posterHoldMenu = { ...this.posterHoldMenu, isDisliked: !this.posterHoldMenu.isDisliked };
+        }
       } else {
         return false;
       }

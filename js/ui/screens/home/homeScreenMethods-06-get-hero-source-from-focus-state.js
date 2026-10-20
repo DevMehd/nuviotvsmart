@@ -10,7 +10,8 @@ export function createHomeScreenMethods06() {
     isPosterWatchedType,
     partitionContinueWatchingRows,
     normalizeContinueWatchingItem,
-    isCloudContinueWatchingItem
+    isCloudContinueWatchingItem,
+    TitleRatings
   } = internals;
 
   return {
@@ -124,6 +125,12 @@ export function createHomeScreenMethods06() {
             : t("hero_mark_watched", {}, "Mark as watched")
         });
       }
+      options.push({
+        action: "toggleDisliked",
+        label: this.posterHoldMenu?.isDisliked
+          ? t("perso_action_undo_dislike", {}, "Annuler le refus")
+          : t("perso_rating_disliked", {}, "Pas pour moi")
+      });
       return options;
     },
     renderPosterHoldMenu() {

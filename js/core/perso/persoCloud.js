@@ -100,7 +100,21 @@ export function createPersoCloud(options = {}) {
   async function request(path, init = {}, token = null) {
     const headers = { apikey: key, "Content-Type": "application/json", ...(init.headers || {}) };
     if (token) headers.Authorization = `Bearer ${token}`;
-    return fetchImpl(`${url}${path}`, { ...init, headers });
+    const controller = new AbortController();
+    let timer;
+    try {
+      return await Promise.race([
+        fetchImpl(`${url}${path}`, { ...init, headers, signal: controller.signal }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error("Personal synchronization timeout"));
+          }, options.requestTimeoutMs ?? 10000);
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function readSession(response) {

@@ -10,7 +10,8 @@ export function createHomeScreenMethods07() {
     isTitleItemWatched,
     NuvioDialog,
     t,
-    normalizeCatalogItem
+    normalizeCatalogItem,
+    TitleRatings
   } = internals;
 
   return {
@@ -261,6 +262,7 @@ export function createHomeScreenMethods07() {
         optionIndex: 0,
         isSaved: Boolean(isSaved),
         isWatched: Boolean(isWatched),
+        isDisliked: TitleRatings.valueOf(item.type, item.id) === -1,
         librarySourceMode
       };
       return this.mountPosterHoldDialog();
