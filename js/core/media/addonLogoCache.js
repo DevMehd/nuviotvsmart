@@ -21,6 +21,29 @@ export function normalizeAddonLogoUrl(value = "") {
   return getVidaaBadgeImageUrl(normalizeImageUrl(value));
 }
 
+// VIDAA displays logos and badges straight from their (already downsized) URL: converting
+// each image through a canvas into a data URL, then re-decoding that data URL in every
+// re-rendered source row, dominated the Sources screen on the TV. The HTTP cache keeps them.
+function usesVidaaDirectLogos() {
+  return Platform.isVidaa();
+}
+
+function warmVidaaDirectLogo(normalized) {
+  addonLogoCache.set(normalized, {
+    status: "direct",
+    displayUrl: normalized,
+    updatedAt: Date.now()
+  });
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    try {
+      image.referrerPolicy = "no-referrer";
+    } catch (_) {}
+    image.src = normalized;
+  } catch (_) {}
+}
+
 export function resetAddonLogoCache() {
   failedAddonLogoUrls.clear();
   addonLogoCache.clear();
@@ -44,6 +67,10 @@ export async function warmAddonLogoPreview(url = "") {
   }
   if (cached?.status === "loading") {
     return cached.promise || Promise.resolve(false);
+  }
+  if (usesVidaaDirectLogos()) {
+    warmVidaaDirectLogo(normalized);
+    return true;
   }
 
   const loadingEntry = { status: "loading", updatedAt: Date.now(), promise: null };
@@ -173,7 +200,10 @@ export function requestAddonLogo(url = "", onSettled = null) {
     return cached.promise || Promise.resolve(false);
   }
 
-  if ((Environment.isWebOS() || Platform.isTizen()) && !isWebOsImageProxyUrl(normalized)) {
+  if (
+    usesVidaaDirectLogos() ||
+    ((Environment.isWebOS() || Platform.isTizen()) && !isWebOsImageProxyUrl(normalized))
+  ) {
     addonLogoCache.set(normalized, {
       status: "direct",
       displayUrl: normalized,
@@ -316,6 +346,13 @@ function hydrateAddonLogoCache() {
     return;
   }
   addonLogoCacheHydrated = true;
+  if (usesVidaaDirectLogos()) {
+    // Data URLs persisted by earlier versions are no longer displayed: free the storage.
+    try {
+      LocalStore.remove(ADDON_LOGO_CACHE_KEY);
+    } catch (_) {}
+    return;
+  }
   if (Platform.isTizen()) {
     return;
   }
@@ -336,7 +373,7 @@ function hydrateAddonLogoCache() {
 }
 
 function persistAddonLogoCache() {
-  if (Platform.isTizen()) {
+  if (Platform.isTizen() || usesVidaaDirectLogos()) {
     return;
   }
   addonLogoCachePersistTimer = null;
