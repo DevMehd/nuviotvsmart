@@ -120,7 +120,9 @@ export function createPlayerScreenMethods47() {
         return;
       }
 
-      this.selectedAudioTrackIndex = audioTracks.findIndex((track) => Boolean(track?.enabled || track?.selected));
+      this.selectedAudioTrackIndex = audioTracks.findIndex((track) =>
+        Environment.isVidaa() && typeof track?.enabled === "boolean" ? track.enabled : Boolean(track?.enabled || track?.selected)
+      );
       this.invalidateTrackDialogCaches();
     },
     isSubtitleOffEntrySelected(nativeTrackIndex = this.selectedSubtitleTrackIndex) {

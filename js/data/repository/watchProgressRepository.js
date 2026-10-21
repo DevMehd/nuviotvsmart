@@ -13,7 +13,19 @@ import { TraktAuthService } from "./traktAuthService.js";
 import { SimklAuthStore } from "../local/simklAuthStore.js";
 import { SimklSyncService } from "./simklSyncService.js";
 import { metaRepository } from "./metaRepository.js";
-import { watchedItemsRepository } from "./watchedItemsRepository.js";
+import {
+  invalidateTraktWatchedMoviesCache,
+  invalidateTraktWatchedShowsCache,
+  watchedItemsRepository
+} from "./watchedItemsRepository.js";
+import {
+  applyTraktLastActivities,
+  getTraktActivityActionGeneration,
+  getTraktActivityState,
+  requestTraktRefreshAfterWatchAction,
+  resetTraktActivityState,
+  useTraktActivityScope
+} from "./traktActivityRefreshState.js";
 import { watchedItemIdentityValues, watchedItemsShareIdentity } from "./watchedIdentity.js";
 import { mapWithConcurrency } from "../../core/network/mapWithConcurrency.js";
 import { getSyncBackoffRemainingMs } from "../../core/sync/syncBackoffPolicy.js";
@@ -139,6 +151,7 @@ function stopWatchProgressCloudSync({ waitForInFlight = true } = {}) {
   traktProgressSnapshotCache = null;
   traktProgressSnapshotInFlight = null;
   traktProgressSnapshotGeneration = watchProgressSyncGeneration;
+  resetTraktActivityState();
   remoteProgressLoadState.clear();
   if (!waitForInFlight || pending.length === 0) {
     return Promise.resolve(true);
@@ -534,96 +547,166 @@ function toWatchedShowSeedItems(watchedShowItem) {
   });
 }
 
+function traktProgressAccountKey(profileId) {
+  const auth = TraktAuthStore.get(profileId);
+  return JSON.stringify([
+    auth.userSlug || auth.username || "",
+    auth.userSlug || auth.username ? "" : auth.refreshToken
+  ]);
+}
+
+async function readTraktActivityChange() {
+  try {
+    const activities = await withTimeout(
+      TraktAuthService.fetchLastActivities(),
+      TRAKT_API_TIMEOUT_MS,
+      undefined
+    );
+    // A successful response without a usable body counts as a change, as on Android.
+    return activities === undefined ? null : (activities ?? true);
+  } catch (_) {
+    return null;
+  }
+}
+
 async function fetchTraktProgressSnapshot() {
-  const useTraktProgress = selectedContinueWatchingSource() === WatchProgressSource.TRAKT;
-  if (!useTraktProgress || !TraktAuthStore.isAuthenticated()) {
+  if (
+    selectedContinueWatchingSource() !== WatchProgressSource.TRAKT ||
+    !TraktAuthStore.isAuthenticated()
+  ) {
     return { historyItems: [], playbackItems: [], watchedShowSeedItems: [] };
   }
-
   const profileId = activeProfileId();
-  setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "loading");
+  const accountKey = traktProgressAccountKey(profileId);
+  const generation = watchProgressSyncGeneration;
+  const actionGeneration = getTraktActivityActionGeneration();
+  const activity = useTraktActivityScope(`${profileId}:${accountKey}`);
+  const current = () =>
+    generation === watchProgressSyncGeneration &&
+    activeProfileId() === profileId &&
+    selectedContinueWatchingSource() === WatchProgressSource.TRAKT &&
+    TraktAuthStore.isAuthenticated(profileId) &&
+    traktProgressAccountKey(profileId) === accountKey &&
+    getTraktActivityState() === activity;
+  const cacheMatches = () =>
+    traktProgressSnapshotCache?.profileId === profileId &&
+    traktProgressSnapshotCache.accountKey === accountKey;
   const now = Date.now();
+  const forceDeadline = activity.forceRefreshUntilMs;
+  const force = now < forceDeadline;
+  const progressRecheckPending =
+    activity.progressRecheckAtMs > 0 && activity.progressRecheckAtMs <= now;
   if (
-    traktProgressSnapshotCache &&
-    traktProgressSnapshotCache.profileId === profileId &&
-    now - Number(traktProgressSnapshotCache.fetchedAt || 0) < TRAKT_PROGRESS_SNAPSHOT_TTL_MS
+    !force &&
+    !progressRecheckPending &&
+    cacheMatches() &&
+    now >= traktProgressSnapshotCache.fetchedAt &&
+    now - traktProgressSnapshotCache.fetchedAt < TRAKT_PROGRESS_SNAPSHOT_TTL_MS
   ) {
     setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "loaded");
     return traktProgressSnapshotCache.snapshot;
   }
   if (
-    traktProgressSnapshotInFlight &&
-    traktProgressSnapshotGeneration === watchProgressSyncGeneration
+    traktProgressSnapshotInFlight?.profileId === profileId &&
+    traktProgressSnapshotInFlight.accountKey === accountKey &&
+    traktProgressSnapshotGeneration === generation &&
+    traktProgressSnapshotInFlight.actionGeneration === actionGeneration
   ) {
-    return traktProgressSnapshotInFlight;
+    return traktProgressSnapshotInFlight.promise;
   }
-
-  const generation = watchProgressSyncGeneration;
   traktProgressSnapshotGeneration = generation;
-  let snapshotPromise = null;
+  let snapshotPromise;
   snapshotPromise = (async () => {
+    // Read last_activities on forced refreshes too, so the fingerprints and stale
+    // flags already include this refresh's changes and the next poll skips them.
+    const activityChanged = applyTraktLastActivities(await readTraktActivityChange());
+    if (!current()) throw new Error("Obsolete Trakt progress request");
+    if (activityChanged === true) activity.activityRefreshPending = true;
+    const hasSnapshot = cacheMatches();
+    const shouldRefresh =
+      activity.activityRefreshPending || (activityChanged === null && !hasSnapshot);
+    const progressRecheckDue =
+      !force && activity.progressRecheckAtMs > 0 && activity.progressRecheckAtMs <= Date.now();
+    if (hasSnapshot && !force && !shouldRefresh && !progressRecheckDue) {
+      // Nothing changed on Trakt: keep the snapshot. Only a successful
+      // last_activities read renews it; an unreadable one retries next time.
+      if (activityChanged === false) traktProgressSnapshotCache.fetchedAt = Date.now();
+      setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "loaded");
+      return traktProgressSnapshotCache.snapshot;
+    }
+    setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "loading");
+    // With last_activities read, the stale flags say which watched lists changed.
+    // Only refetch both when it could not be read.
+    if (force && activityChanged === null) {
+      activity.watchedMoviesStale = true;
+      activity.watchedShowsStale = true;
+    }
+    const watchedMoviesStale = activity.watchedMoviesStale;
+    const watchedShowsStale = activity.watchedShowsStale;
+    if (watchedMoviesStale) invalidateTraktWatchedMoviesCache();
+    const reuseWatchedShows = hasSnapshot && !watchedShowsStale;
+    if (!reuseWatchedShows) invalidateTraktWatchedShowsCache();
     const [history, playbackState, watchedShows] = await Promise.all([
-      withTimeout(
-        TraktAuthService.fetchWatchHistory({ limit: 300 }),
-        TRAKT_API_TIMEOUT_MS,
-        []
-      ).catch((err) => {
-        console.warn("[CW] Trakt history fetch failed", err);
-        return [];
-      }),
-      withTimeout(
-        TraktAuthService.fetchPlaybackState({ limit: 50 }),
-        TRAKT_API_TIMEOUT_MS,
-        []
-      ).catch((err) => {
-        console.warn("[CW] Trakt playback state fetch failed", err);
-        return [];
-      }),
-      withTimeout(
-        watchedItemsRepository.getRemoteTraktWatchedShows(),
-        TRAKT_API_TIMEOUT_MS,
-        []
-      ).catch((err) => {
-        console.warn("[CW] Trakt watched shows fetch failed", err);
-        return [];
-      })
+      withTimeout(TraktAuthService.fetchWatchHistory({ limit: 300 }), TRAKT_API_TIMEOUT_MS, null),
+      withTimeout(TraktAuthService.fetchPlaybackState({ limit: 50 }), TRAKT_API_TIMEOUT_MS, null),
+      reuseWatchedShows
+        ? null
+        : withTimeout(
+            watchedItemsRepository.getRemoteTraktWatchedShows({ strict: true }),
+            TRAKT_API_TIMEOUT_MS,
+            null
+          )
     ]);
-
-    const watchedShowSeedItems = [];
-    watchedShows.forEach((watchedShow) => {
-      Array.prototype.push.apply(watchedShowSeedItems, toWatchedShowSeedItems(watchedShow));
-    });
-
+    if (!current()) throw new Error("Obsolete Trakt progress request");
+    if (
+      ![history, playbackState].every(Array.isArray) ||
+      (!reuseWatchedShows && !Array.isArray(watchedShows))
+    ) {
+      throw new Error("Incomplete Trakt progress snapshot");
+    }
+    let watchedShowSeedItems;
+    if (reuseWatchedShows) {
+      watchedShowSeedItems = traktProgressSnapshotCache.snapshot.watchedShowSeedItems;
+    } else {
+      watchedShowSeedItems = [];
+      watchedShows.forEach((show) => watchedShowSeedItems.push(...toWatchedShowSeedItems(show)));
+    }
     const snapshot = {
       historyItems: history.map(toProgressItemFromTraktHistory).filter(Boolean),
       playbackItems: playbackState.map(toProgressItemFromPlayback).filter(Boolean),
       watchedShowSeedItems
     };
-    if (generation !== watchProgressSyncGeneration) {
-      return { historyItems: [], playbackItems: [], watchedShowSeedItems: [] };
+    traktProgressSnapshotCache = { profileId, accountKey, fetchedAt: Date.now(), snapshot };
+    setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "loaded");
+    activity.activityRefreshPending = false;
+    if (watchedShowsStale && !reuseWatchedShows) activity.watchedShowsStale = false;
+    if (watchedMoviesStale) activity.watchedMoviesStale = false;
+    if (progressRecheckDue) activity.progressRecheckAtMs = 0;
+    // One completed forced refresh is enough; later changes show up in last_activities.
+    // Playback and history are still checked once more after the force window.
+    if (force && activity.forceRefreshUntilMs === forceDeadline) {
+      activity.forceRefreshUntilMs = 0;
+      activity.progressRecheckAtMs = forceDeadline;
     }
-    traktProgressSnapshotCache = {
-      profileId,
-      fetchedAt: Date.now(),
-      snapshot
-    };
     return snapshot;
   })()
-    .then((snapshot) => {
-      setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "loaded");
-      return snapshot;
-    })
     .catch((error) => {
+      if (!current()) throw error;
       setRemoteProgressLoadState(WatchProgressSource.TRAKT, profileId, "error");
+      // Do not extend the TTL: the next reconciliation must retry the failed read.
+      if (cacheMatches()) return traktProgressSnapshotCache.snapshot;
       throw error;
     })
     .finally(() => {
-      if (traktProgressSnapshotInFlight === snapshotPromise) {
+      if (traktProgressSnapshotInFlight?.promise === snapshotPromise)
         traktProgressSnapshotInFlight = null;
-      }
     });
-
-  traktProgressSnapshotInFlight = snapshotPromise;
+  traktProgressSnapshotInFlight = {
+    profileId,
+    accountKey,
+    actionGeneration,
+    promise: snapshotPromise
+  };
   return snapshotPromise;
 }
 
@@ -806,6 +889,8 @@ class WatchProgressRepository {
       WatchProgressStore.remove(contentId, videoId, pid);
     }
     await deleteWatchProgressFromCloud(removedItems, pid);
+    // Android removeProgress() -> refreshNow(): force the next reconciliation.
+    requestTraktRefreshAfterWatchAction();
     invalidateContinueWatchingDisplaySnapshot();
     queueWatchProgressCloudSync(pid);
   }

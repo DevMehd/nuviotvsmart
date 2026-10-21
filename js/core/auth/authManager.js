@@ -6,7 +6,14 @@ import { PluginCodeStore } from "../../data/local/pluginCodeStore.js";
 import { ServerConfigurationStore } from "../../data/local/serverConfigurationStore.js";
 import { accountAuthorizationHeaders } from "../server/serverConfiguration.js";
 import {
+  archivePreviousAccountData,
+  finishAccountBackendMigration,
+  isSessionForActiveBackend
+} from "./accountSessionScope.js";
+import {
+  cancelPendingSessionRequests,
   notifySessionTeardownHandlers,
+  trackSessionRequest,
   waitForPendingSessionRequests
 } from "./sessionLifecycle.js";
 
@@ -183,16 +190,24 @@ class AuthManagerClass {
       localStorage.setItem("nuvioSharedBackendV1", configuration.backendUrl);
     }
     if (ServerConfigurationStore.getActive().isLocal) {
-      if (SessionStore.accessToken || SessionStore.refreshToken) {
+      // Session getters are scoped to the active backend; a previous account's raw tokens
+      // still mean its data must be cleared before the local profiles mount.
+      const storedSession =
+        localStorage.getItem("access_token") || localStorage.getItem("refresh_token");
+      if (SessionStore.accessToken || SessionStore.refreshToken || storedSession) {
         await this._teardownAccountSession({
           serverSwitch: true,
           verify: true,
+          resetLocalData: Boolean(storedSession),
           notifyState: false
         });
       }
       this.setState(AuthState.SIGNED_OUT);
       return;
     }
+    // Official/custom accounts: a session from another backend is archived and cleared; an
+    // untagged official session is adopted (accountSessionScope), never signed out.
+    if (!ServerConfigurationStore.getActive().isShared) await this.ensureAccountBackendScope();
     const token = SessionStore.accessToken;
 
     if (!token) {
@@ -216,6 +231,19 @@ class AuthManagerClass {
     }
 
     this.setState(AuthState.AUTHENTICATED);
+  }
+
+  async ensureAccountBackendScope() {
+    if (isSessionForActiveBackend()) return;
+    archivePreviousAccountData();
+    const cleared = await this._teardownAccountSession({
+      serverSwitch: true,
+      verify: true,
+      resetLocalData: true,
+      notifyState: false
+    });
+    if (!cleared) throw new Error("Unable to isolate the previous account session");
+    finishAccountBackendMigration();
   }
 
   getAuthState() {
@@ -347,6 +375,7 @@ class AuthManagerClass {
         // Abort is best effort on older TV runtimes.
       }
     }
+    cancelPendingSessionRequests();
 
     let sessionStorageCleared = true;
     try {
@@ -371,12 +400,11 @@ class AuthManagerClass {
     });
     const sessionRequestsDrained = await waitForPendingSessionRequests();
 
-    // Notify the UI only after teardown listeners have captured and drained
-    // their in-flight work. The app-level signed-out listener also calls
-    // StartupSyncService.stop(), so changing state earlier would discard the
-    // promises we need to await here.
+    // Stop authenticated work after the old requests have drained. Defer UI
+    // listeners until local cleanup finishes and a fresh auth signal is ready:
+    // the signed-out listener immediately mounts and starts the next QR login.
     if (!wasSignedOut && notifyState) {
-      this.setState(AuthState.SIGNED_OUT);
+      this.state = AuthState.SIGNED_OUT;
     }
 
     let accountDataCleared = true;
@@ -403,6 +431,10 @@ class AuthManagerClass {
     // before the switch remain cancelled, while the next auth/QR attempt can
     // use a live signal without waiting for a page reload.
     this.sessionAbortController = createAbortController();
+
+    if (!wasSignedOut && notifyState) {
+      this.setState(AuthState.SIGNED_OUT);
+    }
 
     if (!verify) {
       return true;
@@ -446,9 +478,9 @@ class AuthManagerClass {
       return true;
     }
 
+    const generation = this.sessionGeneration;
     this.refreshPromise = (async () => {
       try {
-        const generation = this.sessionGeneration;
         const key = publishableKey();
         const res = await fetchSupabaseAuth("/auth/v1/token?grant_type=refresh_token", {
           method: "POST",
@@ -459,6 +491,7 @@ class AuthManagerClass {
           body: JSON.stringify({ refresh_token: refreshToken }),
           signal: this.getSessionSignal()
         });
+        if (generation !== this.sessionGeneration) return false;
         if (!res.ok) {
           const responseBody = await res.text();
           if (isInvalidRefreshResponse(res.status, responseBody)) {
@@ -486,6 +519,9 @@ class AuthManagerClass {
         this.lastRefreshFailureKind = null;
         return true;
       } catch (error) {
+        // Teardown cancels requests even on TVs without native abort support.
+        // A cancelled refresh must not report the previous token as usable.
+        if (generation !== this.sessionGeneration) return false;
         console.warn("Session refresh failed", error);
         if (accessToken) {
           this.lastRefreshFailureKind = "transient";
@@ -679,7 +715,13 @@ class AuthManagerClass {
   // EFFECTIVE USER ID (PORTING CACHE LOGIC)
   // ------------------------------------
 
-  async getEffectiveUserId() {
+  getEffectiveUserId() {
+    // Sync services await the whole owner lookup during teardown. Tracking
+    // only its individual fetches would leave a cycle if refresh signs out.
+    return trackSessionRequest(this._resolveEffectiveUserId());
+  }
+
+  async _resolveEffectiveUserId() {
     if (this.cachedEffectiveUserId) return this.cachedEffectiveUserId;
     const generation = this.sessionGeneration;
 

@@ -194,6 +194,7 @@ export function createHomeScreenMethods12() {
       }
       const activeFrame = container.querySelector("iframe");
       if (activeFrame) {
+        activeFrame.dataset.ambientTrailerPlaying = "false";
         try {
           activeFrame.contentWindow?.postMessage(
             {
@@ -267,6 +268,8 @@ export function createHomeScreenMethods12() {
       this.homeActiveTrailerLayers?.forEach((layer) => this.scheduleTrailerLayerCleanup(layer));
     },
     clearHomeTrailerLayers() {
+      this.collectionHeroMediaKey = "";
+      this.heroTrailerPlaybackState = null;
       reconcileHomeFocusMediaTracking(this);
       this.homeActiveTrailerLayers?.forEach((layer) => this.clearTrailerLayer(layer));
       this.homeActiveTrailerLayers?.clear();

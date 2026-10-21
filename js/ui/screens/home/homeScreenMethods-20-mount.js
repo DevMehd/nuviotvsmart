@@ -1,3 +1,4 @@
+import { nextShuffleVisit } from "../../../core/player/episodeShuffle.js";
 import * as internals from "./homeScreenContext.js";
 import { refreshPersonalHome } from "../perso/personalUi.js";
 
@@ -25,6 +26,7 @@ export function createHomeScreenMethods20() {
 
   return {
     async mount(params = {}, navigationContext = {}) {
+      this.shuffleVisit = nextShuffleVisit();
       const mountStart = HOME_PERF_DEBUG ? homePerfNow() : 0;
       const isBackNavigation = Boolean(navigationContext?.isBackNavigation);
       this.container = document.getElementById("home");

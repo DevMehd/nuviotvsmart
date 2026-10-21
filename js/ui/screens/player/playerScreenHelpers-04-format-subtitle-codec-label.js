@@ -79,8 +79,6 @@ import { StreamBadgeSettingsStore } from "../../../data/local/streamBadgeSetting
 
 import { TorrentSettingsStore } from "../../../data/local/torrentSettingsStore.js";
 
-import { WebOsAudioCompatibilityStore } from "../../../data/local/webOsAudioCompatibilityStore.js";
-
 import { matchStreamBadges } from "../../../core/streams/streamBadgeRules.js";
 
 import { hasReleaseToken } from "../../../core/streams/releaseToken.js";
@@ -443,15 +441,23 @@ export function isUnsupportedWebOsAudioTrack(track = {}) {
 
 export function getAudioTrackSupportState(track = {}) {
   if (Environment.isVidaa()) {
-    // VIDAA (nuv-089): a track whose codec the TV declares it cannot decode plays without sound.
+    // VIDAA (nuv-089): a TrueHD/DTS track the TV declares it cannot decode plays without sound.
+    // Only those codecs, and only when the TV answered from a real media element.
     const key = audioCodecCapabilityKey(getAuthoritativeAudioCodecValue(track) || getTrackMetadataStrings(track).join(" "));
     let unsupported = false;
     try {
-      unsupported = Boolean(key) && isAudioCodecDeclaredUnsupported(playbackCapabilities()[key]);
+      unsupported =
+        (key === "truehd" || key === "dts") &&
+        typeof globalThis.document?.createElement === "function" &&
+        isAudioCodecDeclaredUnsupported(playbackCapabilities()[key]);
     } catch (_error) {
       unsupported = false;
     }
-    return { supported: !unsupported, canTryAudioConversion: false, unsupportedReason: unsupported ? "codec" : null };
+    return {
+      supported: !unsupported,
+      canTryAudioConversion: false,
+      unsupportedReason: unsupported ? "codec" : null
+    };
   }
   const supported = !isUnsupportedWebOsAudioTrack(track);
   return {

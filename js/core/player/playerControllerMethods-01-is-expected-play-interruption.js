@@ -2,15 +2,7 @@
 import * as internals from "./playerController.js";
 
 export function createPlayerControllerMethods01() {
-  const {
-    Platform,
-    nativeVideoEngine,
-    hlsJsEngine,
-    dashJsEngine,
-    resolvePlatformAvplayEngine,
-    applyWebOsAudioCodecOverrides,
-    detectWebOsAudioCapabilities
-  } = internals;
+  const { Platform, nativeVideoEngine, hlsJsEngine, dashJsEngine, resolvePlatformAvplayEngine, detectWebOsAudioCapabilities } = internals;
 
   return {
     isExpectedPlayInterruption(error) {
@@ -213,6 +205,7 @@ export function createPlayerControllerMethods01() {
       return nativeVideoEngine.canPlay(this.video, mimeType);
     },
     isUnsupportedSourceError(error) {
+      if (String(error?.name || "").toLowerCase() === "notsupportederror") return true;
       const message = String(error?.message || "").toLowerCase();
       return message.includes("no supported source") || message.includes("no supported sources") || message.includes("not supported");
     },
@@ -281,22 +274,8 @@ export function createPlayerControllerMethods01() {
 
       return this.webosDeviceInfoPromise;
     },
-    setWebOsAudioCodecOverrides({ forceDtsAudio = false, forceTrueHdAudio = false } = {}) {
-      this.forceDtsAudio = Boolean(forceDtsAudio);
-      this.forceTrueHdAudio = Boolean(forceTrueHdAudio);
-    },
-    setForceDtsTrueHdAudio(enabled) {
-      const forceAll = Boolean(enabled);
-      this.setWebOsAudioCodecOverrides({
-        forceDtsAudio: forceAll,
-        forceTrueHdAudio: forceAll
-      });
-    },
     getWebOsUnsupportedAudioCodecs() {
-      return applyWebOsAudioCodecOverrides(this.webosUnsupportedAudioCodecs, {
-        forceDtsAudio: this.forceDtsAudio,
-        forceTrueHdAudio: this.forceTrueHdAudio
-      });
+      return Array.from(this.webosUnsupportedAudioCodecs);
     },
     getWebOsUnsupportedAudioPenalty(text = "") {
       const unsupportedAudioCodecs = new Set(this.getWebOsUnsupportedAudioCodecs());

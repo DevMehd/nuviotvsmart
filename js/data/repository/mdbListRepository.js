@@ -1,12 +1,14 @@
 import { MDBLIST_API_BASE_URL } from "../../config.js";
 import { MdbListSettingsStore } from "../local/mdbListSettingsStore.js";
 import { parseMdbListRottenTomatoesPayload } from "../../core/util/mdbListRatingStatus.js";
+import { parseMdbListMediaRatings } from "../../core/util/mdbListRatingStatus.js";
+import { TmdbService } from "../../core/tmdb/tmdbService.js";
 import { withRequestTimeout } from "../../core/network/requestTimeout.js";
 import { Platform } from "../../platform/index.js";
 import { PluginServiceClient } from "../../platform/pluginServiceClient.js";
 
-const CACHE_MAX_ITEMS = 200;
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const CACHE_MAX_ITEMS = 200;
 const REQUEST_TIMEOUT_MS = 10000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const API_BASE_URL = String(MDBLIST_API_BASE_URL || "https://api.mdblist.com/").replace(/\/+$/, "");
@@ -151,36 +153,10 @@ async function requestJson(path, apiKey, includeKeywords = false) {
   }, REQUEST_TIMEOUT_MS);
 }
 
-function validRating(value, maximum = 100) {
-  if (!["string", "number"].includes(typeof value) || String(value).trim() === "") return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 0 && numeric <= maximum ? numeric : null;
-}
-
 function parseRatings(payload) {
   if (!payload || !Array.isArray(payload.ratings)) return null;
-  const entries = payload.ratings.map((entry) => ({
-    source: String(entry?.source || "")
-      .trim()
-      .toLowerCase(),
-    value: validRating(entry?.value),
-    score: validRating(entry?.score)
-  }));
-  const ratings = Object.fromEntries(
-    PROVIDERS.map(({ key, sources, maximum }) => [
-      key,
-      entries
-        .filter((entry) => sources.includes(entry.source) && entry.value != null)
-        .map((entry) =>
-          validRating(
-            key === "letterboxd" && entry.score != null ? entry.score / 20 : entry.value,
-            maximum
-          )
-        )
-        .find((value) => value != null) ?? null
-    ])
-  );
-  const status = parseMdbListRottenTomatoesPayload(payload);
+  const status = parseMdbListMediaRatings(payload);
+  const ratings = Object.fromEntries(PROVIDERS.map(({ key }) => [key, status[key] ?? null]));
   return {
     ...ratings,
     tomatoesCertified: ratings.tomatoes != null && status.tomatoesCertified,
@@ -209,7 +185,14 @@ function filterRatings(ratings, settings) {
 
 async function getRatings(meta, fallbackItemId, fallbackItemType, apiKey) {
   const mediaType = normalizeMediaType(meta?.apiType || meta?.type || fallbackItemType);
-  const mediaId = resolveMediaId(meta, fallbackItemId, mediaType);
+  let mediaId = resolveMediaId(meta, fallbackItemId, mediaType);
+  if (!mediaId) {
+    const tmdbId = await TmdbService.ensureTmdbId(
+      meta?.id || fallbackItemId,
+      fallbackItemType
+    ).catch(() => null);
+    if (tmdbId) mediaId = { provider: "tmdb", id: String(tmdbId) };
+  }
   if (!mediaId) return null;
   const cacheKey =
     mediaId.provider + ":" + mediaType + ":" + mediaId.id + ":" + javaStringHash(apiKey);

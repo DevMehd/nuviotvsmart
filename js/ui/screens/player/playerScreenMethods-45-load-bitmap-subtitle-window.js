@@ -231,7 +231,7 @@ export function createPlayerScreenMethods45() {
       const cueGroups = new Map();
       activeCues.forEach((cue) => {
         const rawLine = cue?.line == null ? NaN : Number(cue.line);
-        const normalizedLine = Number.isFinite(rawLine) ? clamp(rawLine, 0, 100) : null;
+        const normalizedLine = Number.isFinite(rawLine) && rawLine < 60 ? clamp(rawLine, 0, 100) : null;
         const rawPosition = cue?.position == null ? NaN : Number(cue.position);
         const position = Number.isFinite(rawPosition) ? clamp(rawPosition, 0, 100) : null;
         const align = ["start", "end", "center"].includes(cue?.align) ? cue.align : "center";

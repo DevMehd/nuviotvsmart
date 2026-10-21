@@ -38,7 +38,7 @@ export function createTraktAuthServiceMethods01() {
     },
     async startDeviceAuth() {
       if (!hasRequiredCredentials()) {
-        throw new Error("Configure Trakt Client ID and Client Secret in Settings > Integrations > Trakt");
+        throw new Error("Trakt is unavailable in this app build");
       }
 
       const profileId = activeProfileId();
@@ -92,7 +92,7 @@ export function createTraktAuthServiceMethods01() {
     },
     async pollDeviceToken() {
       if (!hasRequiredCredentials()) {
-        return { type: "failed", message: "Configure Trakt app credentials in Settings > Integrations > Trakt" };
+        return { type: "failed", message: "Trakt is unavailable in this app build" };
       }
       const profileId = activeProfileId();
       const requestContext = createTraktRequestContext(profileId);
@@ -102,7 +102,7 @@ export function createTraktAuthServiceMethods01() {
         return { type: "failed", message: "No active Trakt device code" };
       }
       if (state.expiresAt && Date.now() >= Number(state.expiresAt)) {
-        TraktAuthStore.clearDeviceFlow();
+        TraktAuthStore.clearDeviceFlow(profileId);
         return { type: "expired" };
       }
 
@@ -132,20 +132,20 @@ export function createTraktAuthServiceMethods01() {
         return { type: "pending" };
       }
       if (response.status === 409) {
-        TraktAuthStore.clearDeviceFlow();
+        TraktAuthStore.clearDeviceFlow(profileId);
         return { type: "already_used" };
       }
       if (response.status === 410) {
-        TraktAuthStore.clearDeviceFlow();
+        TraktAuthStore.clearDeviceFlow(profileId);
         return { type: "expired" };
       }
       if (response.status === 418) {
-        TraktAuthStore.clearDeviceFlow();
+        TraktAuthStore.clearDeviceFlow(profileId);
         return { type: "denied" };
       }
       if (response.status === 429) {
         const interval = Math.min(60, Math.max(5, Number(state.pollInterval || 5) + 5));
-        TraktAuthStore.updatePollInterval(interval);
+        TraktAuthStore.updatePollInterval(interval, profileId);
         return { type: "slow_down", pollIntervalSeconds: interval };
       }
       return {
@@ -304,7 +304,7 @@ export function createTraktAuthServiceMethods01() {
           authorization: `Bearer ${token}`,
           requestContext
         });
-        if (!response.ok || !Array.isArray(payload)) break;
+        if (!response.ok || !Array.isArray(payload)) throw new Error("Trakt history request failed");
 
         allItems.push(...payload.map(normalizeHistoryItem).filter(Boolean));
         if (payload.length < perPage) break;
@@ -352,11 +352,25 @@ export function createTraktAuthServiceMethods01() {
             authorization: `Bearer ${token}`,
             requestContext
           });
-          return response.ok && Array.isArray(payload) ? payload : [];
+          if (!response.ok || !Array.isArray(payload)) throw new Error(`Trakt ${type} playback request failed`);
+          return payload;
         })
       );
 
       return payloads.flat().map(normalizePlaybackItem).filter(Boolean);
+    },
+    async fetchLastActivities() {
+      const requestContext = createTraktRequestContext();
+      const token = await this.getValidAccessToken(requestContext.profileId);
+      assertTraktRequestContext(requestContext);
+      if (!token) throw new Error("Trakt is not connected");
+
+      const { response, payload } = await requestJson("/sync/last_activities", {
+        authorization: `Bearer ${token}`,
+        requestContext
+      });
+      if (!response.ok) throw new Error("Trakt last activities request failed");
+      return payload;
     },
     async fetchWatchedShows() {
       const requestContext = createTraktRequestContext();

@@ -1,3 +1,4 @@
+import { activeStreamLinkProfile } from "../../../data/local/streamLinkCacheStore.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 
@@ -22,8 +23,9 @@ export function createStreamScreenMethods03() {
     async mount(params = {}, navigationContext = {}) {
       streamRepository.setLocalPluginSearchPaused(false);
       this.container = document.getElementById("stream");
-      ScreenUtils.show(this.container);
       this.params = params || {};
+      this.bindStreamParty();
+      this.streamLinkCacheProfileId = activeStreamLinkProfile();
       this.streamBackNavigationInProgress = false;
       this.stopStreamVirtualization();
       this.streamVirtualHeights = new Map();
@@ -55,7 +57,12 @@ export function createStreamScreenMethods03() {
       // title again from Detail is a new stream search.
       const returningFromPlayer = Boolean(navigationContext?.isBackNavigation && navigationContext?.previousRoute === "player");
       this.autoResumeAttempted = returningFromPlayer;
+      this.autoPlayAttempted = returningFromPlayer;
       const playerSettings = PlayerSettingsStore.get();
+      this.autoPlayUiActive = false;
+      this.autoPlayUiError = "";
+      this.renderedMarkup = null;
+      this.syncAutoPlayUiState(playerSettings);
       const reusableStream = playerSettings.streamReuseLastLinkEnabled
         ? StreamPreferencesStore.getValid(
             this.params?.itemId,
@@ -70,7 +77,6 @@ export function createStreamScreenMethods03() {
         reusableStream?.streamId &&
         (String(this.params?.resumeStreamIdentity || "").trim() || String(this.params?.preferredStreamId || "").trim())
       );
-      this.autoPlayAttempted = returningFromPlayer;
       this.cancelAutoPlayCountdown();
       this.cancelAutoPlaySelectionWait();
       const autoPlayWaitSeconds = Math.max(0, Math.trunc(Number(playerSettings.streamAutoPlayTimeoutSeconds || 0)));
@@ -125,15 +131,18 @@ export function createStreamScreenMethods03() {
 
       const showAddonLogo = StreamBadgeSettingsStore.snapshot().showAddonLogo === true;
       if (restored && this.streams.length && showAddonLogo) {
-        await ensureAddonLogoImageProxyReady();
-        if (token !== this.loadToken || Router.getCurrent() !== "stream") {
-          return;
-        }
-        this.streams = this.applyAddonLogos(this.streams);
-        await preloadAddonLogoImages(this.streams, this.addonLogoLookup);
-        if (token !== this.loadToken || Router.getCurrent() !== "stream") {
-          return;
-        }
+        // The restored list is already usable. Optional image service, network
+        // and decode work must not hold its first paint or restored focus.
+        void (async () => {
+          await ensureAddonLogoImageProxyReady();
+          if (token !== this.loadToken || Router.getCurrent() !== "stream") return;
+          this.streams = this.applyAddonLogos(this.streams);
+          await preloadAddonLogoImages(this.streams, this.addonLogoLookup);
+          if (token !== this.loadToken || Router.getCurrent() !== "stream") return;
+          this.requestRender({ delayMs: 0 });
+        })().catch((error) => {
+          console.warn("Restored stream addon logo warmup failed", error);
+        });
       }
 
       // A restored snapshot already holds visible stream results, so settle
@@ -144,7 +153,15 @@ export function createStreamScreenMethods03() {
         this.loading = false;
       }
 
-      this.render();
+      // Prepare automatic loading before revealing the route to the compositor.
+      // The manual picker needs to be visible before its focus is restored.
+      if (this.autoPlayUiActive) {
+        this.render();
+        ScreenUtils.show(this.container);
+      } else {
+        ScreenUtils.show(this.container);
+        this.render();
+      }
 
       if (restoringFromBack) {
         // Android keeps the stream collector alive while the player is on top of
@@ -156,6 +173,8 @@ export function createStreamScreenMethods03() {
         }
         return;
       }
+
+      if (!navigationContext?.isBackNavigation && this.tryResumeCachedStreamLink()) return;
 
       // Match Android's initial stream load: reuse the repository-owned session
       // when its request key is still valid. Explicit refresh actions remain the

@@ -444,6 +444,56 @@ test("missing language keeps the real bounded fallback and startup without track
   assert.equal(ui.isStartupGateReleaseReady(), true);
   api.stop();
 });
+test("native audio first discovered after an implicit fallback still gets the startup language", async () => {
+  const { ui, video } = fixture([]);
+  ui.startupTrackPreferenceReady = true;
+  assert.equal(ui.applyStartupAudioFallback(), true);
+  assert.equal(ui.startupAudioPreferenceApplied, true);
+  await advance(14000);
+  const en = { id: "en", language: "en", enabled: true };
+  const it = { id: "it", language: "it", enabled: false };
+  video.audioTracks.replace([en, it]);
+  ui.refreshTrackDialogs();
+  await advance(1400);
+  assert.equal(it.enabled, true, "A timeout before any native metadata is not a choice of English");
+  assert.equal(ui.startupAudioPreferenceApplied, true);
+  ui.refreshTrackDialogs();
+  assert.equal(it.enabled, true);
+});
+
+test("late native discovery preserves manual choices, source ownership and presented playback", async () => {
+  for (const supersededBy of ["manual", "source", "presented"]) {
+    const { ui, video } = fixture([]);
+    ui.startupTrackPreferenceReady = true;
+    ui.sourcePlaybackAttemptToken = 1;
+    ui.applyStartupAudioFallback();
+    const en = { id: "en", language: "en", enabled: true };
+    const it = { id: "it", language: "it", enabled: false };
+    video.audioTracks.replace([en, it]);
+    if (supersededBy === "manual") await ui.applyAudioTrack(0, { rememberSelection: true });
+    if (supersededBy === "source") ui.sourcePlaybackAttemptToken++;
+    if (supersededBy === "presented") ui.hasPresentedPlaybackFrame = true;
+    ui.refreshTrackDialogs();
+    await advance(1400);
+    assert.equal(en.enabled, true, `${supersededBy} keeps ownership of audio`);
+    assert.equal(it.enabled, false);
+  }
+});
+
+test("a fallback chosen from actual native tracks stays final after the discovery deadline", async () => {
+  const en = { id: "en", language: "en", enabled: true };
+  const { ui, video } = fixture([en]);
+  ui.startupTrackPreferenceReady = true;
+  ui.applyStartupAudioFallback();
+  await advance(14000);
+  const it = { id: "it", language: "it", enabled: false };
+  video.audioTracks.replace([en, it]);
+  ui.refreshTrackDialogs();
+  await advance(1400);
+  assert.equal(en.enabled, true);
+  assert.equal(it.enabled, false);
+});
+
 test("async startup and its change event issue one request and resolve reordered identity", async () => {
   const delayedFlag = (initial) => {
     let enabled = initial;
@@ -508,6 +558,112 @@ test("correct preferred audio across lifecycle events does not write again", asy
   assert.equal(requests, 0);
   ui.releaseStartupAudioGate();
   ui.unbindVideoEvents();
+});
+test("expired startup fallback awaits the one pending native selection before releasing audio", async () => {
+  let video;
+  const delayedTrack = (id, initial) => {
+    let enabled = initial;
+    return {
+      id,
+      language: id,
+      get enabled() {
+        return enabled;
+      },
+      set enabled(value) {
+        setTimeout(() => {
+          enabled = value;
+          emit(video.audioTracks, "change");
+        }, 180);
+      }
+    };
+  };
+  const en = delayedTrack("en", true);
+  const it = delayedTrack("it", false);
+  const f = fixture([en, it]);
+  video = f.video;
+  const { ui } = f;
+  const entries = ui.getAudioEntries;
+  ui.getAudioEntries = function () {
+    return entries.call(this).map((entry) => ({ ...entry, supported: entry.track.id !== "en" }));
+  };
+  let requests = 0;
+  const select = PlayerController.setNativeAudioTrack;
+  PlayerController.setNativeAudioTrack = function (index) {
+    requests++;
+    return select.call(this, index);
+  };
+  ui.enableStartupAudioGate({ allowNativePlayback: true, maxWaitMs: 6000 });
+  ui.hasPresentedPlaybackFrame = true;
+  now += 6000;
+  assert.equal(
+    ui.applyStartupAudioFallback(),
+    false,
+    "A selection request is not confirmation that the fallback is ready"
+  );
+  assert.equal(ui.startupAudioPreferenceApplying, true);
+  assert.equal(ui.startupAudioPreferenceApplied, false);
+  assert.equal(ui.isStartupGateReleaseReady(), false);
+  assert.equal(ui.isStartupGateReleaseReady(), false);
+  assert.equal(requests, 1, "Deadline checks cannot duplicate a pending fallback selection");
+  await advance(1400);
+  assert.equal(it.enabled, true);
+  assert.equal(en.enabled, false);
+  assert.equal(ui.startupAudioPreferenceApplying, false);
+  assert.equal(ui.startupAudioPreferenceApplied, true);
+  assert.equal(ui.isStartupGateReleaseReady(), true);
+  assert.equal(requests, 1);
+  ui.releaseStartupAudioGate();
+});
+test("unconfirmed bounded fallback settles once without repeating rejected decoder writes", async () => {
+  const { ui, video } = fixture([
+    {
+      id: "en",
+      language: "en",
+      get enabled() {
+        return true;
+      },
+      set enabled(_) {}
+    },
+    {
+      id: "it",
+      language: "it",
+      get enabled() {
+        return false;
+      },
+      set enabled(_) {}
+    }
+  ]);
+  const entries = ui.getAudioEntries;
+  ui.getAudioEntries = function () {
+    return entries.call(this).map((entry) => ({ ...entry, supported: entry.track.id !== "en" }));
+  };
+  let requests = 0;
+  const select = PlayerController.setNativeAudioTrack;
+  PlayerController.setNativeAudioTrack = function (index) {
+    requests++;
+    return select.call(this, index);
+  };
+  ui.enableStartupAudioGate({ allowNativePlayback: true, maxWaitMs: 6000 });
+  ui.hasPresentedPlaybackFrame = true;
+  now += 6000;
+  assert.equal(ui.applyStartupAudioFallback(), false);
+  assert.equal(ui.isStartupGateReleaseReady(), false);
+  await advance(1400);
+  assert.equal(requests, 1);
+  assert.equal(video.audioTracks.item(0).enabled, true);
+  assert.equal(video.audioTracks.item(1).enabled, false);
+  assert.equal(ui.startupAudioPreferenceApplying, false);
+  assert.equal(
+    ui.startupAudioPreferenceApplied,
+    true,
+    "Exhausted fallback settles startup without claiming native flags changed"
+  );
+  assert.equal(ui.failedAutomaticAudioFallbackEntryId, "it");
+  assert.equal(ui.isStartupGateReleaseReady(), true);
+  ui.applyStartupAudioPreference();
+  await advance(2000);
+  assert.equal(requests, 1, "A rejected fallback is not an endless automatic decoder retry");
+  ui.releaseStartupAudioGate();
 });
 test("reordered native audio confirms its identity without writing correct flags again", async () => {
   let writes = 0;

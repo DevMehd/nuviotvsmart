@@ -4,6 +4,8 @@ import {
   nativeTextTrackSelectionMatches,
   confirmNativeTrackSelection
 } from "../../../core/player/playerControllerMethods-02-is-likely-direct-file-url.js";
+import { beginVidaaTrackSwitch } from "./vidaaTrackSwitchGuard.js";
+import { recordVidaaTextTrackModeRequest } from "../../../platform/vidaa/vidaaVideo.js";
 
 const vidaaMountedSubtitleActivations = new WeakMap();
 
@@ -21,14 +23,17 @@ export function createPlayerScreenMethods46() {
   return {
     async disableNativeSubtitleOutputs(selectionToken = this.subtitleSelectionToken) {
       const video = PlayerController.video;
+      const videoSource = video?.src;
       const playRequestToken = PlayerController.playRequestToken;
       const mountToken = this.playerMountToken;
       const isCurrent = () =>
         Number(selectionToken) === Number(this.subtitleSelectionToken) &&
         this.playerMountToken === mountToken &&
         PlayerController.video === video &&
+        video?.src === videoSource &&
         PlayerController.playRequestToken === playRequestToken;
       if (!isCurrent()) return false;
+      beginVidaaTrackSwitch(this);
       if (PlayerController.isUsingAvPlay?.()) {
         const applied = await PlayerController.setAvPlaySubtitleTrack?.(-1);
         return Boolean(applied) && isCurrent();
@@ -38,13 +43,17 @@ export function createPlayerScreenMethods46() {
       } else if (PlayerController.getHlsSubtitleTracks?.().length) {
         if (!(await PlayerController.setHlsSubtitleTrack?.(-1)) || !isCurrent()) return false;
       }
-      const applied = await Promise.resolve(PlayerController.setNativeTextTrack?.(-1)).catch(() => false);
+      const controllerResult = PlayerController.setNativeTextTrack?.(-1);
+      const applied = await Promise.resolve(controllerResult).catch(() => false);
       if (!isCurrent()) return false;
       if (applied && Environment.isWebOS()) return true;
-      if (!applied) {
+      if (!applied && !(Environment.isVidaa() && typeof controllerResult?.then === "function")) {
         this.getTextTracks().forEach((track) => {
           try {
-            track.mode = "disabled";
+            if (track.mode !== "disabled") {
+              if (Environment.isVidaa()) recordVidaaTextTrackModeRequest(track, "disabled");
+              track.mode = "disabled";
+            }
           } catch (_) {
             /* Check all outputs below. */
           }
@@ -377,6 +386,8 @@ export function createPlayerScreenMethods46() {
             // every 80/140 ms activation check. Retry only pending mode writes.
             if (previous?.mode === mode && Date.now() - previous.at < 250) return;
             activation.writes.set(track, { mode, at: Date.now() });
+            beginVidaaTrackSwitch(this);
+            recordVidaaTextTrackModeRequest(track, mode);
             track.mode = mode;
           } catch (_) {
             /* Verify the exclusive output below, including readonly modes. */

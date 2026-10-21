@@ -47,11 +47,77 @@ export function nativeTrackListToArray(trackList) {
 export function nativeAudioTrackSelectionMatches(tracks, targetIndex) {
   try {
     return (
-      Boolean(tracks[targetIndex]) && tracks.every((track, index) => Boolean(track.enabled || track.selected) === (index === targetIndex))
+      Boolean(tracks[targetIndex]) &&
+      tracks.every(
+        (track, index) => (typeof track.enabled === "boolean" ? track.enabled : Boolean(track.selected)) === (index === targetIndex)
+      )
     );
   } catch (_) {
     return false;
   }
+}
+
+export function applyNativeAudioTrackFlags(tracks, targetIndex, { preferEnabled = false, force = false, isCurrent = () => true } = {}) {
+  const setSelected = (track, selected) => {
+    if (!isCurrent()) return;
+    let useEnabled = false;
+    try {
+      useEnabled = preferEnabled && typeof track.enabled === "boolean";
+    } catch (_) {
+      /* Try writable flags below. */
+    }
+    const flags = useEnabled ? ["enabled"] : ["enabled", "selected"];
+    flags.forEach((flag) => {
+      try {
+        if (isCurrent() && flag in track && (force || Boolean(track[flag]) !== selected)) track[flag] = selected;
+      } catch (_) {
+        // Some firmware exposes a readonly selection snapshot.
+      }
+    });
+  };
+  tracks.forEach((track, index) => {
+    if (index !== targetIndex) setSelected(track, false);
+  });
+  if (tracks[targetIndex]) setSelected(tracks[targetIndex], true);
+}
+
+// Native setters can accept disabling the old output while rejecting the new
+// one. Keep the previous output available when a VIDAA switch cannot confirm,
+// without writing to a replacement list or a superseding playback request.
+export function createNativeAudioSelectionRollback(tracks, { preferEnabled = false, isCurrent = () => true, getTracks = null } = {}) {
+  const snapshot = tracks.map((track) => {
+    let flags = [];
+    try {
+      const names = preferEnabled && typeof track.enabled === "boolean" ? ["enabled"] : ["enabled", "selected"];
+      flags = names.filter((name) => typeof track[name] === "boolean").map((name) => [name, track[name]]);
+    } catch (_) {
+      // An unreadable native snapshot cannot be restored reliably.
+    }
+    return { track, flags };
+  });
+  return (currentTracks) => {
+    const canRestore = () => {
+      if (!isCurrent()) return false;
+      const activeTracks = typeof getTracks === "function" ? getTracks() : currentTracks;
+      return activeTracks?.length === snapshot.length && snapshot.every(({ track }) => activeTracks.includes(track));
+    };
+    if (!canRestore()) return false;
+    // Restore the previously enabled output before disabling any other flags.
+    for (const enabled of [true, false]) {
+      for (const { track, flags } of snapshot) {
+        for (const [name, value] of flags) {
+          if (!canRestore()) return false;
+          if (value !== enabled) continue;
+          try {
+            if (track[name] !== value) track[name] = value;
+          } catch (_) {
+            // A firmware rejection must remain a failed selection.
+          }
+        }
+      }
+    }
+    return true;
+  };
 }
 
 export function nativeTextTrackSelectionMatches(tracks, targetIndex) {
@@ -240,6 +306,7 @@ export function createPlayerControllerMethods02() {
     resetNativeMediaState() {
       this.nativeAudioTrackSelectionToken = Number(this.nativeAudioTrackSelectionToken || 0) + 1;
       this.nativeTextTrackSelectionToken = Number(this.nativeTextTrackSelectionToken || 0) + 1;
+      this.cancelWebOsExactSeek({ pause: true });
       this.nativeMediaId = "";
       this.nativeMediaIdLookupToken = Number(this.nativeMediaIdLookupToken || 0) + 1;
       this.webOsPlaybackRateRequestToken = Number(this.webOsPlaybackRateRequestToken || 0) + 1;

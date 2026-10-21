@@ -498,10 +498,21 @@ function historyMutationBody(item, fallbackEntry, includeWatchedAt) {
       ? null
       : Number(item.episode);
   if (episode == null) {
+    // A show-level history write marks every episode, including unknown ones.
+    // Keep show-level removal supported, but only add concrete episodes.
+    if (includeWatchedAt) return { movies: [], shows: [] };
     return {
       movies: [],
       shows: [{ ...media, ...(includeWatchedAt ? { status: "completed" } : {}) }]
     };
+  }
+  if (
+    includeWatchedAt &&
+    (!Number.isInteger(episode) ||
+      episode <= 0 ||
+      (season != null && (!Number.isInteger(season) || season < 0)))
+  ) {
+    return { movies: [], shows: [] };
   }
   const episodeValue = {
     number: episode,

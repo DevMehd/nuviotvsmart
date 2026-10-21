@@ -1,0 +1,275 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>VIDAA official account and collection flow</title>
+<base href="/" />
+<link rel="stylesheet" href="../dist/css/bundle.css" />
+<script src="assets/libs/qrcode-generator.js"></script>
+<div id="account"></div>
+<div id="plugin"></div>
+<div id="folderDetail"></div>
+<pre id="result">RUNNING</pre>
+<script type="module">
+  const result = document.getElementById("result");
+  const assert = (condition, message) => {
+    if (!condition) throw Error(message);
+  };
+  const waitFor = async (predicate) => {
+    const deadline = Date.now() + 8000;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw Error("Timed out waiting for the screen");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+  };
+  try {
+    globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    // This page is only run in the test runner's isolated browser profile.
+    localStorage.clear();
+    if (new URL(location.href).searchParams.has("live")) {
+      const { AuthQrSignInScreen, QrLoginService, AuthManager, Router, I18n } =
+        await import("../js/ui/screens/account/authQrSignInScreen.js");
+      await I18n.init();
+      Router.getCurrent = () => "authQrSignIn";
+      Router.stack = [];
+      await AuthManager.bootstrap();
+      await AuthQrSignInScreen.mount();
+      await waitFor(() => AuthQrSignInScreen.qrResult);
+      const qr = AuthQrSignInScreen.qrResult;
+      assert(new URL(qr.loginUrl).hostname === "nuvio.tv", "Official verification host");
+      assert(document.querySelector("#qr-container canvas")?.width === 320, "Real QR renders");
+      const poll = await QrLoginService.poll(qr.code, qr.deviceNonce);
+      assert(poll?.status === "pending", "Official backend returns pending through browser CORS");
+      AuthQrSignInScreen.cleanup();
+      AuthManager.clearAnonymousSession();
+      result.dataset.status = "pass";
+      result.textContent =
+        "PASS: live official QR start/pending and QR canvas in Chrome, including cross-origin requests. Full account login requires phone approval and a real VIDAA TV.";
+    } else {
+      const token = (id) =>
+        `x.${btoa(JSON.stringify({ sub: id, iss: "https://api.nuvio.tv/auth/v1", exp: Math.floor(Date.now() / 1000) + 3600 }))}.x`;
+      let approved = false;
+      let sequence = 0;
+      let title = "From Nuvio account";
+      const originalFetch = globalThis.fetch;
+      const json = (data) =>
+        new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
+      globalThis.fetch = async (rawUrl, init = {}) => {
+        if (init.signal?.aborted) throw init.signal.reason || new Error("Request aborted");
+        const url = new URL(rawUrl, location.href);
+        if (url.origin === location.origin) return originalFetch(rawUrl, init);
+        const body = init.body ? JSON.parse(init.body) : {};
+        if (url.origin === "https://api.nuvio.tv") {
+          if (url.pathname === "/auth/v1/signup")
+            return json({ access_token: token("anonymous"), refresh_token: "anonymous-refresh" });
+          if (url.pathname.endsWith("start_device_login_session")) {
+            sequence++;
+            return json([
+              {
+                device_code: `private-${sequence}`,
+                user_code: `PHONE-${sequence}`,
+                verification_uri: "https://nuvio.tv/link",
+                verification_uri_complete: `https://nuvio.tv/link?code=PHONE-${sequence}`,
+                expires_at: new Date(Date.now() + 300000).toISOString()
+              }
+            ]);
+          }
+          if (url.pathname.endsWith("poll_tv_login_session"))
+            return json([{ status: approved ? "approved" : "pending" }]);
+          if (url.pathname.endsWith("tv-logins-exchange"))
+            return json({
+              access_token: token("existing-account"),
+              refresh_token: "existing-refresh"
+            });
+          if (url.pathname.endsWith("get_sync_owner")) return json("existing-account");
+          if (url.pathname.endsWith("/addons"))
+            return json([
+              {
+                url: "https://fixture.invalid/addon",
+                name: "Account addon",
+                enabled: true,
+                sort_order: 0
+              }
+            ]);
+          if (url.pathname.endsWith("sync_pull_collections")) {
+            assert(body.p_profile_id === 2, "Collections must request the selected profile");
+            return json([
+              {
+                collections_json: [
+                  {
+                    id: "collection",
+                    title,
+                    folders: [
+                      {
+                        id: "folder",
+                        title: "My movies",
+                        sources: [
+                          {
+                            provider: "addon",
+                            addonId: "addon",
+                            addonBaseUrl: "https://fixture.invalid/addon",
+                            type: "movie",
+                            catalogId: "movies"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]);
+          }
+          return json([]);
+        }
+        if (url.origin === "https://fixture.invalid") {
+          if (url.pathname.endsWith("manifest.json"))
+            return json({
+              id: "addon",
+              name: "Account addon",
+              types: ["movie"],
+              resources: ["catalog", "meta"],
+              catalogs: [{ id: "movies", type: "movie", name: "Movies" }]
+            });
+          if (url.pathname.includes("/catalog/"))
+            return json({
+              metas: [{ id: "tt1234567", type: "movie", name: "Collection movie", poster: "" }]
+            });
+          return json({ meta: { id: "tt1234567", type: "movie", name: "Collection movie" } });
+        }
+        return json({});
+      };
+      const { AuthQrSignInScreen } = await import("../js/ui/screens/account/authQrSignInScreen.js");
+      const { AuthManager } = await import("../js/core/auth/authManager.js");
+      const { AuthState } = await import("../js/core/auth/authState.js");
+      const { Router } = await import("../js/ui/navigation/routerState.js");
+      const { I18n } = await import("../js/i18n/index.js");
+      const { PluginScreen } = await import("../js/ui/screens/plugin/pluginScreen.js");
+      const { ProfileManager } = await import("../js/core/profile/profileManager.js");
+      const { CollectionsStore } = await import("../js/data/local/collectionsStore.js");
+      const { HomeScreen } = await import("../js/ui/screens/home/homeScreen.js");
+      const { FolderDetailScreen } =
+        await import("../js/ui/screens/collection/folderDetailScreen.js");
+      await I18n.init();
+      let route = "authQrSignIn";
+      let navigation;
+      Router.getCurrent = () => route;
+      Router.navigate = (next, params) => {
+        route = next;
+        navigation = { route: next, params };
+      };
+      Router.stack = [{ route: "home" }];
+      await AuthManager.bootstrap();
+      await AuthQrSignInScreen.mount();
+      await waitFor(() => AuthQrSignInScreen.qrResult);
+      assert(
+        document.querySelector("#qr-container canvas")?.width === 320,
+        "Official TV authorization QR renders locally"
+      );
+      assert(
+        AuthQrSignInScreen.qrResult.loginUrl.startsWith("https://nuvio.tv/link?"),
+        "Login QR uses the phone approval URL"
+      );
+      assert(!document.querySelector("[data-action=email-mode]"), "No custom registration surface");
+      assert(document.querySelector("#qr-refresh-btn.focused"), "TV focus starts on Refresh");
+      const old = AuthQrSignInScreen.qrResult.code;
+      AuthQrSignInScreen.startCountdown(Date.now() - 10);
+      assert(
+        AuthQrSignInScreen.qrStatusText === I18n.t("auth.qr.expired"),
+        "QR expiration is visible"
+      );
+      document.querySelector("#qr-refresh-btn").click();
+      await waitFor(
+        () => AuthQrSignInScreen.qrResult?.code && AuthQrSignInScreen.qrResult.code !== old
+      );
+      approved = true;
+      await waitFor(() => AuthQrSignInScreen.isSignedIn);
+      assert(
+        AuthManager.isAuthenticated,
+        "Simulated phone approval completes the real exchange flow"
+      );
+      AuthQrSignInScreen.cleanup();
+      await ProfileManager.replaceProfiles([
+        { id: "1", name: "Main" },
+        { id: "2", name: "Selected", usesPrimaryAddons: false }
+      ]);
+      await ProfileManager.setActiveProfile("2");
+      route = "plugin";
+      await PluginScreen.mount();
+      await PluginScreen.refreshAddons();
+      assert(
+        PluginScreen.model.phoneManagerUrl === "https://nuvio.tv/account?tab=addons",
+        "Addon management QR opens the official account manager"
+      );
+      assert(
+        !document.querySelector("#shared-addon-url"),
+        "Original Addons replaces the custom URL form"
+      );
+      await PluginScreen.openQrOverlay();
+      assert(
+        document.querySelector(".addons-qr-canvas")?.width === 440,
+        "Phone management QR renders"
+      );
+      assert(PluginScreen.consumeBackRequest() === true, "Back consumes only the QR overlay");
+      await waitFor(() => !PluginScreen.qrOverlayOpen);
+      assert(PluginScreen.consumeBackRequest() === false, "The next Back returns to the route");
+      title = "Updated from phone";
+      await PluginScreen.refreshAddons();
+      const rows = HomeScreen.sortAndFilterRows([], CollectionsStore.get());
+      assert(
+        rows.length === 1 && rows[0].collectionTitle === title,
+        "Home rows use the refreshed account collection"
+      );
+      const folder = rows[0].result.data.items[0];
+      const card = document.createElement("article");
+      card.dataset.collectionId = folder.collectionId;
+      card.dataset.folderId = folder.folderId;
+      card.dataset.collectionTitle = rows[0].collectionTitle;
+      HomeScreen.openCollectionFolderFromNode.call(
+        { ...HomeScreen, rememberReturnFocusForNode() {} },
+        card
+      );
+      assert(
+        navigation?.route === "folderDetail" && navigation.params.folderId === "folder",
+        "Home opens the correct collection folder"
+      );
+      PluginScreen.cleanup();
+      await FolderDetailScreen.mount(navigation.params);
+      await waitFor(() => document.querySelector("#folderDetail [data-item-id=tt1234567]"));
+      assert(
+        document.getElementById("folderDetail").textContent.includes("Collection movie"),
+        "The account collection folder loads its real addon catalog"
+      );
+      FolderDetailScreen.cleanup();
+
+      approved = false;
+      const completedSequence = sequence;
+      const unsubscribeLogout = AuthManager.subscribe((state) => {
+        if (state !== AuthState.SIGNED_OUT) return;
+        route = "authQrSignIn";
+        void AuthQrSignInScreen.mount();
+      });
+      try {
+        await AuthManager.signOut();
+        await waitFor(() => AuthQrSignInScreen.qrResult);
+        assert(sequence > completedSequence, "Logout automatically starts a new QR session");
+        assert(
+          document.querySelector("#qr-container canvas")?.width === 320,
+          "Logout renders a usable QR without a reload or manual refresh"
+        );
+        assert(!AuthManager.getSessionSignal()?.aborted, "New QR uses the fresh auth signal");
+        assert(
+          localStorage.getItem("profiles") === null,
+          "Old profiles are cleared before the QR screen opens"
+        );
+      } finally {
+        unsubscribeLogout();
+        AuthQrSignInScreen.cleanup();
+        AuthManager.clearAnonymousSession();
+      }
+      result.dataset.status = "pass";
+      result.textContent =
+        "PASS: original Account and Addons DOM, QR expiry/retry/approval/logout, TV focus/Back, selected-profile phone updates, Home collection routing and folder content (simulated backend).";
+    }
+  } catch (error) {
+    result.dataset.status = "fail";
+    result.textContent = `FAIL: ${error.stack || error}`;
+  }
+</script>

@@ -1,3 +1,4 @@
+import { customPosterForItem } from "../../../core/poster/customPoster.js";
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
 
@@ -192,7 +193,7 @@ import { isCollectionFolderItem, normalizeCollectionPosterShape } from "./homeSc
 import { buildPosterSubtitle } from "./homeScreenHelpers-12-build-hero-indicators.js";
 import { buildLazyImageAttributes } from "./homeScreenHelpers-14-get-home-grid-column-count.js";
 import { normalizeCatalogItem } from "./homeScreenHelpers-08-partition-continue-watching-rows.js";
-import { normalizeTmdbBackdropUrl, normalizeTmdbCardBackdropUrl, normalizeTmdbPosterUrl } from "../../../core/tmdb/tmdbImageUrl.js";
+import { limitTmdbImageWidth, normalizeTmdbBackdropUrl, normalizeTmdbPosterUrl } from "../../../core/tmdb/tmdbImageUrl.js";
 import { getVidaaArtworkUrl, buildVidaaArtworkFallbackAttributes, VIDAA_ARTWORK_FALLBACK_HANDLER } from "./vidaaArtworkOptimization.js";
 
 export function createPosterCardMarkup(
@@ -208,6 +209,9 @@ export function createPosterCardMarkup(
   deferImages = false,
   watchedTitleIds = null
 ) {
+  // Every VIDAA card starts through the shared loader, including the first
+  // visible row. Direct initial src attributes would bypass its request budget.
+  const deferCardImages = deferImages || Platform.isVidaa();
   const suppressPosterText = Boolean(rowData?.suppressPosterText);
   const rowKey = String(rowData?.homeCatalogKey || buildModernRowKey(rowData || {})).trim();
   const collectionSeed =
@@ -228,6 +232,7 @@ export function createPosterCardMarkup(
     const visualSrc = firstNonEmpty(collectionItem.poster, collectionItem.coverImageUrl, collectionItem.backdrop);
     const subtitle = buildPosterSubtitle(collectionItem, layoutMode);
     const tileShape = normalizeCollectionPosterShape(collectionItem.tileShape);
+    const cardVisualSrc = Platform.isVidaa() ? limitTmdbImageWidth(visualSrc, tileShape === "POSTER" ? 342 : 500) : visualSrc;
     const shapeClass =
       tileShape === "POSTER" ? "" : tileShape === "SQUARE" ? " is-collection-square" : " is-landscape is-collection-landscape";
     const focusGifOverlay =
@@ -240,7 +245,7 @@ export function createPosterCardMarkup(
         ? `<div class="home-collection-title-overlay" dir="auto">${escapeHtml(collectionDisplayTitle)}</div>`
         : "";
     const contentMarkup = visualSrc
-      ? `<img class="content-poster" ${buildLazyImageAttributes(visualSrc, { defer: deferImages })} alt="${escapeAttribute(collectionItem.name || collectionItem.heroTitle || collectionItem.collectionTitle || "collection")}" />`
+      ? `<img class="content-poster" ${buildLazyImageAttributes(cardVisualSrc, { defer: deferCardImages })} alt="${escapeAttribute(collectionItem.name || collectionItem.heroTitle || collectionItem.collectionTitle || "collection")}" />`
       : collectionItem.coverEmoji
         ? `<div class="home-collection-emoji" aria-hidden="true">${escapeHtml(collectionItem.coverEmoji)}</div>`
         : '<div class="content-poster placeholder"></div>';
@@ -284,7 +289,11 @@ export function createPosterCardMarkup(
     `;
   }
   const isLoading = Boolean(item?.isLoading);
-  const normalized = normalizeCatalogItem(item, itemType);
+  const normalized = customPosterForItem(
+    normalizeCatalogItem(item, itemType),
+    Router.getCurrent() === "folderDetail" || rowData?.rowKind === "collection" ? "collections" : "home",
+    layoutMode === "modern" && preferLandscapePoster ? "landscape" : "poster"
+  );
   const subtitle = buildPosterSubtitle(normalized, layoutMode);
   const preferredLandscapePosterSrc = firstNonEmpty(normalized.landscapePoster);
   const useLandscapePoster = layoutMode === "modern" && preferLandscapePoster;
@@ -302,8 +311,11 @@ export function createPosterCardMarkup(
   const rawPosterSrc = useLandscapePoster
     ? landscapeVisualSrc
     : firstNonEmpty(normalized.poster, normalized.thumbnail, preferredLandscapePosterSrc, normalized.backdrop, normalized.backdropUrl);
-  const backdropSrc = getVidaaArtworkUrl((Platform.isVidaa() ? normalizeTmdbCardBackdropUrl : normalizeTmdbBackdropUrl)(rawBackdropSrc));
+  const backdropSrc = getVidaaArtworkUrl(normalizeTmdbBackdropUrl(rawBackdropSrc));
   const posterSrc = useLandscapePoster ? backdropSrc : getVidaaArtworkUrl(normalizeTmdbPosterUrl(rawPosterSrc));
+  // A card is 212–232px wide in portrait mode and up to 418px in landscape
+  // mode. Keep its decoded artwork separate from the hero/expanded source.
+  const cardPosterSrc = Platform.isVidaa() ? limitTmdbImageWidth(posterSrc, useLandscapePoster ? 500 : 342) : posterSrc;
   const expandedVisualSrc = firstNonEmpty(backdropSrc, posterSrc);
   const expandedClass = isExpanded ? " is-expanded" : "";
   const landscapeClass = useLandscapePoster ? " is-landscape" : "";
@@ -318,6 +330,7 @@ export function createPosterCardMarkup(
   const subtitleWidth = subtitleWidths[safeIndex % subtitleWidths.length];
   return `
     <article class="home-content-card home-poster-card${focusableClass}${expandedClass}${landscapeClass}${loadingClass}"
+             ${Platform.isVidaa() && !isLoading ? 'data-vidaa-recyclable-card="true"' : ""}
              ${isLoading ? "" : 'tabindex="0"'}
              ${
                isLoading
@@ -347,7 +360,7 @@ export function createPosterCardMarkup(
       <div class="home-poster-frame">
         ${
           !isLoading && posterSrc
-            ? `<img class="content-poster" ${buildLazyImageAttributes(posterSrc, { defer: deferImages })} alt="${escapeAttribute(normalized.name || "content")}" />`
+            ? `<img class="content-poster" ${buildLazyImageAttributes(cardPosterSrc, { defer: deferCardImages })} data-original-poster="${escapeAttribute((useLandscapePoster ? normalized.rawLandscapePosterUrl : normalized.rawPosterUrl) || "")}" alt="${escapeAttribute(normalized.name || "content")}" />`
             : '<div class="content-poster placeholder"></div>'
         }
         ${
@@ -371,7 +384,7 @@ export function createPosterCardMarkup(
           <div class="home-poster-landscape-copy" aria-hidden="true">
             ${
               normalized.logo
-                ? `<img class="home-poster-landscape-logo" ${buildLazyImageAttributes(normalized.logo, { defer: deferImages })} alt="" />`
+                ? `<img class="home-poster-landscape-logo" ${buildLazyImageAttributes(normalized.logo, { defer: deferCardImages })} alt="" />`
                 : `<div class="home-poster-landscape-title">${escapeHtml(normalized.name || "Untitled")}</div>`
             }
             ${subtitle ? `<div class="home-poster-landscape-subtitle">${escapeHtml(subtitle)}</div>` : ""}

@@ -1,3 +1,5 @@
+import { renderAmbientSection } from "./settingsAmbientSection.js";
+import { renderWatchPartySection } from "./settingsWatchPartySection.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./settingsScreenContext.js";
 
@@ -182,14 +184,16 @@ export function createSettingsScreenMethods12() {
     renderSection(section, model) {
       if (section.id === "account") return this.renderAccountSection(model);
       if (section.id === "profiles") return this.renderProfilesSection(model);
+      if (section.id === "watchParty") return renderWatchPartySection.call(this);
       if (section.id === "appearance") return this.renderAppearanceSection(model);
+      if (section.id === "ambient") return renderAmbientSection.call(this);
       if (section.id === "layout") return this.renderLayoutSection(model);
       if (section.id === "contentDiscovery") return this.renderContentDiscoverySection();
       if (section.id === "plugins") return this.renderPluginsSection(model);
       if (section.id === "integration") return this.renderIntegrationSection(model);
       if (section.id === "streams") return this.renderStreamsSection(model);
       if (section.id === "playback") return this.renderPlaybackSection(model);
-      if (section.id === "trakt") return this.renderTraktLauncher(model);
+      if (section.id === "trakt") return this.renderTrackingSection();
       if (section.id === "advanced") return this.renderAdvancedSection(model);
       return this.renderAboutSection(model);
     },
@@ -197,6 +201,10 @@ export function createSettingsScreenMethods12() {
       if (refreshModel || !this.model) {
         this.model = await this.collectModel();
       }
+      // A background model can have started while the overview was pending.
+      // Merge the current account state without waiting for addon manifests.
+      this.ensureAccountSyncOverview();
+      this.updateAccountSyncOverviewModel();
       this.layoutPrefs = this.model.layout;
       this.sidebarExpanded = Boolean(this.layoutPrefs?.modernSidebar && this.sidebarExpanded);
       this.visibleSections = getVisibleSections(this.model);

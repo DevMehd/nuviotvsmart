@@ -6,6 +6,8 @@ import { hasMountedHomeDom, updateHomeDom } from "./homeDomUpdate.js";
 import { discardVidaaHomeCards, restoreVidaaHomeCard, pruneVidaaHomeCards } from "./vidaaHomeCardWindow.js";
 import { createHomeRowRenderPass } from "./homeRowRenderCache.js";
 import { reconcileHomeFocusMediaTracking } from "./homeFocusMediaTracking.js";
+import { isHomeHeroLocalizationPending } from "./homeHeroLocalization.js";
+import { getMountedModernRowItemCounts } from "./modernHomeLayout.js";
 
 export function createHomeScreenMethods23() {
   const {
@@ -86,7 +88,7 @@ export function createHomeScreenMethods23() {
         }
       }
       if (this.layoutMode === "modern" && shouldEnrichModernHero(heroItem)) {
-        heroItem = { ...heroItem, heroMetaEnriching: true };
+        heroItem = { ...heroItem, heroMetaEnriching: isHomeHeroLocalizationPending(heroItem, this.layoutMode) };
         this.heroItem = heroItem;
       }
       const modernCarouselHasContent = this.layoutMode === "modern" && Boolean(this.rows?.length || this.continueWatchingDisplay?.length);
@@ -150,7 +152,10 @@ export function createHomeScreenMethods23() {
               Math.max(this.getContinueWatchingRenderBatchSize(), continueWatchingFocusIndex >= 0 ? continueWatchingFocusIndex + 1 : 0)
             );
       const focusedPosterFlowConfig = this.getFocusedPosterFlowConfig(this.layoutPrefs || {});
+      // VIDAA positions the preview after the restored camera settles. Painting
+      // it already expanded can expose a clipped row-end card before that flow.
       const expandFocusedPoster =
+        !Platform.isVidaa() &&
         !canUpdateInPlace &&
         this.layoutMode === "modern" &&
         Boolean(focusedPosterFlowConfig.shouldExpand) &&
@@ -215,6 +220,7 @@ export function createHomeScreenMethods23() {
           blurContinueWatchingNextUp: resolveContinueWatchingBlurNextUp(this.layoutPrefs),
           continueWatchingCardStyle: this.layoutPrefs?.continueWatchingCardStyle || "card",
           rowItemLimit,
+          mountedItemCounts: Platform.isVidaa() && canUpdateInPlace ? getMountedModernRowItemCounts(this.container) : null,
           showHeroSection,
           showPosterLabels,
           showCatalogTypeSuffix,

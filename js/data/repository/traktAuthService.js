@@ -1,3 +1,4 @@
+import { ProfileManager } from "../../core/profile/profileManager.js";
 import {
   TRAKT_API_URL,
   TRAKT_CLIENT_ID,
@@ -6,7 +7,6 @@ import {
 } from "../../config.js";
 import { AuthManager } from "../../core/auth/authManager.js";
 import { trackSessionRequest } from "../../core/auth/sessionLifecycle.js";
-import { ProfileManager } from "../../core/profile/profileManager.js";
 import { withRequestTimeout } from "../../core/network/requestTimeout.js";
 import { Platform } from "../../platform/index.js";
 import { PluginServiceClient } from "../../platform/pluginServiceClient.js";
@@ -227,7 +227,7 @@ export function requestJson(
       throwIfAborted(requestSignal);
       assertTraktRequestContext(context);
       if (!String(requestClientId || "").trim()) {
-        throw new Error("Configure Trakt Client ID in Settings > Integrations > Trakt");
+        throw new Error("Trakt is unavailable in this app build");
       }
       const headers = {
         "Content-Type": "application/json",

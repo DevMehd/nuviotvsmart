@@ -13,6 +13,15 @@ export function createPlayerScreenMethods73() {
       this.personalWatchRun = null;
       maybeOfferRatingAfterPlayback(this, PlayerController.video);
       localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
+      this.closeStreamInfo({ restore: false });
+      // Android stopAndRelease(): read the position before playback is torn down.
+      try {
+        this.leavePartyPlayback();
+      } catch (error) {
+        console.warn("[party] leaving playback failed", error);
+      }
+      this.unbindParty();
+      this.partyPanelVisible = false;
       // VIDAA (nuv-089): free the 4K decoder and its buffers before the rest of the teardown
       // and the next screen's rendering; leaving playback used to exhaust the TV's memory.
       if (Environment?.isVidaa?.()) {
@@ -126,6 +135,7 @@ export function createPlayerScreenMethods73() {
         this.clearPlaybackStallGuard();
         this.bufferingActive = false;
         this.clearBufferingSpinnerTimer();
+        this.stopSeekLoadingWatchdog();
         // The loading-completion poll self-reschedules; without this it
         // survives the route change and janks the next menu on Tizen.
         if (this.loadingCompletionTimer) {

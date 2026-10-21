@@ -1,0 +1,340 @@
+<!doctype html>
+<html class="vidaa-tv">
+  <meta charset="utf-8" />
+  <title>VIDAA Home pagination camera</title>
+  <style>
+    body {
+      margin: 0;
+    }
+    .home-main,
+    .home-row,
+    .home-modern-rows-viewport {
+      width: 520px;
+    }
+    .home-track {
+      display: flex;
+      gap: 12px;
+      width: 472px;
+      padding: 0 24px;
+      overflow-x: auto;
+    }
+    .home-content-card {
+      position: relative;
+      flex: 0 0 100px;
+      width: 100px;
+      height: 160px;
+    }
+    .home-poster-frame,
+    .content-poster {
+      width: 100px;
+      height: 130px;
+    }
+  </style>
+  <pre id="result">RUNNING</pre>
+  <div id="fixture"></div>
+  <script type="module">
+    globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    const context = await import("../js/ui/screens/home/homeScreenContext.js");
+    const { createHomeScreenMethods15 } =
+      await import("../js/ui/screens/home/homeScreenMethods-15-schedule-focused-poster-flow.js");
+    const { createHomeScreenMethods29 } =
+      await import("../js/ui/screens/home/homeScreenMethods-29-setup-modern-track-scroll-pagination.js");
+    const { createHomeScreenMethods28 } =
+      await import("../js/ui/screens/home/homeScreenMethods-28-on-key-down.js");
+    const { createHomeScreenMethods24 } =
+      await import("../js/ui/screens/home/homeScreenMethods-24-schedule-home-lazy-image-hydration.js");
+    const layout = await import("../js/ui/screens/home/modernHomeLayout.js");
+    const { updateHomeDom } = await import("../js/ui/screens/home/homeDomUpdate.js");
+    const { captureVidaaHomeTrackAppendInset } =
+      await import("../js/ui/screens/home/vidaaHomeTrackCamera.js");
+    const fixture = document.querySelector("#fixture");
+    const result = document.querySelector("#result");
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+    const assert = (condition, message) => {
+      if (!condition) throw Error(message);
+    };
+    context.Router.getCurrent = () => "home";
+    const pixel = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+    const row = {
+      addonId: "fixture",
+      catalogId: "movies",
+      catalogName: "Movies",
+      type: "movie",
+      supportsSkip: true,
+      result: {
+        status: "success",
+        data: {
+          items: Array.from({ length: 24 }, (_, index) => ({
+            id: `tt${index}`,
+            name: `Movie ${index}`,
+            type: "movie",
+            poster: pixel
+          })),
+          hasMore: false
+        }
+      }
+    };
+    const rowKey = context.buildModernRowKey(row);
+    const render = (mountedItemCounts = null) =>
+      `<div class="home-shell"><main class="home-main">${
+        layout.renderModernHomeLayout({
+          rows: [row],
+          rowItemLimit: 6,
+          mountedItemCounts,
+          focusedRowKey: rowKey,
+          focusedItemIndex: Number(fixture.querySelector(".focused")?.dataset.itemIndex ?? 0),
+          createPosterCardMarkup: context.createPosterCardMarkup,
+          renderContinueWatchingSection: () => "",
+          formatCatalogRowTitle: (name) => name,
+          escapeHtml: (value) => value,
+          escapeAttribute: (value) => value
+        }).markup
+      }</main></div>`;
+    let focused;
+    const screen = {
+      ...createHomeScreenMethods15(),
+      ...createHomeScreenMethods29(),
+      ...createHomeScreenMethods28(),
+      ...createHomeScreenMethods24(),
+      container: fixture,
+      layoutMode: "modern",
+      layoutPrefs: {},
+      homeLoadToken: 1,
+      rows: [row],
+      getCurrentFocusedNode: () => focused,
+      getRowItemLimit: () => 6,
+      getNavigationRowSection: () => fixture.querySelector(".home-row"),
+      isHomeNavigationSettling: () => false,
+      isVidaaHomeLoadingBusy: () => false,
+      isPerformanceConstrained: () => true,
+      isLegacyTvRuntime: () => false,
+      // Drive only the explicit focus-prefetch path; native scroll events may
+      // otherwise request another page while this fixture checks each append.
+      isScrollAnimationActive: () => true,
+      invalidateNavigationModel() {
+        throw Error("A page append must retain the navigation model");
+      }
+    };
+    try {
+      updateHomeDom(fixture, render());
+      const track = fixture.querySelector(".home-track");
+      const cards = [...track.querySelectorAll(".home-content-card")];
+      screen.navModel = { rows: [cards], rowNodesByRowKey: new Map([[rowKey, cards]]) };
+      focused = cards[5];
+      focused.classList.add("focused");
+      focused.focus({ preventScroll: true });
+      // A painted preview can leave a short tail within the trailing padding.
+      track.scrollLeft = track.scrollWidth - track.clientWidth - 8;
+      screen.setupModernTrackScrollPagination();
+      const scrollBefore = track.scrollLeft;
+      const focusXBefore = focused.getBoundingClientRect().left;
+      const failures = [];
+      const check = (condition, message) => {
+        if (!condition) failures.push(message);
+      };
+      const checkVisiblePosters = (currentTrack) => {
+        const viewport = currentTrack.getBoundingClientRect();
+        for (const image of currentTrack.querySelectorAll(
+          "img.content-poster, img.home-continue-bg"
+        )) {
+          const rect = image.getBoundingClientRect();
+          if (rect.right > viewport.left && rect.left < viewport.right) {
+            check(
+              image.complete && image.naturalWidth > 0 && image.hasAttribute("src"),
+              `A newly appended visible poster did not finish loading: ${JSON.stringify({ id: image.closest("article")?.dataset.itemId, src: image.getAttribute("src"), deferred: image.dataset.src, complete: image.complete, naturalWidth: image.naturalWidth, rect: rect.toJSON(), queue: screen.homeLazyImageCommitQueue?.length, hydrationTimer: screen.homeLazyImageHydrationSettleTimer })}`
+            );
+          }
+        }
+      };
+      for (const page of [1, 2]) {
+        const before = track.scrollLeft;
+        screen._trackScrollHandlers
+          .get(track)
+          .requestAhead({ focusedNode: focused, focusedIndex: Number(focused.dataset.itemIndex) });
+        await wait(400);
+        assert(
+          track.childElementCount === 6 + page * 6,
+          `Page ${page} did not append through production pagination: ${track.childElementCount}`
+        );
+        // Appending happens after the pagination debounce; allow the real
+        // 250ms quiet-hydration timer and its bounded RAF batches to complete.
+        await wait(300);
+        checkVisiblePosters(track);
+        check(
+          Math.abs(track.scrollLeft - before) < 1,
+          `Page ${page} changed the camera during append`
+        );
+        for (let step = 0; step < 6; step++) {
+          const next = focused.nextElementSibling;
+          assert(next, "Missing next paginated poster");
+          const oldContentLeft = focused.offsetLeft;
+          const nextContentLeft = next.offsetLeft;
+          const stride = nextContentLeft - oldContentLeft;
+          const oldScroll = track.scrollLeft;
+          focused.classList.remove("focused");
+          focused = next;
+          focused.classList.add("focused");
+          focused.focus({ preventScroll: true });
+          const target = screen.getModernTrackAlignedScrollTarget(focused);
+          check(
+            target.value - oldScroll <= stride + 1,
+            `Page ${page} first Right jumped ${Math.round(target.value - oldScroll)}px for a ${stride}px poster step`
+          );
+          track.scrollLeft = target.value;
+          check(
+            Math.abs(focused.getBoundingClientRect().left - focusXBefore) < 1,
+            `Page ${page} moved the selected poster's screen position`
+          );
+          check(document.activeElement === focused, "Native focus was lost during paging");
+        }
+      }
+      assert(
+        track.scrollLeft > scrollBefore,
+        "Navigation did not advance through the appended pages"
+      );
+
+      // Refresh while two fetched cards remain to the right of focus.
+      for (let step = 0; step < 2; step++) {
+        focused.classList.remove("focused");
+        focused = focused.previousElementSibling;
+        focused.classList.add("focused");
+        focused.focus({ preventScroll: true });
+        track.scrollLeft = screen.getModernTrackAlignedScrollTarget(focused).value;
+      }
+
+      // A metadata/Continue Watching refresh must keep the already mounted
+      // right-hand runway, even when its render limit is below the live count.
+      const mountedCount = track.childElementCount;
+      const preservedScroll = track.scrollLeft;
+      const preservedFocus = focused;
+      const mountedItemCounts = layout.getMountedModernRowItemCounts?.(fixture) || null;
+      updateHomeDom(fixture, render(mountedItemCounts), {
+        incremental: true,
+        focusedNode: focused
+      });
+      check(
+        track.childElementCount === mountedCount,
+        `Refresh discarded ${mountedCount - track.childElementCount} paginated posters`
+      );
+      check(
+        Math.abs(track.scrollLeft - preservedScroll) < 1,
+        "Refresh clamped the camera after truncating a fetched page"
+      );
+      check(
+        focused === preservedFocus && document.activeElement === preservedFocus,
+        "Refresh replaced the selected title"
+      );
+      screen.teardownModernTrackScrollPagination();
+      for (let index = Number(focused.dataset.itemIndex) - 1; index >= 0; index--) {
+        const next = track.children[index];
+        const oldScroll = track.scrollLeft;
+        const step = focused.offsetLeft - next.offsetLeft;
+        focused.classList.remove("focused");
+        focused = next;
+        focused.classList.add("focused");
+        const target = screen.getModernTrackAlignedScrollTarget(focused);
+        check(oldScroll - target.value <= step + 1, "Reversing left caused a camera jump");
+        track.scrollLeft = target.value;
+      }
+      check(track.scrollLeft === 0, "Reversing left did not reach the start of the catalog");
+
+      // Positive focus inset alone is insufficient: a newly visited row near
+      // its beginning must still use its normal left-aligned camera target.
+      focused = track.children[4];
+      focused.classList.add("focused");
+      track.scrollLeft = 0;
+      captureVidaaHomeTrackAppendInset(screen, track);
+      const normalNext = track.children[5];
+      const normalTarget = screen.getModernTrackAlignedScrollTarget(normalNext);
+      const normalContentLeft =
+        normalNext.getBoundingClientRect().left -
+        track.getBoundingClientRect().left +
+        track.scrollLeft;
+      const leftPadding = Number.parseFloat(getComputedStyle(track).paddingLeft);
+      check(
+        Math.abs(normalTarget.value - (normalContentLeft - leftPadding)) < 1,
+        "Capturing a page near the catalog beginning changed normal alignment"
+      );
+      track.scrollLeft = screen.getModernTrackAlignedScrollTarget(focused).value;
+      captureVidaaHomeTrackAppendInset(screen, track);
+      check(
+        Math.abs(screen.getModernTrackAlignedScrollTarget(normalNext).value - normalTarget.value) <
+          1,
+        "Already left-aligned focus acquired a pagination inset"
+      );
+
+      // Continue Watching has its own progressive append path but uses the
+      // same horizontal camera. Exercise its real renderer and batch method.
+      const continueItems = Array.from({ length: 12 }, (_, index) => ({
+        contentId: `cw${index}`,
+        videoId: `cw${index}`,
+        title: `Continue ${index}`,
+        type: "movie",
+        poster: pixel,
+        backdrop: pixel,
+        progressFraction: 0.25
+      }));
+      updateHomeDom(
+        fixture,
+        `<div class="home-shell"><main class="home-main">${context.renderContinueWatchingSection(
+          continueItems,
+          {
+            rowKey: "continue_watching",
+            itemLimit: 6
+          }
+        )}</main></div>`
+      );
+      const continueTrack = fixture.querySelector(".home-track-continue");
+      const continueCards = [...continueTrack.querySelectorAll(".home-content-card")];
+      screen.navModel = {
+        rows: [continueCards],
+        rowNodesByRowKey: new Map([["continue_watching", continueCards]])
+      };
+      screen.continueWatchingDisplay = continueItems;
+      screen.getContinueWatchingRenderBatchSize = () => 6;
+      focused = continueCards[5];
+      focused.classList.add("focused");
+      focused.focus({ preventScroll: true });
+      continueTrack.scrollLeft = continueTrack.scrollWidth;
+      const continueScroll = continueTrack.scrollLeft;
+      const continueFocusX = focused.getBoundingClientRect().left;
+      assert(
+        screen.appendContinueWatchingBatch(),
+        "Continue Watching did not append its next batch"
+      );
+      check(
+        continueTrack.childElementCount === 12 && screen.navModel.rows[0].length === 12,
+        "Continue Watching did not retain all appended navigation targets"
+      );
+      check(
+        Math.abs(continueTrack.scrollLeft - continueScroll) < 1,
+        "Continue Watching changed the camera during append"
+      );
+      const continueNext = focused.nextElementSibling;
+      const continueStride = continueNext.offsetLeft - focused.offsetLeft;
+      focused.classList.remove("focused");
+      focused = continueNext;
+      focused.classList.add("focused");
+      focused.focus({ preventScroll: true });
+      const continueTarget = screen.getModernTrackAlignedScrollTarget(focused);
+      check(
+        continueTarget.value - continueScroll <= continueStride + 1,
+        `Continue Watching first Right jumped ${Math.round(continueTarget.value - continueScroll)}px for a ${continueStride}px card step`
+      );
+      continueTrack.scrollLeft = continueTarget.value;
+      check(
+        Math.abs(focused.getBoundingClientRect().left - continueFocusX) < 1,
+        "Continue Watching moved the selected card's screen position"
+      );
+      check(document.activeElement === focused, "Continue Watching lost native focus after append");
+      assert(!failures.length, failures.join("\n"));
+      result.dataset.status = "passed";
+      result.textContent =
+        "PASS: catalog and Continue Watching pagination preserve camera/focus across appended pages, incremental refresh and left reversal";
+    } catch (error) {
+      screen.teardownModernTrackScrollPagination();
+      result.dataset.status = "failed";
+      result.textContent = `FAIL: ${error.stack}`;
+    }
+  </script>
+</html>

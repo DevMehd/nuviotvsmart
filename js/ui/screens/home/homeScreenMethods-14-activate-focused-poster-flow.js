@@ -1,5 +1,6 @@
 import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import * as internals from "./homeScreenContext.js";
+import { homeMetadataSettingsSignature } from "./homeMetadataSettings.js";
 
 /**
  * Cheap signature of the hero copy layout, read without forcing layout: viewport, and for
@@ -26,9 +27,12 @@ export function createHomeScreenMethods14() {
         return;
       }
       const isVidaa = Platform.isVidaa();
+      const routeName = this.useHomeFollowLayout ? "folderDetail" : "home";
+      const flowKey = this.getFocusedPosterFlowKey(node);
       const isCurrentVidaaFlow = () =>
-        Router.getCurrent() === "home" &&
+        Router.getCurrent() === routeName &&
         Number(this.focusedPosterFlowToken || 0) === Number(flowToken || 0) &&
+        this.getFocusedPosterFlowKey(node) === flowKey &&
         this.getCurrentFocusedNode() === node &&
         node.isConnected &&
         node.classList.contains("focused");
@@ -81,8 +85,6 @@ export function createHomeScreenMethods14() {
       if (!source || !node.classList.contains("focused")) {
         return;
       }
-      const flowKey = this.getFocusedPosterFlowKey(node);
-
       if (trailerTarget === "expanded_card" && shouldExpand) {
         this.heroTrailerPlaybackState = null;
         const trailerLayer = node.querySelector(".home-poster-trailer-layer");
@@ -134,7 +136,7 @@ export function createHomeScreenMethods14() {
       if (!itemId) {
         return "";
       }
-      return `${itemType}:${itemId}`;
+      return JSON.stringify([itemType, itemId, homeMetadataSettingsSignature()]);
     },
     scheduleHomeTruncationUpdate({ scope = null } = {}) {
       if (!this.container) {

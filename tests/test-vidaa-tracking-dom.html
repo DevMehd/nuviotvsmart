@@ -1,0 +1,170 @@
+<!doctype html>
+<meta charset="utf-8" />
+<base href="/" />
+<title>Confronto Tracciamento</title>
+<link rel="stylesheet" href="/dist/css/bundle.css" />
+<script src="/assets/libs/qrcode-generator.js"></script>
+<style>
+  #result {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 99999;
+    background: #181820;
+    color: #eee;
+    font: 14px monospace;
+    margin: 0;
+    max-width: 100vw;
+  }
+  #settings {
+    display: block;
+  }
+</style>
+<div id="settings"></div>
+<pre id="result">Preparazione</pre>
+<script>
+  globalThis.__NUVIO_PLATFORM__ = "vidaa";
+  document.documentElement.classList.add("vidaa-tv");
+  if (new URL(location.href).searchParams.has("fallback"))
+    document.documentElement.classList.add("no-css-grid", "no-flex-gap");
+  const values = new Map();
+  Object.defineProperty(window, "localStorage", {
+    value: {
+      getItem: (k) => values.get(k) ?? null,
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+      key: (i) => [...values.keys()][i] ?? null,
+      get length() {
+        return values.size;
+      }
+    }
+  });
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, options) => {
+    const url = new URL(typeof input === "string" ? input : input.url, location.href);
+    if (url.origin !== location.origin)
+      return Promise.reject(Error("External request blocked in UI fixture"));
+    return originalFetch(input, options);
+  };
+</script>
+<script type="module">
+  try {
+    const { SettingsScreen, Router, I18n, ThemeManager } =
+      await import("/js/ui/screens/settings/settingsScreen.js");
+    const { TraktAuthService } = await import("/js/data/repository/traktAuthService.js");
+    const { SimklAuthService } = await import("/js/data/repository/simklAuthService.js");
+    const { addonRepository } = await import("/js/data/repository/addonRepository.js");
+    const connected = new URL(location.href).searchParams.has("connected");
+    TraktAuthService.isAuthenticated = () => connected;
+    TraktAuthService.getCurrentAuthState = () => ({ username: "Profilo Trakt di prova" });
+    SimklAuthService.isAuthenticated = () => connected;
+    SimklAuthService.getCurrentAuthState = () => ({ username: "Profilo Simkl di prova" });
+    addonRepository.getInstalledAddons = async () => [];
+    Router.getCurrent = () => "settings";
+    await I18n.init("it");
+    ThemeManager.apply();
+    SettingsScreen.activeSection = "trakt";
+    SettingsScreen.startTraktClock = () => {};
+    SettingsScreen.loadTraktStats = async () => {};
+    SettingsScreen.traktStats = {
+      moviesWatched: 12,
+      showsWatched: 8,
+      episodesWatched: 80,
+      totalWatchedHours: 44
+    };
+    await SettingsScreen.mount();
+    await new Promise((r) => setTimeout(r, 150));
+    SettingsScreen.focusZone = "content";
+    SettingsScreen.applyFocus();
+    if (new URL(location.href).searchParams.has("preview") && innerWidth < 1920) {
+      const surface = document.querySelector("#settings");
+      surface.style.transform = "scale(" + innerWidth / 1920 + ")";
+      surface.style.transformOrigin = "top left";
+    }
+    globalThis.trackingPreview = SettingsScreen;
+    document.addEventListener("keydown", async (event) => {
+      event.preventDefault();
+      await SettingsScreen.onKeyDown(event);
+    });
+    const panel = document.querySelector(".settings-tracking-panel"),
+      hero = panel.querySelector(".settings-tracking-hero"),
+      scroll = panel.querySelector(".settings-trakt-scroll-area");
+    const assert = (ok, message) => {
+      if (!ok) throw Error(message);
+    };
+    const frame = panel.getBoundingClientRect(),
+      heading = hero.getBoundingClientRect(),
+      list = scroll.getBoundingClientRect();
+    assert(heading.bottom <= list.top + 2, "Tracking header must sit above the list");
+    assert(list.width >= frame.width - 2, "Tracking accounts must use the content width");
+    const cards = [...scroll.querySelectorAll(":scope > .settings-trakt-card")];
+    cards.forEach((card, i) => {
+      if (i)
+        assert(
+          card.getBoundingClientRect().top >= cards[i - 1].getBoundingClientRect().bottom - 1,
+          "Tracking cards must not overlap"
+        );
+    });
+    const keys = [...scroll.querySelectorAll(".settings-content-focusable")].map(
+      (n) => n.dataset.focusKey
+    );
+    for (const key of keys) {
+      SettingsScreen.contentFocusKey = key;
+      SettingsScreen.applyFocus();
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        const active = document.querySelector(".settings-content-focusable.focused"),
+          b = active.getBoundingClientRect(),
+          a = scroll.getBoundingClientRect();
+        if (b.top >= a.top - 2 && b.bottom <= a.bottom + 2) break;
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      const row = document.querySelector(".settings-content-focusable.focused"),
+        box = row.getBoundingClientRect(),
+        area = scroll.getBoundingClientRect();
+      assert(row.dataset.focusKey === key, "Focus must remain on the requested tracking action");
+      assert(
+        box.top >= area.top - 2 && box.bottom <= area.bottom + 2,
+        "Focused tracking action must scroll into view " +
+          JSON.stringify({
+            key,
+            top: box.top,
+            bottom: box.bottom,
+            listTop: area.top,
+            listBottom: area.bottom,
+            scrollTop: scroll.scrollTop,
+            height: scroll.clientHeight,
+            contentHeight: scroll.scrollHeight
+          })
+      );
+    }
+    SettingsScreen.contentFocusKey = "tracking:progressSource";
+    SettingsScreen.applyFocus();
+    await SettingsScreen.activateFocused();
+    assert(document.querySelector(".settings-dialog-option"), "Tracking source options must open");
+    SettingsScreen.closeOptionDialog();
+    await SettingsScreen.render({ refreshModel: false });
+    SettingsScreen.contentFocusKey = "tracking:trakt";
+    SettingsScreen.applyFocus();
+    await SettingsScreen.activateFocused();
+    assert(
+      document.querySelector(".settings-tracking-account-card"),
+      "Tracking account must expand"
+    );
+    SettingsScreen.contentFocusKey = "tracking:trakt";
+    SettingsScreen.applyFocus();
+    await SettingsScreen.activateFocused();
+    assert(
+      !document.querySelector(".settings-tracking-account-card"),
+      "Tracking account must collapse"
+    );
+    SettingsScreen.cleanup();
+    document.querySelector("#result").dataset.status = "pass";
+    document.querySelector("#result").textContent =
+      "PASS: Tracking uses full-width stacked sections; account expansion, source dialogs and focus scrolling work" +
+      (connected ? " with connected accounts" : " without connected accounts");
+  } catch (error) {
+    document.querySelector("#result").dataset.status = "fail";
+    document.querySelector("#result").textContent = "FAIL " + error.stack;
+  }
+</script>

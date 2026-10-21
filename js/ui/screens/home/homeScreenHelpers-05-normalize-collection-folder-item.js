@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
+import { Platform } from "../../../platform/index.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
 
@@ -56,8 +57,6 @@ import { mdbListRepository } from "../../../data/repository/mdbListRepository.js
 import { ProfileManager } from "../../../core/profile/profileManager.js";
 
 import { StartupSyncService } from "../../../core/profile/startupSyncService.js";
-
-import { Platform } from "../../../platform/index.js";
 
 import { WatchProgressSource } from "../../../data/local/traktSettingsStore.js";
 

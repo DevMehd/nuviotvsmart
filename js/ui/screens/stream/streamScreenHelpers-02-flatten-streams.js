@@ -1,3 +1,4 @@
+import { canResolveMediaServerStream } from "../../../data/mediaserver/mediaServerRepository.js";
 import { Router } from "../../navigation/routerState.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
@@ -68,7 +69,7 @@ import { localizedGenreText } from "../../../i18n/genreLabels.js";
 
 import { matchStreamBadges, normalizeStreamBadgeChipColor, normalizeStreamBadgeRules } from "../../../core/streams/streamBadgeRules.js";
 
-import { normalizeMathematicalAlphanumericSymbols } from "../../../core/streams/streamDisplayText.js";
+import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 
 import { renderLoadingIndicator } from "../../components/loadingIndicator.js";
 
@@ -151,6 +152,7 @@ export function flattenStreams(streamResult) {
         raw: stream
       };
       if (
+        canResolveMediaServerStream(entry) ||
         DirectDebridResolver.shouldListStream(entry) ||
         WebOsEngineFsResolver.canResolveStream(entry) ||
         TizenStreamingServerResolver.canResolveStream(entry)
@@ -186,7 +188,7 @@ export function mergeStreamItems(existing = [], incoming = []) {
 }
 
 export function getAddonBadgeLabel(name = "") {
-  const cleaned = String(name || "").trim();
+  const cleaned = (Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText(name) : String(name || "")).trim();
   if (!cleaned) {
     return "A";
   }
@@ -195,10 +197,10 @@ export function getAddonBadgeLabel(name = "") {
   }
   const letters = cleaned
     .split(/\s+/)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("")
-    .slice(0, 2);
-  return letters || cleaned.charAt(0).toUpperCase();
+    .map((part) => Array.from(part)[0].toUpperCase())
+    .slice(0, 2)
+    .join("");
+  return letters;
 }
 
 export async function ensureAddonLogoImageProxyReady() {
@@ -251,13 +253,13 @@ export async function preloadMatchedStreamBadgeImages(streams = [], settings = S
 }
 
 export function getStreamHeadline(stream = {}) {
+  const readableText = Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText : String;
   const primary = [stream.name, stream.title, stream.description].find((value) => String(value || "").trim());
   if (!primary) {
-    return stream.addonName || "Unknown source";
+    return readableText(stream.addonName || "Unknown source");
   }
   const firstLine = String(primary).split(/\r?\n/)[0].trim();
-  const displayLine = Environment.isWebOS() ? normalizeMathematicalAlphanumericSymbols(firstLine) : firstLine;
-  return displayLine || stream.addonName || "Unknown source";
+  return readableText(firstLine || stream.addonName || "Unknown source");
 }
 
 export function getStreamQuality(stream = {}) {
@@ -289,7 +291,9 @@ export function getStreamDescriptionLines(stream = {}) {
   if (!displayDescription || displayDescription === displayName) {
     return [];
   }
-  return displayDescription
+  const readableDescription =
+    Environment.isWebOS() || Environment.isVidaa() ? normalizeStreamDisplayText(displayDescription) : displayDescription;
+  return readableDescription
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)

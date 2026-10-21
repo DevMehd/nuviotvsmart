@@ -25,6 +25,7 @@ import { CastDetailScreen } from "../screens/cast/castDetailScreen.js";
 import { CatalogSeeAllScreen } from "../screens/catalog/catalogSeeAllScreen.js";
 import { TmdbEntityBrowseScreen } from "../screens/tmdb/tmdbEntityBrowseScreen.js";
 import { FolderDetailScreen } from "../screens/collection/folderDetailScreen.js";
+import { PartyScreen } from "../screens/party/partyScreen.js";
 import { Platform } from "../../platform/index.js";
 import { TizenCapabilities } from "../../platform/tizen/tizenCapabilities.js";
 import { RouteStateStore } from "./routeStateStore.js";
@@ -65,6 +66,7 @@ export {
   CatalogSeeAllScreen,
   TmdbEntityBrowseScreen,
   FolderDetailScreen,
+  PartyScreen,
   Platform,
   TizenCapabilities,
   RouteStateStore,
@@ -120,7 +122,8 @@ const WEBOS_NON_RESTORABLE_ROUTES = new Set([
   "catalogOrder",
   "detail",
   "player",
-  "stream"
+  "stream",
+  "watchParty"
 ]);
 
 function getStackEntryRoute(entry) {
@@ -190,7 +193,8 @@ Object.assign(Router, {
     castDetail: CastDetailScreen,
     catalogSeeAll: CatalogSeeAllScreen,
     tmdbEntityBrowse: TmdbEntityBrowseScreen,
-    folderDetail: FolderDetailScreen
+    folderDetail: FolderDetailScreen,
+    watchParty: PartyScreen
   },
   ...createRouterMethods01(),
   ...createRouterMethods02(),

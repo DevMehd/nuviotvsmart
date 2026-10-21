@@ -16,7 +16,7 @@ export function createTmdbMetadataServiceMethods02() {
     languageBase,
     normalizeMoreLikeThisLanguage,
     toImageUrl,
-    selectBestLocalizedImagePath,
+    selectBestBackdropPath,
     fetchTmdbImages,
     resolveRecommendationReleaseInfo
   } = internals;
@@ -163,8 +163,7 @@ export function createTmdbMetadataServiceMethods02() {
                 apiKey,
                 includeImageLanguage
               });
-              const localizedBackdropPath = selectBestLocalizedImagePath(images?.backdrops, normalizedLanguage);
-              const backdrop = toImageUrl(localizedBackdropPath || item?.backdrop_path, "backdrop");
+              const backdrop = toImageUrl(selectBestBackdropPath(images?.backdrops, item?.backdrop_path), "backdrop");
               const fallbackPoster = toImageUrl(item?.poster_path, "entityBackdrop");
               const releaseInfo = await resolveRecommendationReleaseInfo(item, {
                 type: recommendationType,

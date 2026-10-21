@@ -143,7 +143,10 @@ export function applyRemoteBlob(profileId, blob) {
   let applied = false;
   SUPPORTED_FEATURE_NAMES.forEach((featureName) => {
     const featurePayload = withoutExcludedProfileSettingsKeys(featureName, blob?.features?.[featureName] || {});
-    const didApply = FEATURE_ADAPTERS[featureName].import(profileId, featurePayload);
+    const didApply = FEATURE_ADAPTERS[featureName].import(profileId, featurePayload, {
+      isRemoteFeaturePresent:
+        Object.prototype.hasOwnProperty.call(blob?.features || {}, featureName) && isPlainObject(blob.features[featureName])
+    });
     if (didApply) {
       applied = true;
     }

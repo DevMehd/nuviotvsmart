@@ -1,3 +1,4 @@
+import { customPosterForItem, posterFallbackAttributes } from "../../../core/poster/customPoster.js";
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
 
@@ -280,7 +281,8 @@ export function resolveContinueWatchingBlurNextUp(layoutPrefs) {
 }
 
 export function renderContinueWatchingCard(item, index, options = {}) {
-  const normalized = normalizeContinueWatchingItem(item);
+  const originalItem = normalizeContinueWatchingItem(item);
+  const normalized = customPosterForItem(originalItem, "continue_watching");
   const subtitle = normalized.episodeTitle || "";
   const isNextUp = Boolean(normalized?.isNextUp);
   const hasAired = normalized?.hasAired !== false;
@@ -301,11 +303,30 @@ export function renderContinueWatchingCard(item, index, options = {}) {
     {
       cardStyle,
       useEpisodeThumbnails: options?.useEpisodeThumbnails,
+      maxTmdbWidth: Platform.isVidaa() ? (cardStyle === "poster" ? 342 : 500) : undefined,
       isSeries: isSeriesTypeForContinueWatching(normalized.type),
       isNextUp,
       hasAired
     }
   );
+  const originalCardImages =
+    normalized === originalItem
+      ? []
+      : continueWatchingImageSources(
+          {
+            poster: originalItem.poster,
+            backdrop: originalItem.backdrop,
+            thumbnail: originalItem.thumbnail,
+            episodeThumbnail: originalItem.episodeThumbnail
+          },
+          {
+            cardStyle,
+            useEpisodeThumbnails: options?.useEpisodeThumbnails,
+            isSeries: isSeriesTypeForContinueWatching(normalized.type),
+            isNextUp,
+            hasAired
+          }
+        );
   const normalizeCardImageUrl =
     cardStyle === "card" ? (Platform.isVidaa() ? normalizeTmdbCardBackdropUrl : normalizeTmdbBackdropUrl) : normalizeTmdbPosterUrl;
   const uniqueCardImageSources = uniqueNonEmptyValues(cardImageSources.map((source) => getVidaaArtworkUrl(normalizeCardImageUrl(source))));
@@ -329,7 +350,7 @@ export function renderContinueWatchingCard(item, index, options = {}) {
              data-item-type="${escapeAttribute(normalized.type || "movie")}"
              data-item-title="${escapeAttribute(normalized.title || "Untitled")}">
       <div class="home-continue-media">
-        ${cardImage ? `<img class="home-continue-bg" ${continueImageAttrs}${fallbackQueue ? ` data-fallback-srcs="${escapeAttribute(fallbackQueue)}"` : ""} alt="" aria-hidden="true" decoding="async" onerror="${buildImageFallbackErrorHandler()}" />` : ""}
+        ${cardImage ? `<img class="home-continue-bg"${posterFallbackAttributes({ rawPosterUrl: originalCardImages[0] })} ${continueImageAttrs}${fallbackQueue ? ` data-fallback-srcs="${escapeAttribute(fallbackQueue)}"` : ""} alt="" aria-hidden="true" decoding="async" onerror="${buildImageFallbackErrorHandler()}" />` : ""}
         <span class="home-continue-badge">${escapeHtml(normalized.progressStatus || t("home.continueStatusContinue", {}, "Continue"))}</span>
         <div class="home-continue-copy">
           ${normalized.episodeCode ? `<div class="home-continue-kicker">${escapeHtml(normalized.episodeCode)}</div>` : ""}

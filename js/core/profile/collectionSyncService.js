@@ -18,17 +18,29 @@ function resolveProfileId(profileId = null) {
   return 1;
 }
 
-function stableStringify(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+// Both inputs have passed CollectionsStore normalization. Compare their JSON
+// values directly: serializing every field into intermediate strings blocks
+// the TV's UI thread even when a background pull changes nothing.
+function collectionsEqual(left, right) {
+  if (left === right) return true;
+  if (left == null || right == null || typeof left !== "object" || typeof right !== "object")
+    return false;
+  if (Array.isArray(left)) {
+    return (
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((entry, index) => collectionsEqual(entry, right[index]))
+    );
   }
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
+  if (Array.isArray(right)) return false;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) && collectionsEqual(left[key], right[key])
+    )
+  );
 }
 
 function parseRemoteCollectionsPayload(blob = null) {
@@ -37,7 +49,7 @@ function parseRemoteCollectionsPayload(blob = null) {
     return CollectionsStore.importFromJson(raw);
   }
   try {
-    return CollectionsStore.importFromJson(JSON.stringify(raw));
+    return CollectionsStore.normalizeCollections(raw);
   } catch (_) {
     return [];
   }
@@ -62,8 +74,9 @@ export const CollectionSyncService = {
     }
     const resolvedProfileId = resolveProfileId(profileId);
     try {
-      const collectionsJson = CollectionsStore.exportCurrentProfileJson(resolvedProfileId);
-      const parsedJson = CollectionsStore.importFromJson(collectionsJson);
+      const parsedJson = CollectionsStore.normalizeCollections(
+        CollectionsStore.getForProfile(resolvedProfileId)
+      );
       await SupabaseApi.rpc(
         PUSH_RPC,
         {
@@ -100,7 +113,7 @@ export const CollectionSyncService = {
 
       const remoteCollections = parseRemoteCollectionsPayload(blob);
       const localCollections = CollectionsStore.getForProfile(resolvedProfileId);
-      if (stableStringify(remoteCollections) === stableStringify(localCollections)) {
+      if (collectionsEqual(remoteCollections, localCollections)) {
         return false;
       }
 

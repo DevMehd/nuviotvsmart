@@ -1,10 +1,14 @@
 const runtimeEnv = globalThis.__NUVIO_ENV__ || {};
-export const ACCOUNT_BACKEND_MODE = String(runtimeEnv.NUVIO_ACCOUNT_BACKEND_MODE || "")
+// Personal builds use the same official account backend as Android unless told otherwise.
+export const ACCOUNT_BACKEND_MODE = String(runtimeEnv.NUVIO_ACCOUNT_BACKEND_MODE || "official")
   .trim()
   .toLowerCase();
 
-export const SUPABASE_URL = String(runtimeEnv.NUVIO_SUPABASE_URL || "").trim();
-export const SUPABASE_ANON_KEY = String(runtimeEnv.NUVIO_SUPABASE_ANON_KEY || "").trim();
+export const SUPABASE_URL = String(runtimeEnv.NUVIO_SUPABASE_URL || "https://api.nuvio.tv").trim();
+export const SUPABASE_ANON_KEY = String(
+  runtimeEnv.NUVIO_SUPABASE_ANON_KEY ||
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI"
+).trim();
 export const SUPABASE_FALLBACK_URL = String(runtimeEnv.NUVIO_SUPABASE_FALLBACK_URL || "").trim();
 export const TV_LOGIN_WEB_BASE_URL = String(
   runtimeEnv.TV_LOGIN_WEB_BASE_URL || "https://nuvio.tv/tv-login"
@@ -26,6 +30,7 @@ export const IMDB_TAPFRAME_API_BASE_URL = String(
 export const MDBLIST_API_BASE_URL = String(
   runtimeEnv.MDBLIST_API_BASE_URL || "https://api.mdblist.com/"
 ).trim();
+export const MDBLIST_CLIENT_ID = String(runtimeEnv.MDBLIST_CLIENT_ID || "").trim();
 export const AVATAR_PUBLIC_BASE_URL = String(runtimeEnv.AVATAR_PUBLIC_BASE_URL || "").trim();
 export const UNIQUE_CONTRIBUTIONS_BASE_URL = String(
   runtimeEnv.UNIQUE_CONTRIBUTIONS_BASE_URL || ""

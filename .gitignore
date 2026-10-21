@@ -4,25 +4,35 @@ favicon.svg
 
 nuvio.env.js
 local.properties
-local.example.properties
 node_modules/
 tests/*
+!tests/helpers/
+!tests/helpers/*.mjs
 !tests/test-vidaa-home-patching.html
+!tests/test-vidaa-account-dom.html
+!tests/test-vidaa-tracking-dom.html
+!tests/test-vidaa-trailer-dom.html
 !tests/test-vidaa-home-row-updates.html
 !tests/test-vidaa-home-window.html
 !tests/test-vidaa-home-poster-expansion.html
+!tests/test-vidaa-home-pagination-camera.html
 !tests/test-vidaa-navigation-stress.html
 !tests/test-vidaa-hero-motion.html
 !tests/test-vidaa-stream-window.html
 !tests/test-vidaa-comparison.html
+!tests/test-vidaa-grid-poster-window.html
+!tests/test-vidaa-stream-unicode.html
 !tests/run-vidaa-home-dom-tests.mjs
 !tests/helpers/
 !tests/helpers/*.mjs
 !tests/test-vidaa-*.mjs
+tests/test-vidaa-embedded-text-access.mjs
 
 # Local research notes and one-off diagnostic tools are not app source.
 docs/vidaa-*.md
+!docs/vidaa-verification.md
 docs/fixtures/
+scripts/release-build-poller.mjs
 scripts/vidaa-*-probe.*
 scripts/vidaa-plugin-context-runtime.js
 scripts/vidaa-native-artifact-inspect.py

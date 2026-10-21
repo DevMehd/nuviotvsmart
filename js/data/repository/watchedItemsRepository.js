@@ -1,3 +1,12 @@
+import { TraktAuthStore } from "../local/traktAuthStore.js";
+import { requestTraktRefreshAfterWatchAction } from "./traktActivityRefreshState.js";
+import {
+  beginManualWatched,
+  applyManualServerWatched,
+  manualWatchedCurrent,
+  captureManualWatched,
+  finishManualWatched
+} from "../mediaserver/manualServerWatched.js";
 import { WatchedItemsStore } from "../local/watchedItemsStore.js";
 import { ProfileManager } from "../../core/profile/profileManager.js";
 import { TraktSettingsStore, WatchProgressSource } from "../local/traktSettingsStore.js";
@@ -182,19 +191,43 @@ const TRAKT_WATCHED_MOVIES_CACHE_TTL_MS = 30_000;
 let traktWatchedMoviesCache = null;
 let traktWatchedMoviesInFlight = null;
 let traktWatchedShowsCache = null;
+let traktWatchedShowsGeneration = 0;
 let traktWatchedShowsInFlight = null;
 
-function invalidateTraktWatchedMoviesCache() {
+export function invalidateTraktWatchedMoviesCache() {
   traktWatchedMoviesCache = null;
 }
 
-function invalidateTraktWatchedShowsCache() {
+export function invalidateTraktWatchedShowsCache() {
+  traktWatchedShowsGeneration++;
   traktWatchedShowsCache = null;
 }
 
 function invalidateTraktWatchedCaches() {
   invalidateTraktWatchedMoviesCache();
   invalidateTraktWatchedShowsCache();
+}
+
+function isSeriesWatchedItem(item = {}) {
+  const type = String(item?.contentType || "").toLowerCase();
+  return (
+    type === "series" ||
+    type === "tv" ||
+    type === "show" ||
+    item?.season != null ||
+    item?.episode != null
+  );
+}
+
+// Android refreshNow() after a watch action: refetch only the watched list the
+// action touched and force the next Continue Watching reconciliation.
+function invalidateTraktWatchedForItems(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  const shows = list.some(isSeriesWatchedItem);
+  const movies = list.some((item) => !isSeriesWatchedItem(item));
+  if (movies) invalidateTraktWatchedMoviesCache();
+  if (shows) invalidateTraktWatchedShowsCache();
+  requestTraktRefreshAfterWatchAction({ movies, shows });
 }
 
 async function getTraktWatchedMovies() {
@@ -240,47 +273,74 @@ async function getTraktWatchedMovies() {
   return promise;
 }
 
-async function getTraktWatchedShows() {
+async function getTraktWatchedShows({ strict = false } = {}) {
   if (!shouldUseTrakt()) {
     return [];
   }
 
   const profileId = activeProfileId();
+  const generation = traktWatchedShowsGeneration;
+  const auth = TraktAuthStore.get(profileId);
+  const accountKey = JSON.stringify([
+    auth.userSlug || auth.username || "",
+    auth.userSlug || auth.username ? "" : auth.refreshToken
+  ]);
+  const fallback = (error) => {
+    if (strict) throw error;
+    console.warn("Trakt watched shows lookup failed", error);
+    return traktWatchedShowsCache?.profileId === profileId &&
+      traktWatchedShowsCache.accountKey === accountKey
+      ? traktWatchedShowsCache.items
+      : [];
+  };
   const now = Date.now();
   if (
     traktWatchedShowsCache?.profileId === profileId &&
+    traktWatchedShowsCache.accountKey === accountKey &&
     now - Number(traktWatchedShowsCache.fetchedAt || 0) < TRAKT_WATCHED_MOVIES_CACHE_TTL_MS
   ) {
     return traktWatchedShowsCache.items;
   }
-  if (traktWatchedShowsInFlight?.profileId === profileId) {
-    return traktWatchedShowsInFlight.promise;
+  if (
+    traktWatchedShowsInFlight?.profileId === profileId &&
+    traktWatchedShowsInFlight.accountKey === accountKey &&
+    traktWatchedShowsInFlight.generation === generation
+  ) {
+    return traktWatchedShowsInFlight.promise.catch(fallback);
   }
 
   const promise = TraktAuthService.fetchWatchedShows()
     .then((items) => {
-      const normalizedItems = Array.isArray(items) ? items : [];
+      const currentAuth = TraktAuthStore.get(profileId);
+      const currentAccountKey = JSON.stringify([
+        currentAuth.userSlug || currentAuth.username || "",
+        currentAuth.userSlug || currentAuth.username ? "" : currentAuth.refreshToken
+      ]);
+      if (
+        generation !== traktWatchedShowsGeneration ||
+        profileId !== activeProfileId() ||
+        currentAccountKey !== accountKey ||
+        !shouldUseTrakt()
+      ) {
+        throw new Error("Obsolete Trakt watched shows request");
+      }
+      if (!Array.isArray(items)) throw new Error("Invalid Trakt watched shows response");
+      const normalizedItems = items;
       traktWatchedShowsCache = {
         profileId,
+        accountKey,
         fetchedAt: Date.now(),
         items: normalizedItems
       };
       return normalizedItems;
-    })
-    .catch((error) => {
-      console.warn("Trakt watched shows lookup failed", error);
-      return traktWatchedShowsCache?.profileId === profileId &&
-        Array.isArray(traktWatchedShowsCache.items)
-        ? traktWatchedShowsCache.items
-        : [];
     })
     .finally(() => {
       if (traktWatchedShowsInFlight?.promise === promise) {
         traktWatchedShowsInFlight = null;
       }
     });
-  traktWatchedShowsInFlight = { profileId, promise };
-  return promise;
+  traktWatchedShowsInFlight = { profileId, accountKey, generation, promise };
+  return promise.catch(fallback);
 }
 
 function toTraktWatchedShowEpisodeItems(show = {}) {
@@ -492,6 +552,7 @@ async function writeWatchedItemToProviders(item) {
 }
 
 async function writeWatchedItemsToProviders(items = []) {
+  const profileId = activeProfileId();
   const validItems = (Array.isArray(items) ? items : []).filter((item) => item?.contentId);
   if (!validItems.length) {
     return;
@@ -503,6 +564,7 @@ async function writeWatchedItemsToProviders(items = []) {
       console.warn("Simkl watched history write failed", error);
     }
   }
+  if (activeProfileId() !== profileId) return;
   if (isTraktConnected()) {
     try {
       await writeTraktHistoryBatch(validItems, false);
@@ -557,44 +619,47 @@ class WatchedItemsRepository {
   }
 
   async mark(item, options = {}) {
-    if (!item?.contentId) {
-      return;
-    }
-    const profileId = activeProfileId();
-    WatchedItemsStore.upsert(
-      {
-        ...item,
-        watchedAt: item.watchedAt || Date.now()
-      },
-      profileId
-    );
-    invalidateTraktWatchedCaches();
-
-    // Android commits local completion before broadcasting to tracking providers.
-    // A provider outage must not discard the completed state or the cloud enqueue.
-    if (options.skipTrackingWrite !== true) {
-      await writeWatchedItemToProviders(item);
-    }
-    queueWatchedItemsCloudSync();
+    if (!item?.contentId) return false;
+    const result = await this.markBatch([item], options);
+    return result.succeeded.length === 1;
   }
 
   async markBatch(items = [], options = {}) {
     const validItems = (Array.isArray(items) ? items : []).filter((item) => item?.contentId);
-    if (!validItems.length) {
-      return;
-    }
-
     const profileId = activeProfileId();
     const normalizedItems = validItems.map((item) => ({
       ...item,
+      season: item.season == null || item.season === "" ? null : Number(item.season),
+      episode: item.episode == null || item.episode === "" ? null : Number(item.episode),
       watchedAt: item.watchedAt || Date.now()
     }));
+    const previous = WatchedItemsStore.listForProfile(profileId).filter((entry) =>
+      normalizedItems.some(
+        (item) =>
+          entry.contentId === item.contentId &&
+          entry.season === (item.season ?? null) &&
+          entry.episode === (item.episode ?? null)
+      )
+    );
+    const operation = beginManualWatched(normalizedItems, previous, profileId);
     WatchedItemsStore.upsertMany(normalizedItems, profileId);
-    invalidateTraktWatchedCaches();
-    if (options.skipTrackingWrite !== true) {
-      await writeWatchedItemsToProviders(normalizedItems);
+    captureManualWatched(operation);
+    invalidateTraktWatchedForItems(normalizedItems);
+    const succeeded =
+      options.skipTrackingWrite === true || options.skipServerWrite === true
+        ? normalizedItems
+        : await applyManualServerWatched(normalizedItems, true, operation);
+    if (options.skipTrackingWrite === true || options.skipServerWrite === true)
+      finishManualWatched(operation, normalizedItems, normalizedItems, true);
+    if (options.skipTrackingWrite !== true && activeProfileId() === profileId) {
+      await writeWatchedItemsToProviders(
+        succeeded.filter((item) => manualWatchedCurrent(operation, item))
+      );
     }
-    queueWatchedItemsCloudSync();
+    invalidateTraktWatchedForItems(normalizedItems);
+    queueWatchedItemsCloudSync(profileId);
+    const current = succeeded.filter((item) => manualWatchedCurrent(operation, item));
+    return { ok: current.length === normalizedItems.length, succeeded: current };
   }
 
   async unmark(contentId, options = null) {
@@ -602,6 +667,22 @@ class WatchedItemsRepository {
     const removedItems = WatchedItemsStore.listForProfile(pid).filter((item) =>
       matchesWatchedTarget(item, contentId, options)
     );
+    const targets = removedItems.length
+      ? removedItems.map((item) => ({
+          ...options,
+          ...item,
+          videoId: item.videoId || options?.videoId || null
+        }))
+      : [
+          {
+            ...options,
+            contentId,
+            contentType: options?.contentType || "movie",
+            season: options?.season ?? null,
+            episode: options?.episode ?? null
+          }
+        ];
+    const operation = beginManualWatched(targets, removedItems, pid);
     // Remove the local state first, matching Android's optimistic removal path.
     if (removedItems.length) {
       const remaining = WatchedItemsStore.listForProfile(pid).filter(
@@ -611,7 +692,22 @@ class WatchedItemsRepository {
     } else {
       WatchedItemsStore.remove(contentId, pid, options);
     }
-    invalidateTraktWatchedCaches();
+    invalidateTraktWatchedForItems(targets);
+
+    captureManualWatched(operation);
+    if (options?.skipTrackingWrite !== true && options?.skipServerWrite !== true) {
+      const succeeded = await applyManualServerWatched(targets, false, operation);
+      if (succeeded.length !== targets.length) {
+        invalidateTraktWatchedForItems(targets);
+        queueWatchedItemsCloudSync(pid);
+        return false;
+      }
+    }
+    if (options?.skipTrackingWrite === true || options?.skipServerWrite === true)
+      finishManualWatched(operation, targets, targets, false);
+    const isCurrent = () =>
+      activeProfileId() === pid && targets.every((item) => manualWatchedCurrent(operation, item));
+    if (!isCurrent()) return false;
 
     if (isSimklConnected() && options?.skipTrackingWrite !== true) {
       const remoteMatches = removedItems.length
@@ -633,6 +729,7 @@ class WatchedItemsRepository {
               }
             ];
       for (const item of targets) {
+        if (!isCurrent()) return false;
         try {
           await SimklSyncService.unmarkWatched(item);
         } catch (error) {
@@ -640,6 +737,7 @@ class WatchedItemsRepository {
         }
       }
     }
+    if (!isCurrent()) return false;
     if (isTraktConnected() && options?.skipTrackingWrite !== true) {
       const targets = removedItems.length
         ? removedItems
@@ -658,6 +756,7 @@ class WatchedItemsRepository {
             }
           ];
       for (const item of targets) {
+        if (!isCurrent()) return false;
         try {
           await writeTraktHistory(item, true);
         } catch (error) {
@@ -665,8 +764,10 @@ class WatchedItemsRepository {
         }
       }
     }
+    if (!isCurrent()) return false;
     await deleteWatchedItemsFromCloud(removedItems, pid);
-    queueWatchedItemsCloudSync();
+    queueWatchedItemsCloudSync(pid);
+    return targets.every((item) => manualWatchedCurrent(operation, item));
   }
 
   async replaceAll(items, profileId = activeProfileId()) {
@@ -674,8 +775,8 @@ class WatchedItemsRepository {
     invalidateTraktWatchedCaches();
   }
 
-  async getRemoteTraktWatchedShows() {
-    return getTraktWatchedShows();
+  async getRemoteTraktWatchedShows(options = {}) {
+    return getTraktWatchedShows(options);
   }
 }
 

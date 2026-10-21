@@ -1,3 +1,4 @@
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -74,6 +75,10 @@ export function createPlayerScreenMethods24() {
       return true;
     },
     async playNextEpisode({ userInitiated = false } = {}) {
+      if (this.isPartyControlLocked?.()) {
+        if (userInitiated) this.partyBlocksControl();
+        return false;
+      }
       const nextEpisode = this.resolveNextEpisodeInfo();
       const itemType = normalizeItemType(this.params?.itemType || "movie");
       if (!nextEpisode?.videoId || !isSeriesItemType(itemType) || nextEpisode.hasAired === false || this.nextEpisodeLaunching) {
@@ -291,7 +296,9 @@ export function createPlayerScreenMethods24() {
         : "";
       const subtitleFontSize = normalizeSubtitleFontSize(style.fontSize);
       const htmlSubtitleFontSize = formatHtmlSubtitleFontSize(subtitleFontSize);
-      const subtitleBackgroundCss = subtitleBackgroundToCss(style.backgroundColor);
+      // Use transparent caption surfaces on VIDAA, including saved shaded
+      // backgrounds from an older build.
+      const subtitleBackgroundCss = Environment.isVidaa() ? "transparent" : subtitleBackgroundToCss(style.backgroundColor);
       PlayerController.setWebOsSubtitleFontSize?.(subtitleFontSize);
       if (Environment.isTizen() && PlayerController.isUsingAvPlay?.()) {
         PlayerController.setAvPlayExternalSubtitleDelay?.(this.subtitleDelayMs);
@@ -327,6 +334,7 @@ export function createPlayerScreenMethods24() {
       if (refreshCueStyles) {
         this.refreshSubtitleCueStyles();
       }
+      syncHtmlSubtitleClearance(this);
       this.renderBitmapSubtitleAtCurrentTime({ force: true });
       if (refreshTrackRendering) {
         this.refreshSubtitleTrackRendering();

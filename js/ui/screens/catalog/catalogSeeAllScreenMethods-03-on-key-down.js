@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./catalogSeeAllScreen.js";
+import { disposeVidaaGridPosterWindow } from "../../components/vidaaGridPosterWindow.js";
 
 export function createCatalogSeeAllScreenMethods03() {
   const { Router, ScreenUtils, isBackEvent, allowDpadRepeat, resetDpadRepeat } = internals;
@@ -54,6 +55,7 @@ export function createCatalogSeeAllScreenMethods03() {
       return this.closePosterOptionsMenu();
     },
     cleanup() {
+      disposeVidaaGridPosterWindow(this);
       resetDpadRepeat(this);
       this.loadToken = (this.loadToken || 0) + 1;
       this.cancelPendingPosterHold();

@@ -1,0 +1,275 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>VIDAA trailer and collection playback</title>
+<base href="/" />
+<style>
+  body {
+    background: #171717;
+    color: white;
+    font: 20px sans-serif;
+  }
+  .home-modern-hero-media {
+    width: 640px;
+    height: 360px;
+    background: #333;
+  }
+  video,
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  .home-hero-trailer-layer {
+    height: 100%;
+  }
+  .home-hero-trailer-layer:not(.is-active) {
+    opacity: 0;
+  }
+</style>
+<div id="home">
+  <div class="home-modern-stage">
+    <div class="home-modern-hero-media"><div class="home-hero-trailer-layer"></div></div>
+  </div>
+  <article
+    class="home-poster-card focused"
+    tabindex="0"
+    data-item-id="fixture"
+    data-item-type="movie"
+  >
+    <img
+      class="home-poster-focus-gif"
+      data-src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    />
+    <div class="home-poster-trailer-layer"></div>
+  </article>
+</div>
+<pre id="result">RUNNING</pre>
+<script type="module">
+  const result = document.getElementById("result");
+  const assert = (value, message) => {
+    if (!value) throw Error(message);
+  };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const waitFor = async (predicate, message, timeout = 6000) => {
+    const deadline = Date.now() + timeout;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw Error(message);
+      await wait(30);
+    }
+  };
+  const live = new URL(location.href).searchParams.get("live");
+  const liveTmdbId = new URL(location.href).searchParams.get("tmdb");
+  if (live && liveTmdbId) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/nuvio.env.js";
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  if (!live)
+    globalThis.fetch = async () => {
+      throw Error("No network in trailer fixture");
+    };
+  globalThis.__NUVIO_PLATFORM__ = "vidaa";
+  globalThis.__NUVIO_ENV__ = {
+    ...globalThis.__NUVIO_ENV__,
+    YOUTUBE_PROXY_URL: "/docs/youtube-proxy.html"
+  };
+  let screen;
+  try {
+    const { HomeScreen } = await import("../js/ui/screens/home/homeScreen.js");
+    const { Router } = await import("../js/ui/navigation/routerState.js");
+    const { trailerVideoFixture } = await import("../tests/helpers/trailerVideoFixture.mjs");
+    const { PlayerSettingsStore } = await import("../js/data/local/playerSettingsStore.js");
+    const { createMetaDetailsScreenMethods17 } =
+      await import("../js/ui/screens/detail/metaDetailsScreenMethods-17-capture-detail-focus.js");
+    const { buildYoutubeEmbedUrl } =
+      await import("../js/ui/screens/home/homeScreenHelpers-05-normalize-collection-folder-item.js");
+    let route = "home";
+    Router.getCurrent = () => route;
+    const container = document.getElementById("home");
+    const card = container.querySelector("article");
+    const layer = container.querySelector(".home-hero-trailer-layer");
+    screen = Object.assign({}, HomeScreen, {
+      container,
+      layoutMode: "modern",
+      focusedPosterFlowToken: 1,
+      homeActiveTrailerLayers: new Set(),
+      homeActivePosterNodes: new Set(),
+      layoutPrefs: {
+        modernLandscapePostersEnabled: true,
+        focusedPosterBackdropTrailerEnabled: true,
+        focusedPosterBackdropTrailerMuted: true
+      },
+      getCurrentFocusedNode: () => card,
+      getNodeHeroSource: () => ({ id: "fixture", type: "movie" }),
+      isCollectionFolderNode: () => false,
+      isVidaaHomeLoadingBusy: () => false,
+      getFocusedPosterTrailerDelayMs: () => 0,
+      getTrailerSourceForItem: async () => ({ kind: "video", url: trailerVideoFixture })
+    });
+    card.focus();
+    if (live) {
+      assert(/^[A-Za-z0-9_-]{11}$/.test(live), "Invalid public YouTube video ID");
+      let source = {
+        kind: "youtube",
+        ytId: live,
+        embedUrl: buildYoutubeEmbedUrl(live, { muted: true })
+      };
+      if (liveTmdbId) {
+        assert(/^\d+$/.test(liveTmdbId), "Invalid public TMDB ID");
+        const { TmdbSettingsStore } = await import("../js/data/local/tmdbSettingsStore.js");
+        const originalSettings = TmdbSettingsStore.get;
+        TmdbSettingsStore.get = () => ({ enabled: true, useTrailers: true, language: "it-IT" });
+        try {
+          source = await HomeScreen.getTrailerSourceForItem({
+            id: `tmdb:${liveTmdbId}`,
+            type: new URL(location.href).searchParams.get("kind") || "movie"
+          });
+          assert(source?.ytId === live, "Real TMDB source did not resolve the Italian trailer");
+        } finally {
+          TmdbSettingsStore.get = originalSettings;
+        }
+      }
+      let firstFrame = false;
+      const receive = (event) => {
+        if (
+          event.source !== layer.querySelector("iframe")?.contentWindow ||
+          event.data?.source !== "nuvio-youtube-proxy"
+        )
+          return;
+        if (event.data.type === "firstFrame" && Number(event.data.currentTime) > 0)
+          firstFrame = true;
+      };
+      window.addEventListener("message", receive);
+      screen.mountTrailerLayer(layer, source);
+      try {
+        await waitFor(
+          () => firstFrame,
+          "Live YouTube did not report an actual playing frame",
+          15000
+        );
+        result.textContent = liveTmdbId
+          ? "PASS: real Italian TMDB lookup through browser CORS and YouTube reported a decoded playing frame on VIDAA path."
+          : "PASS: live YouTube proxy reported a decoded playing frame on VIDAA browser path.";
+      } finally {
+        window.removeEventListener("message", receive);
+      }
+    } else {
+      // User preference remains authoritative, including inherited collection layout.
+      screen.layoutPrefs.focusedPosterBackdropTrailerEnabled = false;
+      await screen.activateFocusedPosterFlow(card, 1);
+      assert(!layer.firstElementChild, "Disabled Home trailers started media");
+      screen.layoutPrefs.focusedPosterBackdropTrailerEnabled = true;
+      for (const currentRoute of ["home", "folderDetail"]) {
+        route = currentRoute;
+        screen.useHomeFollowLayout = currentRoute === "folderDetail";
+        await screen.activateFocusedPosterFlow(card, screen.focusedPosterFlowToken);
+        const video = layer.querySelector("video");
+        assert(
+          video && video.muted && video.loop && video.playsInline,
+          "Preview lost TV playback preferences"
+        );
+        await waitFor(
+          () => video.currentTime > 0.1 && !video.paused && layer.classList.contains("is-active"),
+          "Automatic trailer never decoded a frame"
+        );
+        assert(document.activeElement === card, "Trailer stole remote focus");
+        screen.clearHomeTrailerLayers();
+        assert(
+          video.paused && !video.getAttribute("src") && !layer.firstElementChild,
+          "Leaving route retained a live decoder"
+        );
+      }
+      // Account collection video reuses one decoder, and changed phone media replaces it.
+      const folder = {
+        collectionId: "c",
+        folderId: "f",
+        name: "Folder",
+        heroVideoUrl: trailerVideoFixture
+      };
+      screen.syncCollectionHeroMedia(folder);
+      const collectionVideo = layer.querySelector("video");
+      await waitFor(
+        () => collectionVideo.currentTime > 0.1 && layer.classList.contains("is-active"),
+        "Collection background did not play"
+      );
+      screen.syncCollectionHeroMedia(folder);
+      assert(
+        layer.querySelector("video") === collectionVideo,
+        "Repeated sync created another decoder"
+      );
+      screen.syncCollectionHeroMedia({ ...folder, heroVideoUrl: trailerVideoFixture + "#updated" });
+      assert(
+        collectionVideo.paused && !collectionVideo.getAttribute("src"),
+        "Phone media update left old video running"
+      );
+      assert(
+        layer.querySelectorAll("video").length === 1,
+        "Phone update created overlapping players"
+      );
+      screen.syncCollectionHeroMedia(null);
+      assert(
+        !layer.firstElementChild && !container.querySelector(".trailer-active"),
+        "Leaving collection retained active hero media"
+      );
+      screen.hydrateCollectionFocusGif(card, true);
+      assert(card.querySelector("img").hasAttribute("src"), "Focused collection GIF did not start");
+      screen.hydrateCollectionFocusGif(card, false);
+      assert(
+        !card.querySelector("img").hasAttribute("src"),
+        "Unfocused collection GIF kept decoding"
+      );
+      // Unsupported or invalid media leaves artwork visible, and accepts a retry.
+      screen.mountTrailerLayer(layer, { kind: "video", url: "data:video/mp4;base64,aW52YWxpZA==" });
+      await waitFor(() => !layer.firstElementChild, "Failed collection video left a blank player");
+      assert(!layer.classList.contains("is-active"), "Failed media hid artwork");
+      screen.mountTrailerLayer(layer, { kind: "video", url: trailerVideoFixture });
+      await waitFor(
+        () => layer.classList.contains("is-active"),
+        "Retry after failed media did not play"
+      );
+      screen.clearHomeTrailerLayers();
+      // Detail autoplay still honors its profile setting and original delay/focus policy.
+      const settings = PlayerSettingsStore.get;
+      let enabled = true,
+        plays = 0,
+        allowed = true;
+      PlayerSettingsStore.get = () => ({ trailerAutoplay: enabled, trailerDelaySeconds: 0 });
+      const detail = {
+        ...createMetaDetailsScreenMethods17(),
+        trailerSource: { kind: "video", url: trailerVideoFixture },
+        shouldSuppressTrailerAutoplay: () => !allowed,
+        playTrailer: () => {
+          plays++;
+        }
+      };
+      try {
+        detail.restartTrailerAutoplayTimer();
+        await wait(40);
+        assert(plays === 1, "Detail autoplay did not run");
+        enabled = false;
+        detail.restartTrailerAutoplayTimer();
+        await wait(40);
+        allowed = false;
+        enabled = true;
+        detail.restartTrailerAutoplayTimer();
+        await wait(40);
+        assert(plays === 1, "Disabled or unfocused detail still autoplayed");
+      } finally {
+        PlayerSettingsStore.get = settings;
+        clearTimeout(detail.trailerAutoplayTimer);
+      }
+      result.textContent =
+        "PASS: decoded H.264 autoplay in Home and collection, one-player lifecycle, phone media update, focused GIF, failure/artwork/retry, remote focus and detail preferences.";
+    }
+    result.dataset.status = "passed";
+  } catch (error) {
+    result.textContent = "FAIL: " + error.stack;
+    result.dataset.status = "failed";
+  } finally {
+    if (!live) screen?.clearHomeTrailerLayers();
+  }
+</script>

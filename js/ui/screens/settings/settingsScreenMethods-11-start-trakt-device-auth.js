@@ -319,12 +319,12 @@ export function createSettingsScreenMethods11() {
                   ${this.registerAction("trakt:login", !trakt.credentialsConfigured || trakt.isLoading ? () => {} : this.actionMap.get("trakt:login"))}>
             ${escapeHtml(t("trakt_login", {}, "Login"))}
           </button>
-          ${!trakt.credentialsConfigured ? `<p class="settings-trakt-warning">${escapeHtml(t("trakt_missing_credentials", {}, "Set your Client ID and Client Secret in Integrations > Trakt"))}</p>` : ""}
+          ${!trakt.credentialsConfigured ? `<p class="settings-trakt-warning">${escapeHtml(t("trakt_missing_credentials", {}, "Trakt is unavailable in this app build"))}</p>` : ""}
         `;
     },
     renderTraktConnected(auth, tokenRemainingMs, trakt) {
       return `
-          ${!TraktAuthService.hasRequiredCredentials() ? `<p class="settings-trakt-warning">${escapeHtml(t("trakt_missing_credentials", {}, "Missing Trakt client credentials in app configuration"))}</p>` : ""}
+          ${!TraktAuthService.hasRequiredCredentials() ? `<p class="settings-trakt-warning">${escapeHtml(t("trakt_missing_credentials", {}, "Trakt is unavailable in this app build"))}</p>` : ""}
           ${tokenRemainingMs ? `<p class="settings-trakt-meta-copy">${renderTraktCountdownText("trakt_token_refreshes", tokenRemainingMs, "Trakt access token refreshes in", "data-trakt-token-countdown")}</p>` : ""}
           <button class="settings-trakt-button settings-content-focusable focusable" data-zone="content" ${this.registerAction("trakt:disconnect", this.actionMap.get("trakt:disconnect"))}>${escapeHtml(t("trakt_disconnect", {}, "Disconnect"))}</button>
           ${this.renderTraktStatsStrip(trakt.stats, trakt.isStatsLoading)}

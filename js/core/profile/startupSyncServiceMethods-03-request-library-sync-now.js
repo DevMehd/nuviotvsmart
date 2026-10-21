@@ -30,6 +30,11 @@ export function createStartupSyncServiceMethods03() {
       const profileId = ProfileManager.getActiveProfileId();
       const profileKey = currentSyncKey(profileId);
       if (this.libraryInFlightPromise && this.libraryInFlightGeneration === generation) {
+        if (this.libraryInFlightKey !== profileKey) {
+          await this.libraryInFlightPromise.catch(() => false);
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) return false;
+          return this.requestLibrarySyncNow();
+        }
         return this.libraryInFlightPromise;
       }
       if (isSyncBackoffActive()) {
@@ -40,15 +45,27 @@ export function createStartupSyncServiceMethods03() {
       let requestPromise = null;
       requestPromise = (async () => {
         try {
-          if (!this.isCurrentProfile(profileId, profileKey)) {
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) {
             return false;
           }
-          // Android's foreground/periodic activity cycle refreshes the Nuvio
-          // library, but addon/plugin repositories are refreshed by the full
-          // startup pull or by their explicit/manual sync path.
+          // Refresh the library and phone-managed Home inputs on foreground
+          // activity. Addon/plugin manifests retain the explicit refresh path.
           const savedLibraryResult = await runSurface("periodic saved library", () => SavedLibrarySyncService.pull(profileId));
-          if (!savedLibraryResult.ok) {
+          if (!savedLibraryResult.ok || !this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) {
             return false;
+          }
+          const homeResults = await Promise.all([
+            runSurface("periodic collections", () => CollectionSyncService.pull(profileId)),
+            runSurface("periodic home catalog settings", () => HomeCatalogSettingsSyncService.pull(profileId))
+          ]);
+          if (!this.isCurrentRun(generation) || !this.isCurrentProfile(profileId, profileKey)) return false;
+          if (homeResults.some((result) => result.ok && result.value === true)) {
+            internals.notifySyncPullCompleted({
+              key: profileKey,
+              profileId,
+              changedHomeInputs: true,
+              source: "phone-library"
+            });
           }
           if (isSyncBackoffActive()) {
             this.scheduleBackoffRetry();
@@ -59,11 +76,13 @@ export function createStartupSyncServiceMethods03() {
           if (this.libraryInFlightPromise === requestPromise) {
             this.libraryInFlightPromise = null;
             this.libraryInFlightGeneration = 0;
+            this.libraryInFlightKey = null;
           }
         }
       })();
       this.libraryInFlightPromise = requestPromise;
       this.libraryInFlightGeneration = generation;
+      this.libraryInFlightKey = profileKey;
       return requestPromise;
     },
     async syncPush({

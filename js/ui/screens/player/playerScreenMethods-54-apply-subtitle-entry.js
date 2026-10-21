@@ -5,6 +5,7 @@ import {
   confirmNativeTrackSelection
 } from "../../../core/player/playerControllerMethods-02-is-likely-direct-file-url.js";
 import { selectVidaaTextTrack } from "../../../platform/vidaa/vidaaVideo.js";
+import { beginVidaaTrackSwitch } from "./vidaaTrackSwitchGuard.js";
 
 export function createPlayerScreenMethods54() {
   const { PlayerController, Environment, isTizenEmbeddedTextSubtitleFallbackTrack } = internals;
@@ -102,6 +103,7 @@ export function createPlayerScreenMethods54() {
         video?.src === videoSource &&
         PlayerController.playRequestToken === playRequestToken;
       const previousSubtitleSelectionKey = this.getActiveSubtitleSelectionKey();
+      beginVidaaTrackSwitch(this);
       if (this.subtitleSelectionTimer) {
         clearTimeout(this.subtitleSelectionTimer);
         this.subtitleSelectionTimer = null;

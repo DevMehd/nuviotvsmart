@@ -1,3 +1,4 @@
+import { MediaServerSyncService } from "./mediaServerSyncService.js";
 import { AuthManager } from "../auth/authManager.js";
 import { LocalStore } from "../storage/localStore.js";
 import { SessionStore } from "../storage/sessionStore.js";
@@ -29,6 +30,7 @@ import { createStartupSyncServiceMethods02 } from "./startupSyncServiceMethods-0
 import { createStartupSyncServiceMethods03 } from "./startupSyncServiceMethods-03-request-library-sync-now.js";
 
 export {
+  MediaServerSyncService,
   AuthManager,
   LocalStore,
   SessionStore,
@@ -187,10 +189,13 @@ export const StartupSyncService = {
   inFlight: false,
   inFlightPromise: null,
   inFlightGeneration: 0,
+  inFlightKey: null,
   watchStateInFlightPromise: null,
   watchStateInFlightGeneration: 0,
+  watchStateInFlightKey: null,
   libraryInFlightPromise: null,
   libraryInFlightGeneration: 0,
+  libraryInFlightKey: null,
   addonPushPromise: null,
   profileScopedSyncEnabled: false,
   addonPushTimer: null,

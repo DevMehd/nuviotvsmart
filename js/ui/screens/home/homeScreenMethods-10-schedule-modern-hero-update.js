@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { getVidaaHeroPreloadDelay, isVidaaHomePreviewBusy } from "./vidaaHomePreviewPolicy.js";
+import { isHomeHeroLocalizationPending } from "./homeHeroLocalization.js";
 
 export function createHomeScreenMethods10() {
   const { MODERN_HOME_CONSTANTS, getTvRuntimePerformanceProfile, shouldEnrichModernHero, preloadHeroAssets, buildHeroIdentity } = internals;
@@ -9,6 +10,7 @@ export function createHomeScreenMethods10() {
       if (this.layoutMode !== "modern") {
         return;
       }
+      if (this.getCurrentFocusedNode() !== node || !node?.isConnected || !node.classList.contains("focused")) return;
       const isVidaa = getTvRuntimePerformanceProfile().platform === "vidaa";
       const isPreviewBusy = () => (isVidaa ? isVidaaHomePreviewBusy(this) : Boolean(this.isHomeNavigationSettling?.()));
       const hero = this.getNodeHeroSource(node);
@@ -17,12 +19,16 @@ export function createHomeScreenMethods10() {
       }
       const currentHeroIdentity = buildHeroIdentity(this.heroItem);
       const nextHeroIdentity = buildHeroIdentity(hero);
+      // Retire artwork owned by the old focus without starting any image request.
+      const logoRetired = this.retireHeroLogoForFocus?.(hero);
       if (
         currentHeroIdentity === nextHeroIdentity &&
         !this.heroItem?.heroMetaEnriching &&
         !shouldEnrichModernHero(hero) &&
         !isPreviewBusy()
       ) {
+        this.cancelPendingHeroFocus();
+        if (logoRetired) this.applyHeroToDom();
         this.container?.querySelector(".home-modern-hero-card")?.classList.remove("is-hero-focus-pending");
         this.syncCollectionHeroMedia(hero);
         return;
@@ -110,7 +116,7 @@ export function createHomeScreenMethods10() {
             return;
           }
           const shouldEnrichHero = shouldEnrichModernHero(latestHero);
-          const focusedHero = shouldEnrichHero ? { ...latestHero, heroMetaEnriching: true } : { ...latestHero, heroMetaEnriching: false };
+          const focusedHero = { ...latestHero, heroMetaEnriching: shouldEnrichHero && isHomeHeroLocalizationPending(latestHero) };
 
           // Android publishes the newly focused preview as soon as focus settles;
           // metadata enrichment remains an independent background update. Waiting

@@ -154,7 +154,19 @@ export function createHomeScreenMethods04() {
     },
     releaseInitialHomeLoading({ force = false } = {}) {
       if (!force && !this.continueWatchingInitialResolved) {
-        return;
+        // A pending progress pull owns only its CW placeholder. Ready VIDAA
+        // catalogs can already be navigated; do not hold the whole Home behind
+        // that remote read or pretend that Continue Watching has resolved.
+        const hasReadyVidaaRows =
+          Platform.isVidaa() &&
+          Array.isArray(this.rows) &&
+          this.rows.some(
+            (row) =>
+              row?.result?.status === "success" &&
+              Array.isArray(row.result.data?.items) &&
+              row.result.data.items.some((item) => item && !item.isLoading)
+          );
+        if (!hasReadyVidaaRows) return;
       }
       this.isInitialHomeLoading = false;
       this.cancelInitialHomeLoadTimeout();
@@ -670,6 +682,9 @@ export function createHomeScreenMethods04() {
       }
     },
     cancelPendingHeroFocus() {
+      this.heroEnrichmentAbortController?.abort?.();
+      this.heroEnrichmentAbortController = null;
+      this.pendingHeroEnrichmentKey = "";
       if (this.heroFocusDelayTimer) {
         clearTimeout(this.heroFocusDelayTimer);
         this.heroFocusDelayTimer = null;

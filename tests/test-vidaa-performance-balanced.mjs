@@ -56,6 +56,9 @@ assert.equal(
   "Hero retains larger artwork"
 );
 assert.equal(sources[1], publicImage);
+// Card markup now reads the current route (upstream 2026-10-19).
+const { Router: routeState } = await import("../js/ui/navigation/routerState.js");
+routeState.getCurrent ||= () => "home";
 const markup = createPosterCardMarkup(
   { id: "tt1", type: "movie", name: "Fixture", poster: publicImage, background: publicImage },
   0,

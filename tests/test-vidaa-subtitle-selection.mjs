@@ -8,6 +8,7 @@ globalThis.document = { getElementById: () => null, documentElement: {} };
 
 const { PlayerScreen } = await import("../js/ui/screens/player/playerScreen.js");
 const { PlayerController } = await import("../js/core/player/playerController.js");
+const { Platform } = await import("../js/platform/index.js");
 
 const subtitles = [
   {
@@ -206,12 +207,20 @@ Object.assign(refreshUi, {
   getAudioTracks: () => []
 });
 refreshUi.refreshSubtitleTrackRendering();
+assert.equal(
+  refreshTracks[0].mode,
+  "showing",
+  "VIDAA style updates must keep native output active"
+);
+assert.equal(queuedRefresh, undefined, "VIDAA does not cycle native tracks to repaint text");
+globalThis.__NUVIO_PLATFORM__ = "browser";
+Platform.current = null;
+refreshUi.refreshSubtitleTrackRendering();
 assert.equal(refreshTracks[0].mode, "hidden");
-refreshUi.syncTrackState();
 assert.equal(
   refreshUi.selectedSubtitleTrackIndex,
   0,
-  "A current queued style refresh must preserve the committed selection"
+  "Queuing a browser style refresh must not mutate the committed selection"
 );
 queuedRefresh();
 assert.equal(refreshTracks[0].mode, "showing");

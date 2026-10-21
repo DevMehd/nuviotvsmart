@@ -5,6 +5,7 @@ export function createPlayerScreenMethods52() {
   const {
     PlayerController,
     selectStartupAudioFallbackOption,
+    hasOnlyImplicitStartupAudioOptions,
     resolveSubtitleStyleControlAvailability,
     Environment,
     TizenCapabilities,
@@ -24,9 +25,22 @@ export function createPlayerScreenMethods52() {
 
   return {
     applyStartupAudioFallback() {
+      if (Environment.isVidaa() && this.startupAudioPreferenceApplying) return false;
       this.clearStartupAudioPreferenceRetry();
       this.startupAudioFallbackApplied = true;
       const audioOptions = this.collectAudioOptionItems();
+      if (Environment.isVidaa() && !this.startupAudioPreferenceApplied && hasOnlyImplicitStartupAudioOptions(audioOptions)) {
+        // A slow native open can outlive discovery before exposing any tracks.
+        // Preserve one preference pass when its first real metadata arrives.
+        this.startupImplicitAudioFallback = {
+          video: PlayerController.video,
+          playToken: PlayerController.playRequestToken,
+          mountToken: this.playerMountToken,
+          sourceAttemptToken: this.sourcePlaybackAttemptToken,
+          playbackUrl: this.activePlaybackUrl,
+          audioToken: Number(this.audioSelectionToken || 0)
+        };
+      }
       const fallbackOption = selectStartupAudioFallbackOption(audioOptions);
       // VIDAA (nuv-089): every track uses a codec the TV declares it cannot decode.
       if (Environment.isVidaa() && audioOptions.length && audioOptions.every((entry) => entry?.supported === false)) {
@@ -40,6 +54,7 @@ export function createPlayerScreenMethods52() {
       }
 
       if (!fallbackOption.selected) {
+        if (Environment.isVidaa()) return this.requestVidaaStartupAudioOption(fallbackOption, { automaticFallback: true });
         this.startupAudioPreferenceApplying = true;
         try {
           this.applyAudioTrack(fallbackOption.entryIndex, { automaticFallback: true });
@@ -457,7 +472,8 @@ export function createPlayerScreenMethods52() {
         isWebOsNative: usingWebOsNative,
         rendererMode,
         supportsExternalDelay: PlayerController.supportsAvPlayExternalSubtitleDelay?.() === true,
-        preserveAssStyles: assStylesManaged
+        preserveAssStyles: assStylesManaged,
+        supportsAssPlacement: this.assSubtitleRenderer?.supportsPlacement === true
       });
       const unavailableValue = assStylesManaged
         ? t("subtitle_style_preserves_ass", {}, "ASS/SSA styles are preserved")
@@ -512,11 +528,12 @@ export function createPlayerScreenMethods52() {
         },
         { id: "reset", label: t("subtitle_style_defaults", {}, "Reset Defaults"), value: "" }
       ].map((item) => {
-        const disabled = availability[item.id] === false;
+        const vidaaTransparentBackground = Environment.isVidaa() && item.id === "backgroundColor";
+        const disabled = vidaaTransparentBackground || availability[item.id] === false;
         return {
           ...item,
           disabled,
-          value: disabled ? unavailableValue : item.value
+          value: vidaaTransparentBackground ? subtitleBackgroundColorLabel("#00000000") : disabled ? unavailableValue : item.value
         };
       });
     },

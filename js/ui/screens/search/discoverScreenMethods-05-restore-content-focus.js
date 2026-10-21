@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./discoverScreen.js";
+import { captureVidaaGridPosters, restoreVidaaGridPosters, scheduleVidaaGridPosterWindow } from "../../components/vidaaGridPosterWindow.js";
 
 export function createDiscoverScreenMethods05() {
   const {
@@ -290,6 +291,7 @@ export function createDiscoverScreenMethods05() {
       this.syncOpenPickerScroll();
     },
     captureLoadedDiscoverPosters() {
+      if (Platform.isVidaa() && this.vidaaGridPosterWindow) return captureVidaaGridPosters(this);
       // Keep decoded image nodes across grid/shell rebuilds. A new data-src
       // image otherwise blanks an already visible poster until hydration.
       const posters = new Map();
@@ -307,6 +309,10 @@ export function createDiscoverScreenMethods05() {
       return posters;
     },
     restoreLoadedDiscoverPosters(posters) {
+      if (Platform.isVidaa()) {
+        restoreVidaaGridPosters(this, posters);
+        return;
+      }
       this.container?.querySelectorAll(".discover-card .seeall-card-poster-image[data-src]").forEach((image) => {
         const card = image.closest(".discover-card");
         const key = JSON.stringify([card.dataset.itemType, card.dataset.itemId, image.dataset.src]);
@@ -319,6 +325,10 @@ export function createDiscoverScreenMethods05() {
       });
     },
     scheduleDiscoverPosterHydration() {
+      if (Platform.isVidaa() && this.navModel) {
+        scheduleVidaaGridPosterWindow(this, ".discover-main");
+        return;
+      }
       if (this.isVidaaDiscoverLoadingBusy()) {
         if (!this.vidaaDiscoverHydrationTimer) {
           this.vidaaDiscoverHydrationTimer = setTimeout(() => {

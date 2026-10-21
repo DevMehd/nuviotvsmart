@@ -105,6 +105,23 @@ export function createPlayerScreenMethods41() {
       let embeddedTrackLanguage = getUsableAudioTrackLanguageValue(embeddedTrack);
       const explicitLanguage = normalizeTrackLanguageCode(trackLanguage);
       let embeddedLanguage = normalizeTrackLanguageCode(embeddedTrackLanguage);
+      if (Environment.isVidaa()) {
+        // A container probe can include streams the TV omits or reorders.
+        // Never assign another language/codec to a concrete native track.
+        const nativeCodec = internals.formatAudioCodecName(internals.getAuthoritativeAudioCodecValue(track));
+        const matchesNative = (candidate) => {
+          const language = normalizeTrackLanguageCode(getUsableAudioTrackLanguageValue(candidate));
+          const codec = internals.formatAudioCodecName(internals.getAuthoritativeAudioCodecValue(candidate));
+          return (!explicitLanguage || explicitLanguage === language) && (!nativeCodec || nativeCodec === codec);
+        };
+        const sameTrackCount = this.getAudioTracks().length === (this.embeddedAudioTracks || []).length;
+        if (!embeddedTrack || !matchesNative(embeddedTrack) || !sameTrackCount) {
+          const candidates = (this.embeddedAudioTracks || []).filter(matchesNative);
+          embeddedTrack = (explicitLanguage || nativeCodec) && candidates.length === 1 ? candidates[0] : null;
+          embeddedTrackLanguage = getUsableAudioTrackLanguageValue(embeddedTrack);
+          embeddedLanguage = normalizeTrackLanguageCode(embeddedTrackLanguage);
+        }
+      }
       if (explicitLanguage && embeddedLanguage && explicitLanguage !== embeddedLanguage) {
         const languageMatchedTrack = (this.embeddedAudioTracks || []).find(
           (candidate) => normalizeTrackLanguageCode(candidate?.language || candidate?.lang || "") === explicitLanguage
@@ -127,6 +144,7 @@ export function createPlayerScreenMethods41() {
       const useEmbeddedLabel = Boolean(embeddedLabel && (!explicitLanguage || !embeddedLanguage || explicitLanguage === embeddedLanguage));
       return {
         ...track,
+        ...(Environment.isVidaa() ? { embeddedTrackIndex: embeddedTrack.embeddedTrackIndex } : {}),
         label: useEmbeddedLabel ? embeddedLabel : trackLabel || "",
         name: cleanDisplayText(track?.name || (useEmbeddedLabel ? embeddedLabel : "")) || track?.name || "",
         language: trackLanguage || embeddedTrackLanguage,

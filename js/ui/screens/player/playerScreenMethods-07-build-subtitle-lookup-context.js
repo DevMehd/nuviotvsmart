@@ -1,3 +1,4 @@
+import { resolveStreamFilename } from "./streamFilename.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -57,7 +58,7 @@ export function createPlayerScreenMethods07() {
         year: this.params?.playerReleaseYear || this.params?.year || null,
         videoHash: behaviorHints.videoHash || currentStream?.videoHash || rawStream.videoHash || this.params?.videoHash || null,
         videoSize: behaviorHints.videoSize || currentStream?.videoSize || rawStream.videoSize || this.params?.videoSize || null,
-        filename: behaviorHints.filename || currentStream?.filename || rawStream.filename || this.params?.filename || null
+        filename: resolveStreamFilename(currentStream, this.initialFilenameStreamCandidate, this.params?.filename)
       };
     },
     buildPlaybackIdentityContext() {
@@ -253,6 +254,7 @@ export function createPlayerScreenMethods07() {
       const durationSec = this.getPlaybackDurationSeconds();
       const progress = durationSec > 0 ? Math.min(100, (currentSec / durationSec) * 100) : 0;
       return {
+        serverPlayback: this.getCurrentStreamCandidate()?.serverPlayback || this.getCurrentStreamCandidate()?.raw?.serverPlayback || null,
         contentId: String(this.params?.itemId || identity.imdbId || ""),
         videoId: String(this.params?.videoId || this.params?.playerVideoId || ""),
         contentType: isSeriesItemType(identity.itemType) ? "series" : "movie",
@@ -285,6 +287,8 @@ export function createPlayerScreenMethods07() {
       this.showParentalGuideOverlay();
     },
     async fetchParentalGuide() {
+      if (PlayerSettingsStore.get().parentalGuideEnabled === false) return;
+      const mountToken = this.playerMountToken;
       const { itemType, imdbId, season, episode } = this.buildPlaybackIdentityContext();
       if (!imdbId) {
         return;
@@ -293,6 +297,7 @@ export function createPlayerScreenMethods07() {
         isSeriesItemType(itemType) && season && episode
           ? await parentalGuideRepository.getTvGuide(imdbId, season, episode)
           : await parentalGuideRepository.getMovieGuide(imdbId);
+      if (!this.isActiveMountToken(mountToken) || PlayerSettingsStore.get().parentalGuideEnabled === false) return;
       const warnings = buildLocalizedParentalWarnings(response?.parentalGuide || {});
       if (!warnings.length) {
         return;

@@ -8,7 +8,6 @@
     "test": "npm run test:plugins",
     "test:plugins": "npm run build && node ./scripts/test-webos-plugin-forwarding.cjs && node ./tests/test-vidaa-plugin-readiness.mjs && node ./tests/test-vidaa-plugin-browser-transport.mjs && node ./tests/test-vidaa-plugin-management.mjs && node ./tests/test-vidaa-plugin-queue.mjs && node ./tests/test-vidaa-plugin-runtime.mjs && node ./tests/test-vidaa-plugin-redirects.mjs && node ./tests/test-vidaa-plugin-timers.mjs",
     "prepare": "husky || true",
-    "build:on-release": "node ./scripts/release-build-poller.mjs",
     "install:webos": "node ./scripts/ares-install-webos.mjs",
     "inspect:webos": "node ./scripts/ares-inspect-webos.mjs",
     "logs:webos": "node ./scripts/ares-logs-webos.mjs",
@@ -34,7 +33,8 @@
     "build:comparison": "node scripts/build-comparison.mjs",
     "build:comparison:wasm": "node scripts/build-comparison-wasm.mjs",
     "test:comparison": "node tests/test-vidaa-comparison.mjs && npm run build:comparison && node tests/run-vidaa-home-dom-tests.mjs test-vidaa-comparison.html?engine=dom test-vidaa-comparison.html?engine=react test-vidaa-comparison.html?engine=vue test-vidaa-comparison.html?engine=svelte test-vidaa-comparison.html?engine=solid test-vidaa-comparison.html?engine=canvas2d test-vidaa-comparison.html?engine=lightning-webgl test-vidaa-comparison.html?engine=lightning-canvas test-vidaa-comparison.html?engine=compute",
-    "test:perso": "node scripts/test-perso.mjs"
+    "test:perso": "node scripts/test-perso.mjs",
+    "test:android-parity": "node scripts/test-mdblist-account-parity.mjs && node scripts/test-mdblist-library-parity.mjs && node scripts/test-episode-shuffle-parity.mjs && node scripts/test-ass-subtitle-placement.mjs && node scripts/test-oct16-ui-parity.mjs && node scripts/test-subtitle-language-parity.mjs && node scripts/test-trakt-progress-failure-parity.mjs && node scripts/test-trakt-activity-refresh-parity.mjs && node scripts/test-watch-party-parity.mjs && node scripts/test-watch-party-player.mjs && node scripts/test-tizen-seek-loading.mjs && node scripts/test-tizen-avplay-seek-sequencing.mjs && node scripts/test-tizen-redirect-resolver.mjs && node scripts/test-tizen-avplay-call-trace.mjs && node scripts/test-tizen-direct-avplay-source.mjs"
   },
   "devDependencies": {
     "@csstools/postcss-global-data": "^4.0.0",

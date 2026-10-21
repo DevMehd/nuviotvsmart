@@ -363,27 +363,24 @@ html.no-css-grid.no-flex-gap .trakt-route-shell .settings-trakt-panel > * + * {
   margin-left: 72px;
 }
 
-html.no-css-grid .trakt-route-shell .settings-tracking-panel {
+html.no-css-grid .settings-tracking-panel {
   flex-direction: column;
   gap: 28px;
 }
 
-html.no-css-grid .trakt-route-shell .settings-tracking-hero {
+html.no-css-grid .settings-tracking-hero {
   flex: 0 0 auto;
   width: 100%;
   height: auto;
 }
 
-html.no-css-grid .trakt-route-shell .settings-tracking-panel > .settings-trakt-scroll-area {
+html.no-css-grid .settings-tracking-panel > .settings-trakt-scroll-area {
   flex: 1 1 0;
   width: 100%;
   height: auto;
 }
 
-html.no-css-grid.no-flex-gap
-  .trakt-route-shell
-  .settings-tracking-panel
-  > .settings-trakt-scroll-area {
+html.no-css-grid.no-flex-gap .settings-tracking-panel > .settings-trakt-scroll-area {
   margin-top: 28px;
   margin-left: 0;
 }

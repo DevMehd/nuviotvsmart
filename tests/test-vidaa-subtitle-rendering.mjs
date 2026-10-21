@@ -72,7 +72,8 @@ globalThis.requestAnimationFrame = (callback) => {
   return frames.length;
 };
 
-function createScreen(tracks, { itemOnly = false } = {}) {
+function createScreen(tracks, { itemOnly = false, platform = "vidaa" } = {}) {
+  globalThis.__NUVIO_PLATFORM__ = platform;
   Platform.current = null;
   const textTracks = { length: tracks.length, item: (index) => tracks[index] };
   if (!itemOnly)
@@ -180,55 +181,43 @@ test("item-only native text tracks expose cues to rendering and timing", () => {
   assert.equal(track.cues[0].endTime, 5);
 });
 
-test("native cue refresh restores the current showing track", () => {
+test("browser native cue refresh restores the current showing track", () => {
   const track = { mode: "showing" };
-  const ui = createScreen([track]);
+  const ui = createScreen([track], { platform: "browser" });
   ui.refreshSubtitleTrackRendering();
   assert.equal(track.mode, "hidden");
   frames.shift()();
   assert.equal(track.mode, "showing");
 });
 
-test("native cue refresh queues restoration when mode readback is delayed 180 ms", () => {
+test("VIDAA presentation refresh never cycles a native track with delayed mode readback", () => {
   let mode = "showing";
-  let elapsed = 0;
   const pendingModes = [];
   const track = {
     get mode() {
       return mode;
     },
     set mode(value) {
-      pendingModes.push({ value, at: elapsed + 180 });
+      pendingModes.push(value);
     }
   };
   const ui = createScreen([track]);
-  ui.refreshSubtitleTrackRendering();
-  assert.equal(track.mode, "showing", "The hidden request has not been reflected yet");
-  ui.refreshSubtitleTrackRendering();
-  assert.equal(frames.length, 1, "One pending refresh owns the track");
-  elapsed = 16;
-  frames.shift()();
-  assert.deepEqual(
-    pendingModes.map(({ value }) => value),
-    ["hidden", "showing"],
-    "Restoration must follow the delayed hidden request"
-  );
-  elapsed = 180;
-  while (pendingModes.length && pendingModes[0].at <= elapsed) mode = pendingModes.shift().value;
-  assert.equal(track.mode, "hidden");
-  elapsed = 196;
-  while (pendingModes.length && pendingModes[0].at <= elapsed) mode = pendingModes.shift().value;
+  for (let count = 0; count < 20; count++) ui.refreshSubtitleTrackRendering();
+  assert.equal(frames.length, 0);
+  assert.deepEqual(pendingModes, [], "Style refresh must not queue decoder track changes");
   assert.equal(track.mode, "showing");
 });
 
-test("native cue refresh owns selection before synchronous mode change events", () => {
+test("VIDAA presentation refresh never emits synchronous mode change events", () => {
   let mode = "showing";
+  let modeWrites = 0;
   let ui;
   const track = {
     get mode() {
       return mode;
     },
     set mode(value) {
+      modeWrites++;
       mode = value;
       ui.syncTrackState();
     }
@@ -236,7 +225,7 @@ test("native cue refresh owns selection before synchronous mode change events", 
   ui = createScreen([track]);
   ui.refreshSubtitleTrackRendering();
   assert.equal(ui.selectedSubtitleTrackIndex, 0, "The style refresh must not appear as OFF");
-  frames.shift()();
+  assert.equal(modeWrites, 0);
   assert.equal(track.mode, "showing");
   assert.equal(ui.selectedSubtitleTrackIndex, 0);
 });
@@ -300,9 +289,9 @@ test("unchanged native cue styles perform no writes or cuechange feedback", () =
 });
 
 for (const action of ["OFF", "another track", "stream replacement", "HTML ownership"]) {
-  test(`queued cue refresh cannot revive native text after ${action}`, async () => {
+  test(`queued browser cue refresh cannot revive native text after ${action}`, async () => {
     const tracks = [{ mode: "showing" }, { mode: "disabled" }];
-    const ui = createScreen(tracks);
+    const ui = createScreen(tracks, { platform: "browser" });
     ui.refreshSubtitleTrackRendering();
     assert.equal(tracks[0].mode, "hidden");
     if (action === "OFF") await ui.applySubtitleEntry({ trackIndex: -1 });

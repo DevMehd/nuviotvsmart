@@ -11,6 +11,12 @@ export function createPlayerScreenMethods30() {
     BUFFERING_SPINNER_STALL_MS,
     PLAYER_SPEEDS
   } = internals;
+  // Seek watchdog for Tizen AVPlay: re-checks a pending seek on a fixed cadence,
+  // retries the native seek once if playback has not resumed, and always gives
+  // the controls back instead of leaving the spinner up indefinitely.
+  const SEEK_LOADING_WATCHDOG_INTERVAL_MS = 4000;
+  const SEEK_LOADING_WATCHDOG_RETRY_AFTER_MS = 12000;
+  const SEEK_LOADING_WATCHDOG_GIVE_UP_MS = 40000;
 
   return {
     scheduleBufferingSpinnerRefresh(delayMs = BUFFERING_SPINNER_STALL_MS) {
@@ -151,6 +157,9 @@ export function createPlayerScreenMethods30() {
           : Number(PlayerController.video?.readyState || 0);
       const gateDeadlineExpired =
         Number(this.startupAudioGateDeadline || 0) > 0 && Date.now() >= Number(this.startupAudioGateDeadline || 0);
+      // An expired language-discovery window does not cancel an audio switch
+      // already issued to the decoder. Its existing confirmation owns startup.
+      if (Environment.isVidaa() && this.startupAudioPreferenceApplying) return false;
       if (
         canReleasePlayingNativeStartupAudioGate({
           allowNativePlayback: this.startupAudioGateAllowsNativePlayback,
@@ -196,13 +205,24 @@ export function createPlayerScreenMethods30() {
     },
     scheduleLoadingCompletionCheck(delayMs = 250, { force = false } = {}) {
       this.clearLoadingCompletionTimer();
-      if (!this.loadingVisible || this.isExternalFrameMode()) {
+      // Recovery and the stall watchdog can hide loading before the normal
+      // presentation callback runs. Its audio mute still needs that callback;
+      // the startup language and resume checks below continue to guard release.
+      if (
+        (!this.loadingVisible && !PlayerController.startupPresentationAudioMuted) ||
+        this.isExternalFrameMode() ||
+        this.isStartupErrorVisible()
+      ) {
         return;
       }
       this.loadingCompletionTimer = setTimeout(
         () => {
           this.loadingCompletionTimer = null;
-          if (!this.loadingVisible || this.isExternalFrameMode()) {
+          if (
+            (!this.loadingVisible && !PlayerController.startupPresentationAudioMuted) ||
+            this.isExternalFrameMode() ||
+            this.isStartupErrorVisible()
+          ) {
             return;
           }
           if (this.isStartupGateReleaseReady()) {
@@ -331,6 +351,8 @@ export function createPlayerScreenMethods30() {
       this.seekLoadingTargetSeconds = null;
       this.seekLoadingSettled = false;
       this.seekLoadingProgressSeconds = null;
+      this.seekLoadingProgressAt = 0;
+      this.stopSeekLoadingWatchdog();
       if (hideBuffering && this.hasPresentedPlaybackFrame) {
         this.loadingVisible = false;
       }
@@ -338,12 +360,29 @@ export function createPlayerScreenMethods30() {
       this.updateLoadingVisibility();
       return true;
     },
+    isTizenAvPlaySeekActive() {
+      return Boolean(Environment.isTizen() && typeof PlayerController.isUsingAvPlay === "function" && PlayerController.isUsingAvPlay());
+    },
+    hasSeekLoadingSettled() {
+      if (this.seekLoadingSettled) {
+        return true;
+      }
+      // AVPlay only emits "seeked" for successful seeks. A failed native seek
+      // still ends the native operation, so treat any seek that completed after
+      // this UI seek started as settled instead of waiting forever.
+      if (!this.isTizenAvPlaySeekActive() || PlayerController.avplaySeekInFlight) {
+        return false;
+      }
+      const settledAt = Number(PlayerController.avplaySeekSettledAt || 0);
+      const startedAt = Number(this.seekLoadingStartedAt || 0);
+      return settledAt > 0 && startedAt > 0 && settledAt >= startedAt;
+    },
     completeSeekLoadingIfReady() {
       if (!this.seekLoading || this.pendingPlaybackRestore || this.isStartupLoadingVisible()) {
         return false;
       }
       if (
-        !this.seekLoadingSettled ||
+        !this.hasSeekLoadingSettled() ||
         PlayerController.avplaySeekInFlight ||
         PlayerController.video?.seeking ||
         !this.isPlaybackFrameReady()
@@ -355,13 +394,113 @@ export function createPlayerScreenMethods30() {
       const paused = this.getPlaybackControlPaused();
       const ended = PlayerController.isPlaybackEnded?.() || PlayerController.video?.ended;
       if (!paused && !ended) {
+        const now = Date.now();
         const previous = this.seekLoadingProgressSeconds;
+        const previousAt = Number(this.seekLoadingProgressAt || 0);
         this.seekLoadingProgressSeconds = current;
+        this.seekLoadingProgressAt = now;
+        if (previous == null || previousAt <= 0) return false;
         // The seek itself changes currentTime; only subsequent forward clock
         // movement proves that playback has resumed at the new position.
-        if (previous == null || current - previous <= 0.01 || current - previous >= 1) return false;
+        // Compare the movement with the wall-clock time between samples rather
+        // than a fixed one-second window: Tizen AVPlay reports time from a
+        // 1000 ms tick and on some firmware in whole-second steps, so a fixed
+        // "< 1 s" bound rejected every normal sample and the spinner never
+        // cleared after a seek.
+        const advancedSeconds = current - previous;
+        const elapsedSeconds = Math.max(0, (now - previousAt) / 1000);
+        const maxPlausibleAdvanceSeconds = Math.max(1.5, elapsedSeconds * 3 + 0.5);
+        if (advancedSeconds <= 0.01 || advancedSeconds > maxPlausibleAdvanceSeconds) return false;
       }
       return this.clearSeekLoading({ hideBuffering: true });
+    },
+    startSeekLoadingWatchdog() {
+      this.stopSeekLoadingWatchdog();
+      if (!this.isTizenAvPlaySeekActive()) {
+        return;
+      }
+      this.seekLoadingWatchdogChecks = 0;
+      this.seekLoadingWatchdogLastSeconds = null;
+      this.seekLoadingWatchdogRetried = false;
+      this.seekLoadingWatchdogTimer = setTimeout(() => this.runSeekLoadingWatchdog(), SEEK_LOADING_WATCHDOG_INTERVAL_MS);
+    },
+    stopSeekLoadingWatchdog() {
+      if (this.seekLoadingWatchdogTimer) {
+        clearTimeout(this.seekLoadingWatchdogTimer);
+        this.seekLoadingWatchdogTimer = null;
+      }
+    },
+    getSeekLoadingWatchdogSnapshot() {
+      const current = Number(this.getPlaybackCurrentSeconds());
+      return {
+        checks: Number(this.seekLoadingWatchdogChecks || 0),
+        elapsedMs: Math.max(0, Date.now() - Number(this.seekLoadingStartedAt || Date.now())),
+        targetSeconds: Number(this.seekLoadingTargetSeconds),
+        currentSeconds: Number.isFinite(current) ? Math.round(current * 100) / 100 : null,
+        settled: this.hasSeekLoadingSettled(),
+        inFlight: Boolean(PlayerController.avplaySeekInFlight),
+        frameReady: this.isPlaybackFrameReady(),
+        paused: Boolean(this.getPlaybackControlPaused()),
+        state: typeof PlayerController.getAvPlayState === "function" ? PlayerController.getAvPlayState() : "",
+        lastSeek: PlayerController.avplayLastSeekOutcome ? { ...PlayerController.avplayLastSeekOutcome } : null,
+        retried: Boolean(this.seekLoadingWatchdogRetried)
+      };
+    },
+    runSeekLoadingWatchdog() {
+      this.seekLoadingWatchdogTimer = null;
+      if (!this.seekLoading || !this.isTizenAvPlaySeekActive()) {
+        return;
+      }
+      this.seekLoadingWatchdogChecks = Number(this.seekLoadingWatchdogChecks || 0) + 1;
+      const snapshot = this.getSeekLoadingWatchdogSnapshot();
+      const previousSeconds = this.seekLoadingWatchdogLastSeconds;
+      this.seekLoadingWatchdogLastSeconds = snapshot.currentSeconds;
+      const advanced =
+        Number.isFinite(previousSeconds) && Number.isFinite(snapshot.currentSeconds) && snapshot.currentSeconds > previousSeconds + 0.25;
+      if (globalThis.__NUVIO_DEBUG_TIZEN_AVPLAY__ === true) {
+        console.info("Tizen AVPlay seek watchdog check", { ...snapshot, advanced });
+      }
+      const reschedule = () => {
+        this.seekLoadingWatchdogTimer = setTimeout(() => this.runSeekLoadingWatchdog(), SEEK_LOADING_WATCHDOG_INTERVAL_MS);
+      };
+
+      // The native seek owns its own timeout; only intervene after it returns.
+      if (snapshot.inFlight) {
+        if (snapshot.elapsedMs < SEEK_LOADING_WATCHDOG_GIVE_UP_MS) {
+          reschedule();
+        }
+        return;
+      }
+
+      if (snapshot.settled && (advanced || snapshot.paused)) {
+        if (globalThis.__NUVIO_DEBUG_TIZEN_AVPLAY__ === true) {
+          console.info("Tizen AVPlay seek watchdog cleared the seek spinner", { ...snapshot, advanced });
+        }
+        this.clearSeekLoading({ hideBuffering: true });
+        return;
+      }
+
+      if (snapshot.elapsedMs >= SEEK_LOADING_WATCHDOG_GIVE_UP_MS) {
+        // Never leave the spinner up indefinitely: hand the controls back so
+        // the user can retry, pick another source or leave the player.
+        console.warn("Tizen AVPlay seek did not resume playback; clearing the seek spinner", snapshot);
+        this.clearSeekLoading({ hideBuffering: true });
+        return;
+      }
+
+      if (
+        snapshot.settled &&
+        !advanced &&
+        !this.seekLoadingWatchdogRetried &&
+        snapshot.elapsedMs >= SEEK_LOADING_WATCHDOG_RETRY_AFTER_MS &&
+        Number.isFinite(snapshot.targetSeconds) &&
+        typeof PlayerController.seekToSeconds === "function"
+      ) {
+        this.seekLoadingWatchdogRetried = true;
+        console.warn("Tizen AVPlay seek stalled after settling; retrying the seek once", snapshot);
+        PlayerController.seekToSeconds(snapshot.targetSeconds);
+      }
+      reschedule();
     },
     isEngineFsStartupReady() {
       if (!this.currentEngineFsStream) {

@@ -113,9 +113,10 @@ export function createPlayerScreenMethods53() {
       const changesCueLayout = ["delay", "resetDelay", "verticalOffset", "reset"].includes(controlId);
       const refreshNativeCues = !Environment.isVidaa() || changesCueLayout;
       this.applySubtitlePresentationSettings({
-        refreshTrackRendering: refreshNativeCues && !isRepeat,
+        refreshTrackRendering: !Environment.isVidaa() && refreshNativeCues && !isRepeat,
         refreshCueStyles: refreshNativeCues
       });
+      if (Environment.isVidaa()) this.renderHtmlSubtitleOverlayAtCurrentTime();
       if (!this.renderSubtitleStyleControlInPlace(controlId)) {
         this.renderSubtitleDialog();
       }

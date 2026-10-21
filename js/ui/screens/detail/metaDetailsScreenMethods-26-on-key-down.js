@@ -1,3 +1,5 @@
+import { openDetailShuffle } from "./detailEpisodeShuffle.js";
+import { ProfileManager } from "../../../core/profile/profileManager.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 import { handlePersoRate } from "./persoRatingButtons.js";
@@ -203,6 +205,10 @@ export function createMetaDetailsScreenMethods26() {
         return;
       }
 
+      if (action === "shuffleEpisodes") {
+        openDetailShuffle(this);
+        return;
+      }
       if (action === "playDefault") {
         await this.playDefaultFromHero();
         return;
@@ -380,15 +386,27 @@ export function createMetaDetailsScreenMethods26() {
       }
 
       if (action === "toggleWatched") {
+        const profileId = ProfileManager.getActiveProfileId();
+        const token = this.detailLoadToken;
+        const current = () => ProfileManager.getActiveProfileId() === profileId && this.detailLoadToken === token;
         const focusRestore = this.captureDetailFocus();
         const isSeries = isSeriesDetailMeta(this.meta, this.episodes);
         if (isSeries) {
           if (this.isMarkedWatched) {
-            await watchedSeriesReconciliationService.unmarkSeriesWatched(this.params?.itemId, {
-              meta: this.meta
-            });
+            if (
+              (await watchedSeriesReconciliationService.unmarkSeriesWatched(this.params?.itemId, {
+                meta: this.meta
+              })) === false
+            ) {
+              if (current()) {
+                await this.refreshEpisodePlaybackState();
+                if (current()) this.render(this.meta, focusRestore);
+              }
+              return false;
+            }
+            if (!current()) return false;
           } else {
-            await watchedSeriesReconciliationService.markSeriesWatched(
+            const marked = await watchedSeriesReconciliationService.markSeriesWatched(
               this.params?.itemId,
               this.params?.itemType || this.meta?.type || "series",
               {
@@ -396,6 +414,13 @@ export function createMetaDetailsScreenMethods26() {
                 title: this.meta?.name || this.params?.fallbackTitle || "Untitled"
               }
             );
+            if (!marked) {
+              if (current()) {
+                await this.refreshEpisodePlaybackState();
+                if (current()) this.render(this.meta, focusRestore);
+              }
+              return false;
+            }
           }
         } else if (this.isMarkedWatched) {
           const providerIds = {
@@ -403,11 +428,15 @@ export function createMetaDetailsScreenMethods26() {
             tmdbId: resolveMetaTmdbId(this.meta, this.params),
             traktId: resolveMetaTraktId(this.meta, this.params)
           };
-          await watchedItemsRepository.unmark(this.params?.itemId, {
-            ...providerIds,
-            contentType: this.params?.itemType || "movie",
-            title: this.meta?.name || this.params?.fallbackTitle || "Untitled"
-          });
+          if (
+            (await watchedItemsRepository.unmark(this.params?.itemId, {
+              ...providerIds,
+              contentType: this.params?.itemType || "movie",
+              title: this.meta?.name || this.params?.fallbackTitle || "Untitled"
+            })) === false ||
+            !current()
+          )
+            return false;
           await watchProgressRepository.removeProgress(this.params?.itemId);
         } else {
           const providerIds = {
@@ -415,13 +444,17 @@ export function createMetaDetailsScreenMethods26() {
             tmdbId: resolveMetaTmdbId(this.meta, this.params),
             traktId: resolveMetaTraktId(this.meta, this.params)
           };
-          await watchedItemsRepository.mark({
-            contentId: this.params?.itemId,
-            ...providerIds,
-            contentType: this.params?.itemType || "movie",
-            title: this.meta?.name || this.params?.fallbackTitle || "Untitled",
-            watchedAt: Date.now()
-          });
+          if (
+            (await watchedItemsRepository.mark({
+              contentId: this.params?.itemId,
+              ...providerIds,
+              contentType: this.params?.itemType || "movie",
+              title: this.meta?.name || this.params?.fallbackTitle || "Untitled",
+              watchedAt: Date.now()
+            })) === false ||
+            !current()
+          )
+            return false;
           await watchProgressRepository.saveProgress({
             contentId: this.params?.itemId,
             ...providerIds,
@@ -432,12 +465,15 @@ export function createMetaDetailsScreenMethods26() {
             updatedAt: Date.now()
           });
         }
+        if (!current()) return false;
         if (!isSeries && this.meta?.ids?.trakt) {
           const enriched = await detailWatchedEnrichmentService.enrichMovieWatchedState(this.params?.itemId, this.meta.ids.trakt);
           this.enrichedMovieState = enriched;
           this.isMarkedWatched = Boolean(enriched?.isWatched);
         }
+        if (!current()) return false;
         await this.refreshEpisodePlaybackState();
+        if (!current()) return false;
         this.render(this.meta, focusRestore);
         return;
       }

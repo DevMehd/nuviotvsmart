@@ -3,7 +3,8 @@ import { Platform } from "../../../platform/index.js";
 import { isVidaaNavigationBusy, VIDAA_NAVIGATION_SETTLE_MS } from "../../navigation/vidaaNavigationActivity.js";
 import { releaseDistantVidaaHomeImages } from "./vidaaHomeImageWindow.js";
 import { updateVidaaHomeCardWindow, scheduleVidaaHomeCardWindow } from "./vidaaHomeCardWindow.js";
-import { observeVidaaPosterReady, prefetchVidaaPosterSource, reconcileVidaaHomePosterPrefetches } from "./vidaaHomePosterPrefetch.js";
+import { hydrateVidaaPosterImage, prefetchVidaaPosterSource, reconcileVidaaHomePosterPrefetches } from "./vidaaHomePosterPrefetch.js";
+import { cancelVidaaPosterJobs } from "../../components/vidaaPosterScheduler.js";
 
 function isVidaaHomeHydrationBusy(screen) {
   return screen.isVidaaHomeLoadingBusy?.() ?? isVidaaNavigationBusy();
@@ -54,30 +55,22 @@ function clampNumber(value, min, max) {
 
 function hydrateVidaaPriorityPoster(screen, image, priority = "auto") {
   if (!(image instanceof HTMLImageElement) || !image.isConnected || !image.dataset.src) return false;
-  const src = String(image.dataset.src || "").trim();
-  image.loading = "eager";
-  image.decoding = "async";
-  try {
-    image.fetchPriority = priority;
-  } catch (_) {}
-  observeVidaaPosterReady(screen, image);
-  image.removeAttribute("data-src");
-  if (src) image.src = src;
-  return Boolean(src);
+  return hydrateVidaaPosterImage(screen, image, priority);
 }
 
 function getVidaaPosterSource(screen, node) {
   if (!node) return "";
-  const direct = String(node.dataset?.posterSrc || "").trim();
-  if (direct) return direct;
-
   const liveImage = node.querySelector?.(VIDAA_POSTER_SELECTOR);
   const liveSource = String(liveImage?.dataset?.src || liveImage?.getAttribute?.("src") || "").trim();
   if (liveSource) return liveSource;
 
   const parkedRecord = screen?.homeVidaaParkedCards?.get?.(node);
+  const parkedSource = String(parkedRecord?.posterSource || "").trim();
+  if (parkedSource) return parkedSource;
   const parkedImage = parkedRecord?.content?.querySelector?.(VIDAA_POSTER_SELECTOR);
-  return String(parkedImage?.dataset?.src || parkedImage?.getAttribute?.("src") || "").trim();
+  return String(
+    parkedImage?.dataset?.src || parkedImage?.getAttribute?.("src") || node.dataset?.cardPosterSrc || node.dataset?.posterSrc || ""
+  ).trim();
 }
 
 function warmVidaaPosterNode(screen, node, priority = "low") {
@@ -372,6 +365,9 @@ export function createHomeScreenMethods24() {
     scheduleVidaaHomeLazyImageHydration(anchorNode = null, { refreshIndex = false, navigationDirection = null } = {}) {
       if (!this.container || this.container.isConnected === false) return;
       const anchor = anchorNode || this.getCurrentFocusedNode();
+      // A fresh viewport replaces work which has not started. Existing native
+      // downloads continue unless their card/window is explicitly released.
+      cancelVidaaPosterJobs(this, { queuedOnly: true });
       this.pendingHomeLazyImageAnchor = anchor;
       this.homeLazyImageHydrationNeedsIndexRefresh ||= refreshIndex;
       const focusedPoster = anchor?.querySelector?.(VIDAA_PENDING_POSTER_SELECTOR);
@@ -406,9 +402,8 @@ export function createHomeScreenMethods24() {
 
       scheduleVidaaHomeCardWindow(this, { initialize: Boolean(anchor?.isConnected && navigationDirection) });
       predictedNodes.forEach((node) => {
-        // Live near-window cards get their real img source now. Parked cards are
-        // fetched through a detached Image request instead, so long runways do
-        // not inflate the hot DOM or undo the card-windowing performance win.
+        // Live and parked cards enter the same bounded request queue. A long
+        // runway must not become a parallel burst simply because it is live.
         warmVidaaPosterNode(this, node, "low");
       });
       if (this.homeLazyImageHydrationSettleTimer) clearTimeout(this.homeLazyImageHydrationSettleTimer);
@@ -632,12 +627,17 @@ export function createHomeScreenMethods24() {
             break;
           }
           scanned += 1;
-          const { image, src } = pending.shift();
+          const { image, src, priority } = pending.shift();
           if (!(image instanceof HTMLImageElement) || !image.isConnected) {
             continue;
           }
           const currentSrc = String(image.dataset.src || "").trim();
           if (!currentSrc) {
+            continue;
+          }
+          if (isVidaa) {
+            hydrateVidaaPriorityPoster(this, image, priority === 0 ? "high" : priority === 1 ? "auto" : "low");
+            assigned += 1;
             continue;
           }
           image.loading = "eager";

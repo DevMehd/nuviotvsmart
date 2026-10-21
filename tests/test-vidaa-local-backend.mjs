@@ -17,6 +17,8 @@ globalThis.localStorage = memoryStorage();
 globalThis.sessionStorage = memoryStorage();
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.__NUVIO_ENV__ = {
+  // The local backend is chosen explicitly; builds default to the official account backend.
+  NUVIO_ACCOUNT_BACKEND_MODE: "local",
   NUVIO_SUPABASE_URL: "https://official.example",
   NUVIO_SUPABASE_ANON_KEY: "public-test-key"
 };

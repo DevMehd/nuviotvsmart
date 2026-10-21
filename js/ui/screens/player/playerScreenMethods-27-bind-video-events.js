@@ -1,3 +1,5 @@
+import { handleListedStreamRedirect } from "./streamRedirectMetadata.js";
+import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 import * as internals from "./playerScreenContext.js";
 import { createPlayerVideoLifecycleHandlers } from "./playerVideoLifecycleHandlers.js";
 import { createPlayerVideoEventHandlers } from "./playerVideoEventHandlers.js";
@@ -26,6 +28,15 @@ export function createPlayerScreenMethods27() {
         lifecycleHandlers;
       const { onWebOsAudioTrackSelectionChanged, onAvPlaySubtitleChange, onError } = eventHandlers;
       const bindings = [
+        [
+          "webosexactseekvisual",
+          (event) => {
+            if (!Environment.isWebOS() || !this.seekLoading) return;
+            this.seekLoadingVisualComplete = event.detail?.moving === true;
+            this.updateLoadingVisibility();
+          }
+        ],
+        ["streamredirect", (event) => handleListedStreamRedirect(this, PlayerController, event.detail)],
         ["waiting", onWaiting],
         ["playing", onPlaying],
         ["error", onError],
@@ -80,6 +91,7 @@ export function createPlayerScreenMethods27() {
             };
           }
           this.syncPostPlayPlayerSurface(this.getPostPlayState());
+          syncHtmlSubtitleClearance(this);
         };
         window.addEventListener("resize", onViewportResize);
         this.videoListeners.push({
@@ -89,14 +101,39 @@ export function createPlayerScreenMethods27() {
         });
       }
 
+      // VIDAA can dispatch change synchronously from a native setter. Wait
+      // until the switch has finished before reading flags or rebuilding menus.
+      const onNativeTrackListChanged = Environment.isVidaa()
+        ? () => {
+            if (!this.isActiveMountToken() || this.sourcePlaybackStarting || this.sourceFallbackPending) return;
+            if (this.nativeTrackListChangeTimer != null) return;
+            const source = video.src;
+            const playRequestToken = PlayerController.playRequestToken;
+            const mountToken = this.playerMountToken;
+            this.nativeTrackListChangeTimer = setTimeout(() => {
+              this.nativeTrackListChangeTimer = null;
+              if (
+                !this.isActiveMountToken() ||
+                this.sourcePlaybackStarting ||
+                this.sourceFallbackPending ||
+                PlayerController.video !== video ||
+                video.src !== source ||
+                PlayerController.playRequestToken !== playRequestToken ||
+                this.playerMountToken !== mountToken
+              )
+                return;
+              onTrackListChanged();
+            }, 0);
+          }
+        : onTrackListChanged;
       const trackTargets = [this.getVideoTextTrackList(), this.getVideoAudioTrackList()].filter(Boolean);
       trackTargets.forEach((target) => {
         if (typeof target.addEventListener !== "function") {
           return;
         }
         ["addtrack", "removetrack", "change"].forEach((eventName) => {
-          target.addEventListener(eventName, onTrackListChanged);
-          this.videoListeners.push({ target, eventName, handler: onTrackListChanged });
+          target.addEventListener(eventName, onNativeTrackListChanged);
+          this.videoListeners.push({ target, eventName, handler: onNativeTrackListChanged });
         });
       });
       this.installVidaaTrackExperiment(video);

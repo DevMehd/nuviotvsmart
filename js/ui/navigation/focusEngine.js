@@ -1,6 +1,29 @@
 import { Router } from "./routerState.js";
 import { Platform } from "../../platform/index.js";
-import { noteVidaaNavigationKeyDown, noteVidaaNavigationKeyUp } from "./vidaaNavigationActivity.js";
+import {
+  noteVidaaNavigationKeyDown,
+  noteVidaaNavigationKeyUp,
+  resetVidaaNavigationActivity
+} from "./vidaaNavigationActivity.js";
+
+const VIDAA_KEY_RELEASE_RECOVERY_MS = 1000;
+const vidaaKeyLastSeenByEngine = new WeakMap();
+
+function noteVidaaKeyCycle(engine, identity, now) {
+  let lastSeenByKey = vidaaKeyLastSeenByEngine.get(engine);
+  if (!lastSeenByKey) {
+    lastSeenByKey = new Map();
+    vidaaKeyLastSeenByEngine.set(engine, lastSeenByKey);
+  }
+  const lastSeen = lastSeenByKey.get(identity);
+  // Firmware overlays can swallow keyup. Expire only a silent cycle: real
+  // holds renew this timestamp without changing their original hold clock.
+  if (lastSeen != null && (now < lastSeen || now - lastSeen >= VIDAA_KEY_RELEASE_RECOVERY_MS)) {
+    engine.activeKeyDownStartedAt.delete(identity);
+    if (identity === "back") engine.activeBackKeyIdentities.delete(identity);
+  }
+  lastSeenByKey.set(identity, now);
+}
 
 function buildNormalizedEvent(event) {
   const normalizedKey = Platform.normalizeKey(event);
@@ -68,6 +91,18 @@ export const FocusEngine = {
     this.boundHandlePointerClick = this.handlePointerClick.bind(this);
     document.addEventListener("keydown", this.boundHandleKey, true);
     document.addEventListener("keyup", this.boundHandleKeyUp, true);
+    if (Platform.isVidaa()) {
+      this.boundResetVidaaKeyState = this.resetVidaaKeyState.bind(this);
+      this.boundHandleVidaaVisibilityChange = () => {
+        if (document.visibilityState === "hidden" || document.webkitHidden === true) {
+          this.resetVidaaKeyState();
+        }
+      };
+      globalThis.window?.addEventListener?.("blur", this.boundResetVidaaKeyState);
+      globalThis.window?.addEventListener?.("pagehide", this.boundResetVidaaKeyState);
+      document.addEventListener("visibilitychange", this.boundHandleVidaaVisibilityChange);
+      document.addEventListener("webkitvisibilitychange", this.boundHandleVidaaVisibilityChange);
+    }
     if (Platform.isWebOS()) {
       document.addEventListener("mousemove", this.boundHandlePointerMove, true);
       document.addEventListener("pointermove", this.boundHandlePointerMove, true);
@@ -75,6 +110,19 @@ export const FocusEngine = {
       document.documentElement?.classList?.add("webos-pointer-remote");
       document.body?.classList?.add("webos-pointer-remote");
     }
+  },
+
+  resetVidaaKeyState() {
+    if (!Platform.isVidaa()) return;
+    this.activeKeyDownStartedAt.clear();
+    this.activeBackKeyIdentities.clear();
+    this.nativeTextKeyIdentities.clear();
+    vidaaKeyLastSeenByEngine.delete(this);
+    resetVidaaNavigationActivity();
+    const screen = Router.getCurrentScreen();
+    screen?.cancelPendingPosterHold?.();
+    screen?.cancelPendingContinueWatchingEnter?.();
+    screen?.cancelPendingContinueWatchingHold?.();
   },
 
   handleBack(event, normalizedEvent = buildNormalizedEvent(event)) {
@@ -126,6 +174,7 @@ export const FocusEngine = {
       const identity = nativeTextKeyIdentity(normalizedEvent);
       this.nativeTextKeyIdentities.add(identity);
       this.activeKeyDownStartedAt.delete(identity);
+      vidaaKeyLastSeenByEngine.get(this)?.delete(identity);
       return;
     }
     if (hasActiveModal()) return;
@@ -134,6 +183,7 @@ export const FocusEngine = {
     const isArrowKey = normalizedEvent.keyCode >= 37 && normalizedEvent.keyCode <= 40;
     const isVidaaSelectKey = isVidaa && normalizedEvent.keyCode === VIDAA_SELECT_KEY_CODE;
     if (keyIdentity) {
+      if (isVidaa) noteVidaaKeyCycle(this, keyIdentity, Date.now());
       if (isVidaaSelectKey || (isVidaa && isArrowKey)) {
         const keyIsHeld = this.activeKeyDownStartedAt.has(keyIdentity);
         if (isArrowKey) {
@@ -205,6 +255,7 @@ export const FocusEngine = {
   handleKeyUp(event) {
     const normalizedEvent = buildNormalizedEvent(event);
     const nativeIdentity = nativeTextKeyIdentity(normalizedEvent);
+    vidaaKeyLastSeenByEngine.get(this)?.delete(this.getKeyIdentity(normalizedEvent));
     if (
       this.nativeTextKeyIdentities.delete(nativeIdentity) ||
       Platform.handleTextInputKey(normalizedEvent, { keyUp: true })

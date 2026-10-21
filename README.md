@@ -177,17 +177,53 @@ and storage persistence still require validation on the target TV.
 
 For local development, run `npm run serve:vidaa`.
 
+See [VIDAA verification and test commands](./docs/vidaa-verification.md) for the
+regression suites, recorded device checks, and remaining hardware limitations.
+See [upstream 1.2.7 integration](./docs/upstream-1.2.7-integration.md) for the
+latest features, VIDAA adaptations, and build verification.
+
 ## Build from source
 
 Configure metadata and tracking in **Settings → Integrations**. TMDB accepts a
 personal API key and a preferred metadata language; MDBList accepts your API key.
-Trakt accepts a Client ID and Client Secret, then connects your account through
-the device sign-in screen. Personal TMDB and Trakt app credentials are saved on
-this device for the current profile.
+Trakt connects your account through the original device sign-in screen: select
+**Connect Trakt**, then approve the displayed code at `https://trakt.tv/activate`.
+The app supplies its own Trakt configuration; no Client ID or Secret entry is
+needed on the TV. Existing local settings and profile tokens are preserved.
 
-Builds can supply optional TMDB and Trakt app defaults through `local.properties`.
-Personal credentials override those defaults; clearing them restores the defaults
-when available. The public source does not include shared API credentials.
+Builds supply Trakt application configuration through ignored `local.properties`,
+as official Nuvio releases do. To reproduce it from the public Nuvio 1.2.5 Tizen
+release, run this once before building:
+
+```bash
+node scripts/import-official-trakt-config.mjs
+```
+
+The importer verifies the pinned package SHA-256
+`3e337ef50a84611dce0e64bf475ab7a95227822d48b7bc0237b89fcf134b571c`,
+imports only the two Trakt application values, preserves other configuration,
+and never prints credentials. Different existing Trakt values require the
+explicit `--replace-trakt` option. Downloads are not part of normal builds.
+Without these build values Trakt remains unavailable; the TV never asks for
+manual application credentials. No account password or user token belongs in
+`local.properties` or a distributed package.
+
+The MDBList account and library-list integration added in 1.2.7 also needs its
+application Client ID. Prepare it from the official 1.2.7 package with:
+
+```bash
+node scripts/import-official-mdblist-config.mjs --if-missing
+```
+
+This verifies the pinned official archive checksum and imports only the MDBList
+application ID. Existing custom configuration is preserved. Vercel prepares both
+application integrations before packaging; users still approve account linking
+from the normal device-code screen.
+
+Personal TMDB credentials override build defaults for the current profile;
+clearing them restores those defaults when available. The client includes the
+official public Nuvio account URL and anon key. Existing Nuvio accounts sign in
+through the official phone approval QR; Addons opens the official account manager.
 Without a configured TMDB key, enabling enrichment opens the key setup. Selecting
 a language alone cannot localize the metadata supplied by catalogue addons.
 
@@ -222,7 +258,7 @@ npm run serve:vidaa  # Start local VIDAA development server
 
 ## Acknowledgements
 
-Special thanks to **[@loggie86](https://github.com/loggie86)** for testing this VIDAA port on real Hisense TV hardware and providing crucial insights on navigation, launcher installation, and backend setup.
+Special thanks to **[@loggie86](https://github.com/loggie86)** for testing this VIDAA port on real Hisense TV hardware and providing crucial insights on navigation, launcher installation, and VIDAA compatibility.
 
 ## License
 

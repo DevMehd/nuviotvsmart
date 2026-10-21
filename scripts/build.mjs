@@ -12,6 +12,7 @@ import { compatibilityPolicy } from "./compatibilityPolicy.mjs";
 import { writeRuntimeEnvScriptFile } from "./envProperties.mjs";
 import { buildI18nBundles } from "./buildI18nBundles.mjs";
 import { readPersonalChangelog } from "./personalChangelog.mjs";
+import { assSubtitleRuntimeSource } from "./assSubtitleRuntime.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -542,7 +543,13 @@ async function buildCoreJsBundle() {
 
 async function buildAssSubtitleLibrary() {
   await build({
-    entryPoints: [path.join(rootDir, "node_modules", "assjs", "dist", "ass.global.min.js")],
+    stdin: {
+      contents: await assSubtitleRuntimeSource(rootDir),
+      resolveDir: rootDir,
+      sourcefile: "ass-runtime.js"
+    },
+    bundle: true,
+    format: "iife",
     outfile: path.join(distDir, "assets", "libs", "ass.min.js"),
     minify: !debugBundle,
     target: [`chrome${compatibilityPolicy.chromiumVersion}`],

@@ -78,10 +78,14 @@ export function parseMdbListMediaRatings(payload = {}) {
     "mal"
   ];
   for (const rating of Array.isArray(payload.ratings) ? payload.ratings : []) {
-    const source = aliases[rating?.source] || rating?.source;
+    const rawSource = String(rating?.source || "")
+      .trim()
+      .toLowerCase();
+    const source = aliases[rawSource] || rawSource;
     if (
       !supported.includes(source) ||
       Object.prototype.hasOwnProperty.call(values, source) ||
+      !["string", "number"].includes(typeof rating?.value) ||
       rating?.value == null ||
       String(rating.value).trim() === ""
     )

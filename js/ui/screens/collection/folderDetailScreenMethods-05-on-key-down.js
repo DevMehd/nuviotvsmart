@@ -135,6 +135,12 @@ export function createFolderDetailScreenMethods05() {
         HomeScreen.cancelFocusedPosterFlow.call(this);
         HomeScreen.clearFocusedPosterFlowState.call(this);
         HomeScreen.collapseFocusedPoster.call(this);
+        HomeScreen.clearHomeTrailerLayers.call(this);
+        if (this.activeCollectionFocusGifNode) {
+          HomeScreen.hydrateCollectionFocusGif.call(this, this.activeCollectionFocusGifNode, false);
+          this.activeCollectionFocusGifNode = null;
+        }
+        this.focusedPosterTrailerSourcePromises = null;
         HomeScreen.teardownModernTrackScrollPagination.call(this);
         if (this.boundHomeViewport && this.boundHomeViewportScrollHandler) {
           this.boundHomeViewport.removeEventListener("scroll", this.boundHomeViewportScrollHandler);

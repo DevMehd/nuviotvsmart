@@ -18,7 +18,6 @@ export const DEFAULT_POST_PLAY_MOVIE_THRESHOLD_PERCENT = 90;
 
 const DEFAULTS = {
   autoplayNextEpisode: false,
-  nextEpisodeCountdownEnabled: true,
   postPlayRecommendationsEnabled: true,
   postPlayMovieThresholdPercent: DEFAULT_POST_PLAY_MOVIE_THRESHOLD_PERCENT,
   // Legacy Web-only switch. Subtitle startup is controlled by the preferred
@@ -33,12 +32,9 @@ const DEFAULTS = {
   skipIntroEnabled: true,
   loadingOverlayEnabled: true,
   showPlayerLoadingStatus: true,
-  minimalBufferingUiEnabled: false,
   pauseOverlayEnabled: true,
   parentalGuideEnabled: true,
   autoSkipSegmentTypes: [],
-  addonSubtitleStartupMode: "ALL_SUBTITLES",
-  addonSubtitleStartupModeAutoPreferred: false,
   nextEpisodeThresholdMode: "PERCENTAGE",
   nextEpisodeThresholdPercent: 99,
   nextEpisodeThresholdMinutesBeforeEnd: 2,
@@ -65,9 +61,6 @@ const DEFAULTS = {
   },
   audioAmplificationDb: 0,
   persistAudioAmplification: false,
-  // Legacy combined override from 0.3.14. Kept only so the device-wide,
-  // per-codec webOS compatibility store can migrate an existing preference.
-  forceDtsTrueHdAudio: false,
   // Auto stream selection (matches the Android TV app). When the mode is not
   // MANUAL, pressing play auto-selects a stream and plays it after a countdown.
   streamAutoPlayMode: "MANUAL",
@@ -234,7 +227,15 @@ const SUBTITLE_STYLE_APPLE_TV_PRESET = "appletv-1";
 const SUBTITLE_STYLE_LEGACY_DEFAULT_BACKGROUND = "#00000000";
 
 export function normalizePlayerSettings(settings = {}) {
-  const { subtitleDelayMs: _ignoredSubtitleDelayMs, ...persistentSettings } = settings || {};
+  const {
+    subtitleDelayMs: _ignoredSubtitleDelayMs,
+    nextEpisodeCountdownEnabled: _removedCountdown,
+    minimalBufferingUiEnabled: _removedBufferingUi,
+    addonSubtitleStartupMode: _removedSubtitleStartup,
+    addonSubtitleStartupModeAutoPreferred: _removedAutoPreferred,
+    forceDtsTrueHdAudio: _removedAudioOverride,
+    ...persistentSettings
+  } = settings || {};
   const subtitleStyle = {
     ...DEFAULTS.subtitleStyle,
     ...(persistentSettings.subtitleStyle || {})
@@ -301,9 +302,6 @@ export function normalizePlayerSettings(settings = {}) {
   return {
     ...DEFAULTS,
     ...persistentSettings,
-    nextEpisodeCountdownEnabled: Boolean(
-      persistentSettings.nextEpisodeCountdownEnabled ?? DEFAULTS.nextEpisodeCountdownEnabled
-    ),
     postPlayRecommendationsEnabled: Boolean(
       persistentSettings.postPlayRecommendationsEnabled ?? DEFAULTS.postPlayRecommendationsEnabled
     ),
@@ -317,9 +315,6 @@ export function normalizePlayerSettings(settings = {}) {
     ),
     loadingOverlayEnabled: persistentSettings.loadingOverlayEnabled !== false,
     showPlayerLoadingStatus: persistentSettings.showPlayerLoadingStatus !== false,
-    minimalBufferingUiEnabled: Boolean(
-      persistentSettings.minimalBufferingUiEnabled ?? DEFAULTS.minimalBufferingUiEnabled
-    ),
     pauseOverlayEnabled: persistentSettings.pauseOverlayEnabled !== false,
     parentalGuideEnabled: persistentSettings.parentalGuideEnabled !== false,
     autoSkipSegmentTypes: [
@@ -332,14 +327,6 @@ export function normalizePlayerSettings(settings = {}) {
           .filter((entry) => ["intro", "recap", "outro", "movie-credits"].includes(entry))
       )
     ],
-    addonSubtitleStartupMode: ["FAST_STARTUP", "PREFERRED_ONLY", "ALL_SUBTITLES"].includes(
-      String(persistentSettings.addonSubtitleStartupMode || "").toUpperCase()
-    )
-      ? String(persistentSettings.addonSubtitleStartupMode).toUpperCase()
-      : "ALL_SUBTITLES",
-    addonSubtitleStartupModeAutoPreferred: Boolean(
-      persistentSettings.addonSubtitleStartupModeAutoPreferred
-    ),
     streamAutoPlayMode: normalizeStreamAutoPlayMode(
       persistentSettings.streamAutoPlayMode ?? DEFAULTS.streamAutoPlayMode
     ),

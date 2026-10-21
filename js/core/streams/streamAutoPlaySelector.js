@@ -1,7 +1,11 @@
+import { filenameMatches } from "./filenameEpisodeMatcher.js";
+import { canResolveMediaServerStream } from "../../data/mediaserver/mediaServerRepository.js";
 // Auto stream selection, ported from the Android TV app's StreamAutoPlaySelector
 // and StreamAutoPlayPolicy so the two clients behave the same. Given the list of
 // streams shown in the picker and the user's auto-play settings, it returns the
 // stream that should play automatically, or null to leave the picker open.
+
+import { normalizeStreamMatchPattern, normalizeStreamSearchText } from "./streamDisplayText.js";
 
 export const STREAM_AUTO_PLAY_MODE = {
   MANUAL: "MANUAL",
@@ -30,7 +34,7 @@ function normalizeSource(value) {
 }
 
 export function isRegexSelectionConfigured(regexPattern) {
-  const pattern = String(regexPattern || "").trim();
+  const pattern = normalizeStreamMatchPattern(regexPattern).trim();
   if (!pattern || !/[a-z0-9]/i.test(pattern)) {
     return false;
   }
@@ -80,7 +84,8 @@ function isPlayableStream(stream = {}) {
   }
   return Boolean(
     stream &&
-    (stream.url ||
+    (canResolveMediaServerStream(stream) ||
+      stream.url ||
       stream.ytId ||
       stream.infoHash ||
       resolve.infoHash ||
@@ -98,7 +103,12 @@ function streamBingeGroup(stream = {}) {
 }
 
 function streamSearchableText(stream = {}) {
-  const parts = [stream.addonName, stream.name, stream.title, stream.description, stream.url];
+  // Match the readable labels even when addons decorate them with mathematical
+  // letters or flag symbols. URLs and hashes are identities, not display text.
+  const parts = [stream.addonName, stream.name, stream.title, stream.description].map(
+    normalizeStreamSearchText
+  );
+  parts.push(stream.url);
   if (stream.infoHash) {
     parts.push(stream.infoHash);
   }
@@ -136,7 +146,7 @@ function buildExcludeRegex(pattern) {
     return null;
   }
   try {
-    return new RegExp(`\\b(${words.join("|")})\\b`, "i");
+    return new RegExp(normalizeStreamMatchPattern(`\\b(${words.join("|")})\\b`), "i");
   } catch (_) {
     return null;
   }
@@ -146,6 +156,30 @@ export function selectAutoPlayStream(streams, options = {}) {
   const list = Array.isArray(streams) ? streams.filter(Boolean) : [];
   if (!list.length) {
     return null;
+  }
+  const filename = (stream) =>
+    stream?.behaviorHints?.filename || stream?.raw?.behaviorHints?.filename;
+  const preciseCandidates = list.filter(
+    (stream) => !stream.externalUrl && !stream.raw?.externalUrl && isPlayableStream(stream)
+  );
+  const group = String(options.preferredBingeGroup || "").trim();
+  if (options.filenameOnlyFallback && options.preferredFilename) {
+    const match = preciseCandidates.find((stream) =>
+      filenameMatches(filename(stream), options.preferredFilename)
+    );
+    if (match) return match;
+  }
+  if (options.preferBingeGroupInSelection && group) {
+    const sameGroup = preciseCandidates.filter((stream) => streamBingeGroup(stream) === group);
+    const match =
+      sameGroup.find((stream) => filenameMatches(filename(stream), options.preferredFilename)) ||
+      (options.preferredInfoHash &&
+        sameGroup.find(
+          (stream) =>
+            String(stream.infoHash || stream.raw?.infoHash || "").toLowerCase() ===
+            String(options.preferredInfoHash).toLowerCase()
+        ));
+    if (match) return match;
   }
   const mode = normalizeMode(options.mode);
   const source = normalizeSource(options.source);
@@ -196,14 +230,14 @@ export function selectAutoPlayStream(streams, options = {}) {
   }
 
   // REGEX_MATCH
-  const pattern = String(options.regexPattern || "").trim();
+  const pattern = normalizeStreamMatchPattern(options.regexPattern).trim();
   let includeRegex;
   try {
     includeRegex = new RegExp(pattern, "i");
   } catch (_) {
     return null;
   }
-  const excludeRegex = buildExcludeRegex(pattern);
+  const excludeRegex = buildExcludeRegex(options.regexPattern);
   const match = candidates.find((stream) => {
     if (!isPlayableStream(stream)) {
       return false;

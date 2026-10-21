@@ -6,6 +6,7 @@ export function createStreamScreenMethods11() {
 
   return {
     cleanup() {
+      this.unbindStreamParty();
       this.streamLoadAbortController?.abort?.();
       this.streamLoadAbortController = null;
       streamRepository.setLocalPluginSearchPaused(true);
@@ -29,6 +30,8 @@ export function createStreamScreenMethods11() {
         this.releaseImageProxyReadyListener = null;
       }
       this.renderedMarkup = null;
+      this.autoPlayUiActive = false;
+      this.autoPlayUiError = "";
       this.renderedStreamListStable = false;
       this.renderedStreamListStreams = null;
       this.renderedStreamListSourceChips = null;

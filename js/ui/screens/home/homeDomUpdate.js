@@ -1,4 +1,10 @@
 import { getHomeFocusIdentity } from "./homeFocusPolicy.js";
+import {
+  clearVidaaHomePosterPreviews,
+  hasVidaaHomePosterPreview,
+  positionVidaaHomePosterPreview,
+  prepareVidaaHomePosterPreviewsForUpdate
+} from "./vidaaHomePosterExpansion.js";
 
 // Compare generated markup, rather than the live DOM: focus, image hydration,
 // expansion and trailer playback all add state that a data refresh must retain.
@@ -56,6 +62,12 @@ function remember(node, source) {
 
 export function registerHomeDomNodes(nodes) {
   nodes.forEach((node) => remember(node, node));
+}
+
+// Recyclable card renderers keep their canonical markup here already. Reuse
+// that source instead of serializing every live subtree during scrolling.
+export function getHomeDomCardSource(node) {
+  return sourceByNode.get(node)?.markup;
 }
 
 function updateAttributes(node, previous, next) {
@@ -119,6 +131,18 @@ function updateNode(node, source, options) {
   const markup = signature(source);
   if (markup !== undefined && previous.markup === markup) return;
   if (node.nodeType === 1) {
+    // A preview temporarily owns the original portrait node during FLIP.
+    // Return it before reconciling children, then position the updated card
+    // after the entire row has been patched/reordered.
+    if (
+      node.dataset.rowKey ||
+      node.classList.contains("home-track") ||
+      hasVidaaHomePosterPreview(node)
+    ) {
+      // A prepend/reorder also moves an unchanged expanded card. Unchanged
+      // row signatures returned above keep their preview and camera intact.
+      prepareVidaaHomePosterPreviewsForUpdate(node, options.posterPreviews);
+    }
     if (node.classList.contains("home-content-card")) options.beforeCardUpdate?.(node);
     updateAttributes(node, previous.node, source);
     updateChildren(node, source, options);
@@ -178,7 +202,12 @@ function updateChildren(parent, source, options) {
     remember(inserted, resolved);
     return inserted;
   });
-  available.forEach((nodes) => nodes.forEach((node) => node.remove()));
+  available.forEach((nodes) =>
+    nodes.forEach((node) => {
+      clearVidaaHomePosterPreviews(node);
+      node.remove();
+    })
+  );
 
   const desiredSet = new Set(desired);
   const nextManagedSibling = (node) => {
@@ -219,8 +248,26 @@ export function updateHomeDom(
   source.innerHTML = markup;
   const canUpdate = incremental && hasMountedHomeDom(container);
   if (canUpdate) {
-    updateChildren(container, source, { focusedNode, rowSources, beforeCardUpdate });
+    const posterPreviews = new Set();
+    updateChildren(container, source, {
+      focusedNode,
+      rowSources,
+      beforeCardUpdate,
+      posterPreviews
+    });
+    posterPreviews.forEach((node) => {
+      if (
+        container.contains(node) &&
+        node.classList.contains("focused") &&
+        node.classList.contains("is-expanded")
+      ) {
+        positionVidaaHomePosterPreview(node, node.closest(".home-modern-rows-viewport"), {
+          animate: false
+        });
+      }
+    });
   } else {
+    clearVidaaHomePosterPreviews(container);
     if (rowSources) {
       resolveNestedRows(source, rowSources);
       // Parse once and move the generated tree; snapshots keep only shallow

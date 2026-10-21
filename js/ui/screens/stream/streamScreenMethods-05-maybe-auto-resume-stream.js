@@ -1,9 +1,15 @@
+import { expectedEpisodeFilename } from "../../../core/streams/filenameEpisodeMatcher.js";
+import { StreamLinkCacheStore, activeStreamLinkProfile } from "../../../data/local/streamLinkCacheStore.js";
+import { cachedStreamLinkCandidate } from "../../../core/streams/streamLinkReuse.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 
 export function createStreamScreenMethods05() {
   const {
     Router,
+    DirectDebridResolver,
+    WebOsEngineFsResolver,
+    TizenStreamingServerResolver,
     addonRepository,
     PlayerSettingsStore,
     StreamPreferencesStore,
@@ -20,8 +26,51 @@ export function createStreamScreenMethods05() {
   } = internals;
 
   return {
+    syncAutoPlayUiState(settings = PlayerSettingsStore.get()) {
+      // Profile sync can finish while providers are loading. Use the same current
+      // settings for presentation and selection until an attempt has started.
+      if (this.autoPlayAttempted) return settings;
+      const mode = String(settings.streamAutoPlayMode || "MANUAL")
+        .trim()
+        .toUpperCase();
+      this.autoPlayUiActive = Boolean(
+        !this.params?.manualSelection && ["FIRST_STREAM", "REGEX_MATCH"].includes(mode) && isAutoPlayEffectivelyEnabled(settings)
+      );
+      return settings;
+    },
+    tryResumeCachedStreamLink() {
+      const settings = PlayerSettingsStore.get();
+      if (
+        this.autoResumeAttempted ||
+        this.params?.manualSelection ||
+        !settings.streamReuseLastLinkEnabled ||
+        this.streamLinkCacheProfileId !== activeStreamLinkProfile()
+      )
+        return false;
+      const cached = StreamLinkCacheStore.getValid(
+        this.params || {},
+        Number(settings.streamReuseLastLinkCacheHours || 24) * 3600000,
+        this.streamLinkCacheProfileId
+      );
+      if (!cached) return false;
+      const candidate = cachedStreamLinkCandidate(cached);
+      if (
+        cached.infoHash &&
+        !DirectDebridResolver.canResolveStream(candidate) &&
+        !WebOsEngineFsResolver.canResolveStream(candidate) &&
+        !TizenStreamingServerResolver.canResolveStream(candidate)
+      )
+        return false;
+      this.autoResumeAttempted = true;
+      this.autoPlayAttempted = true;
+      this.autoResumeUiActive = true;
+      this.streams = [candidate];
+      this.addonFilter = "all";
+      void this.playStream(candidate.id, { cachedLink: cached });
+      return true;
+    },
     maybeAutoResumeStream({ allLoaded = false } = {}) {
-      if (this.autoResumeAttempted) {
+      if (this.autoResumeAttempted || this.params?.manualSelection) {
         return;
       }
       const settings = PlayerSettingsStore.get();
@@ -81,53 +130,77 @@ export function createStreamScreenMethods05() {
         return;
       }
       // Resume already navigated away, or there is nothing to play.
-      if (Router.getCurrent() !== "stream" || !this.streams.length) {
+      if (Router.getCurrent() !== "stream") {
         return;
       }
-      const settings = PlayerSettingsStore.get();
+      const previousAutoPlayUiActive = this.autoPlayUiActive;
+      const settings = this.syncAutoPlayUiState();
+      if (previousAutoPlayUiActive !== this.autoPlayUiActive) this.render();
+      if (!this.streams.length) {
+        if (allLoaded && this.autoPlayUiActive) this.showAutoPlaySelectionError();
+        return;
+      }
       if (this.params?.manualSelection) {
-        return;
-      }
-      if (!allLoaded && !this.autoPlaySelectionReady) {
-        return;
-      }
-      // "Manual (choose stream)" is authoritative for a fresh stream screen.
-      // Persisted binge groups may still guide an enabled auto-play mode and the
-      // next-episode player flow, but must not turn Continue Watching or Details
-      // into an implicit auto-play entry point.
-      const autoPlayMode = String(settings.streamAutoPlayMode || "MANUAL").toUpperCase();
-      if (autoPlayMode === "MANUAL" || !isAutoPlayEffectivelyEnabled(settings)) {
         return;
       }
       const savedPreference =
         settings.streamAutoPlayPreferBingeGroupForNextEpisode && settings.streamAutoPlayReuseBingeGroup
-          ? StreamPreferencesStore.getEntry(this.params?.itemId, this.params?.videoId || this.params?.itemId)
+          ? StreamPreferencesStore.getLatestForContent(this.params?.itemId)
           : null;
       const preferredBingeGroup = String(savedPreference?.bingeGroup || "").trim();
+      // Android may reuse a remembered group before the search timeout, including
+      // MANUAL mode. An explicit manualSelection route above always wins.
+      const autoPlayMode = String(settings.streamAutoPlayMode || "MANUAL").toUpperCase();
+      if ((autoPlayMode === "MANUAL" && !preferredBingeGroup) || !isAutoPlayEffectivelyEnabled(settings)) return;
+      if (!allLoaded && !this.autoPlaySelectionReady && !preferredBingeGroup) return;
       const installedAddonNames = new Set(
         (addonRepository.getCachedInstalledAddons() || [])
           .map((addon) => String(addon?.displayName || addon?.name || "").trim())
           .filter(Boolean)
       );
-      const selected = selectAutoPlayStream(this.getFilteredStreams(), {
-        mode: settings.streamAutoPlayMode,
-        source: settings.streamAutoPlaySource,
-        regexPattern: settings.streamAutoPlayRegex,
-        installedAddonNames,
-        selectedAddons: settings.streamAutoPlaySelectedAddons,
-        selectedPlugins: settings.streamAutoPlaySelectedPlugins,
-        preferredBingeGroup,
-        preferBingeGroupInSelection: Boolean(preferredBingeGroup)
-      });
+      const selected = selectAutoPlayStream(
+        this.getFilteredStreams().filter((stream) => !stream.partyShared),
+        {
+          mode: settings.streamAutoPlayMode,
+          source: settings.streamAutoPlaySource,
+          regexPattern: settings.streamAutoPlayRegex,
+          installedAddonNames,
+          selectedAddons: settings.streamAutoPlaySelectedAddons,
+          selectedPlugins: settings.streamAutoPlaySelectedPlugins,
+          preferredBingeGroup,
+          preferredFilename: expectedEpisodeFilename(savedPreference?.filename, this.params?.season, this.params?.episode ?? 0),
+          preferredInfoHash: savedPreference?.infoHash,
+          preferBingeGroupInSelection: Boolean(preferredBingeGroup)
+        }
+      );
       if (!selected?.id) {
         if (allLoaded) {
           this.autoPlayAttempted = true;
+          if (this.autoPlayUiActive) this.showAutoPlaySelectionError();
         }
         return;
       }
       this.autoPlayAttempted = true;
       this.cancelAutoPlaySelectionWait();
       void this.playStream(selected.id);
+    },
+    showAutoPlaySelectionError(message = "") {
+      this.autoPlayAttempted = true;
+      this.cancelAutoPlaySelectionWait();
+      this.autoPlayUiError = message || t("stream_autoplay_no_match", {}, "No source matches your automatic selection settings.");
+      this.requestRender({ delayMs: 0 });
+    },
+    chooseManualStream() {
+      this.cancelAutoPlayCountdown();
+      this.cancelAutoPlaySelectionWait();
+      this.autoPlayAttempted = true;
+      this.autoResumeAttempted = true;
+      this.autoResumeUiActive = false;
+      this.autoPlayUiActive = false;
+      this.autoPlayUiError = "";
+      this.params = { ...this.params, manualSelection: true };
+      this.renderedMarkup = null;
+      this.render();
     },
     cancelAutoPlaySelectionWait() {
       if (this.autoPlaySelectionWaitTimer) {
@@ -231,15 +304,25 @@ export function createStreamScreenMethods05() {
       // the whole source list each keypress. The cache is keyed on the inputs
       // that affect the result and is cleared in render() when data changes.
       const cache = this._filteredStreamsCache;
-      if (cache && cache.streams === this.streams && cache.chips === this.sourceChips && cache.filter === filter) {
+      // The party host's shared link is listed first in every filter (Android).
+      const shared = this.getPartySharedEntry();
+      if (
+        cache &&
+        cache.streams === this.streams &&
+        cache.chips === this.sourceChips &&
+        cache.filter === filter &&
+        cache.shared === shared
+      ) {
         return cache.result;
       }
       const orderedStreams = sortStreamsByAddonOrder(this.streams, this.sourceChips);
-      const result = filter === "all" ? orderedStreams : orderedStreams.filter((stream) => stream.addonName === filter);
+      const filtered = filter === "all" ? orderedStreams : orderedStreams.filter((stream) => stream.addonName === filter);
+      const result = shared ? [shared, ...filtered] : filtered;
       this._filteredStreamsCache = {
         streams: this.streams,
         chips: this.sourceChips,
         filter,
+        shared,
         result
       };
       return result;

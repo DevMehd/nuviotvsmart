@@ -1,4 +1,5 @@
 // Continue Watching card artwork selection, ported from the Android app.
+import { limitTmdbImageWidth } from "../tmdb/tmdbImageUrl.js";
 
 function normalizeCardStyle(cardStyle) {
   const normalized = String(cardStyle || "card")
@@ -12,7 +13,13 @@ export function continueWatchingUsesEpisodeThumbnails(cardStyle, useEpisodeThumb
 }
 
 export function continueWatchingImageSources(art = {}, options = {}) {
-  const { poster, backdrop, thumbnail, episodeThumbnail } = art;
+  // Apply the optional card-size cap to every fallback before the renderer's
+  // normal artwork policy. This avoids promoting a small VIDAA card to the
+  // hero's w1280 source and retains the existing source order.
+  const poster = limitTmdbImageWidth(art.poster, options.maxTmdbWidth);
+  const backdrop = limitTmdbImageWidth(art.backdrop, options.maxTmdbWidth);
+  const thumbnail = limitTmdbImageWidth(art.thumbnail, options.maxTmdbWidth);
+  const episodeThumbnail = limitTmdbImageWidth(art.episodeThumbnail, options.maxTmdbWidth);
   const cardStyle = normalizeCardStyle(options.cardStyle);
   const useEpisodeThumbnails = continueWatchingUsesEpisodeThumbnails(
     cardStyle,

@@ -1,3 +1,5 @@
+import { detailShuffleSettings } from "./detailEpisodeShuffle.js";
+import { nextShuffleVisit } from "../../../core/player/episodeShuffle.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 import { showVidaaDetailPreview } from "./vidaaDetailPreview.js";
@@ -14,6 +16,10 @@ export function createMetaDetailsScreenMethods02() {
         restartAutoplay: false,
         restoreFocus: false
       });
+      this.shuffleResumeProgress = null;
+      this.shuffleVisit = nextShuffleVisit();
+      this.shuffleDialog?.destroy();
+      this.shuffleDialog = null;
       this.params = params;
       this.isBackNavigation = Boolean(navigationContext?.isBackNavigation);
       this.pendingEpisodeSelection = null;
@@ -102,6 +108,8 @@ export function createMetaDetailsScreenMethods02() {
       // snapshot captured before playback/background enrichment completed.
       const restoredRouteState = navigationContext?.isBackNavigation ? navigationContext?.restoredState || null : null;
       if (this.hydrateFromRouteState(restoredRouteState, params)) {
+        if (detailShuffleSettings(this).enabled || restoredRouteState?.episodeShuffleEnabled)
+          this.nextEpisodeToWatch = this.computeNextEpisodeToWatch(this.resumeProgress);
         this.isLoadingDetail = false;
         this.render(this.meta, this.pendingFocusRestore);
         const refreshToken = this.detailLoadToken;

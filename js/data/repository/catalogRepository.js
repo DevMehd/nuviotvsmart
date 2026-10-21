@@ -1,3 +1,4 @@
+import { MediaServerRepository, isMediaServerBase } from "../mediaserver/mediaServerRepository.js";
 import { safeApiCall } from "../../core/network/safeApiCall.js";
 import { selectCatalogEntries } from "../../core/util/catalogEntryMapper.js";
 import { CatalogApi } from "../remote/api/catalogApi.js";
@@ -7,11 +8,41 @@ import { ProfileManager } from "../../core/profile/profileManager.js";
 import { CatalogSnapshotStore } from "../local/catalogSnapshotStore.js";
 import { Platform } from "../../platform/index.js";
 
+function catalogAbortError() {
+  const error = new Error("Catalog request aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfCatalogAborted(signal) {
+  if (signal?.aborted) throw catalogAbortError();
+}
+
+async function waitForCatalogResult(request, signal) {
+  if (signal?.aborted) {
+    // A transport can synchronously abort while creating its Promise. Observe
+    // that Promise even though this consumer has already retired.
+    Promise.resolve(request).catch(() => {});
+    throw catalogAbortError();
+  }
+  if (!signal) return request;
+  let onAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    onAbort = () => reject(catalogAbortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([request, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 class CatalogRepository {
   constructor() {
     this.catalogCache = new BoundedMap(80);
-    this.catalogPending = new Map();
     this.catalogTimes = new BoundedMap(80);
+    this.inFlightCatalogs = new Map();
     this.cacheGeneration = 0;
   }
 
@@ -28,6 +59,16 @@ class CatalogRepository {
     supportsSkip = false,
     signal = null
   }) {
+    if (signal?.aborted) return safeApiCall(() => Promise.reject(catalogAbortError()));
+    if (isMediaServerBase(addonBaseUrl))
+      return MediaServerRepository.catalog({
+        addonBaseUrl,
+        catalogId,
+        type,
+        skip,
+        extraArgs,
+        signal
+      });
     const normalizedSkipStep = this.normalizeSkipStep(skipStep);
     const cacheKey = this.buildCacheKey({
       addonBaseUrl,
@@ -48,9 +89,8 @@ class CatalogRepository {
       };
     }
 
-    // Abortable searches retain their own request; one caller must never
-    // cancel another screen's shared request.
-    if (!signal && this.catalogPending.has(cacheKey)) return this.catalogPending.get(cacheKey);
+    let inFlightBySignal = this.inFlightCatalogs.get(cacheKey);
+    if (inFlightBySignal?.has(signal)) return inFlightBySignal.get(signal);
 
     const url = this.buildCatalogUrl({
       baseUrl: addonBaseUrl,
@@ -61,48 +101,60 @@ class CatalogRepository {
     });
 
     const cacheGeneration = this.cacheGeneration;
-    const request = safeApiCall(() =>
-      CatalogApi.getCatalog(url, signal ? { signal } : {}).then((dto) => {
-        const { metas, rawItemCount } = selectCatalogEntries(dto?.metas);
-        const items = metas.map((meta) => ({
-          ...this.mapMeta(meta),
-          addonBaseUrl,
-          addonId,
-          addonName,
-          catalogType: type
-        }));
+    const request = safeApiCall(async () => {
+      const dto = await waitForCatalogResult(
+        CatalogApi.getCatalog(url, signal ? { signal } : {}),
+        signal
+      );
+      throwIfCatalogAborted(signal);
+      const { metas, rawItemCount } = selectCatalogEntries(dto?.metas);
+      const items = metas.map((meta) => ({
+        ...this.mapMeta(meta),
+        addonBaseUrl,
+        addonId,
+        addonName,
+        catalogType: type
+      }));
 
-        const hasMore = Boolean(supportsSkip && rawItemCount > 0);
-        const row = {
-          addonId,
-          addonName,
-          addonBaseUrl,
-          catalogId,
-          catalogName,
-          apiType: type,
-          items,
-          isLoading: false,
-          hasMore,
-          currentPage: Math.floor(skip / normalizedSkipStep),
-          supportsSkip,
-          skipStep: normalizedSkipStep,
-          nextSkip: hasMore ? skip + rawItemCount : skip
-        };
+      const hasMore = Boolean(supportsSkip && rawItemCount > 0);
+      const row = {
+        addonId,
+        addonName,
+        addonBaseUrl,
+        catalogId,
+        catalogName,
+        apiType: type,
+        items,
+        isLoading: false,
+        hasMore,
+        currentPage: Math.floor(skip / normalizedSkipStep),
+        supportsSkip,
+        skipStep: normalizedSkipStep,
+        nextSkip: hasMore ? skip + rawItemCount : skip
+      };
 
-        if (cacheGeneration === this.cacheGeneration) {
-          this.catalogCache.set(cacheKey, row);
-          this.catalogTimes.set(cacheKey, Date.now());
-          if (Platform.isVidaa() && skip === 0 && !Object.keys(extraArgs).length)
-            CatalogSnapshotStore.put(cacheKey, row);
-        }
-        return row;
-      })
-    );
-    if (!signal) this.catalogPending.set(cacheKey, request);
+      if (cacheGeneration === this.cacheGeneration) {
+        this.catalogCache.set(cacheKey, row);
+        this.catalogTimes.set(cacheKey, Date.now());
+        if (Platform.isVidaa() && skip === 0 && !Object.keys(extraArgs).length)
+          CatalogSnapshotStore.put(cacheKey, row);
+      }
+      return row;
+    });
+    if (!inFlightBySignal) {
+      inFlightBySignal = new Map();
+      this.inFlightCatalogs.set(cacheKey, inFlightBySignal);
+    }
+    // Home retries and route transitions may request a still-loading row. Only
+    // consumers with the same cancellation lifetime may share the native request.
+    inFlightBySignal.set(signal, request);
     try {
       return await request;
     } finally {
-      if (this.catalogPending.get(cacheKey) === request) this.catalogPending.delete(cacheKey);
+      if (inFlightBySignal.get(signal) === request) inFlightBySignal.delete(signal);
+      if (!inFlightBySignal.size && this.inFlightCatalogs.get(cacheKey) === inFlightBySignal) {
+        this.inFlightCatalogs.delete(cacheKey);
+      }
     }
   }
 
@@ -110,7 +162,7 @@ class CatalogRepository {
     this.cacheGeneration += 1;
     this.catalogCache.clear();
     this.catalogTimes.clear();
-    this.catalogPending.clear();
+    this.inFlightCatalogs.clear();
   }
 
   getSavedCatalog(descriptor) {

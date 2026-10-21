@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./metaDetailsScreenContext.js";
 import { showVidaaDetailPreview } from "./vidaaDetailPreview.js";
+import { resolveType } from "../../../core/tmdb/tmdbMetadataServiceHelpers-01-tmdb-base-url.js";
 
 export function createMetaDetailsScreenMethods03() {
   const {
@@ -282,15 +283,12 @@ export function createMetaDetailsScreenMethods03() {
       }
       try {
         const tmdbId = await TmdbService.ensureTmdbId(rawItemId, itemType);
-        if (!tmdbId) {
+        if (!tmdbId || !TmdbSettingsStore.get().enabled) {
           return rawItemId;
         }
-        const enrichment = await TmdbMetadataService.fetchEnrichment({
-          tmdbId,
-          contentType: itemType,
-          language: TmdbSettingsStore.get().language
-        });
-        const imdbId = String(enrichment?.imdbId || "").trim();
+        // Routing only needs the IMDb identity. Fetching full enrichment here
+        // also waits for optional artwork, cast names and trailer fallbacks.
+        const imdbId = await TmdbService.tmdbToImdb(tmdbId, resolveType(itemType));
         return imdbId || rawItemId;
       } catch (error) {
         console.warn("Detail TMDB canonical id resolve failed", error);

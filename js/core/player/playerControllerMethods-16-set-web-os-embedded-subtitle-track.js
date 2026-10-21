@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
+import { isTransientVidaaTrackSwitchError } from "../../platform/vidaa/vidaaTrackSwitchGuard.js";
 
 export function createPlayerControllerMethods16() {
   const { Platform, loadStreamingLibs, WATCH_PROGRESS_SAVE_INTERVAL_MS } = internals;
@@ -82,50 +83,45 @@ export function createPlayerControllerMethods16() {
     },
     attemptVideoPlay({ warningLabel = "Playback start rejected", onRejected = null, beforePlay = null, playToken = null } = {}) {
       if (!this.video) {
-        return;
+        return Promise.resolve(null);
       }
-      Promise.resolve()
+      const video = this.video;
+      const requestToken = playToken ?? this.playRequestToken;
+      const isCurrent = () => this.video === video && (requestToken == null || requestToken === this.playRequestToken);
+      const reportRejection = (error) => {
+        if (!isCurrent() || this.isExpectedPlayInterruption(error)) return null;
+        this.isPlaying = false;
+        this.stopProgressSaving();
+        console.warn(warningLabel, error);
+        return null;
+      };
+      const handlePlayRejection = async (error) => {
+        if (!isCurrent() || this.isExpectedPlayInterruption(error)) return null;
+        if (typeof onRejected === "function") {
+          try {
+            if (await onRejected(error)) return null;
+          } catch (_) {
+            // Report the original playback failure when its fallback also fails.
+          }
+        }
+        return reportRejection(error);
+      };
+      return Promise.resolve()
         .then(() => beforePlay?.())
         .then(() => {
-          if (playToken !== null && playToken !== this.playRequestToken) {
-            return null;
-          }
+          if (!isCurrent()) return null;
           this.applyStartupAudioGateToVideo();
-          const playPromise = this.video.play();
-          return this.handleNativePlayStartedUnderStartupGate(playPromise);
-        })
-        .then((playPromise) => {
-          if (!playPromise || typeof playPromise.catch !== "function") {
-            return null;
+          try {
+            const playPromise = video.play();
+            // Attach rejection handling before the surrounding promise chain
+            // assimilates playPromise, so an unsupported native source can
+            // actually enter its configured engine fallback.
+            return Promise.resolve(this.handleNativePlayStartedUnderStartupGate(playPromise)).catch(handlePlayRejection);
+          } catch (error) {
+            return handlePlayRejection(error);
           }
-          return playPromise.catch((error) => {
-            if (this.isExpectedPlayInterruption(error)) {
-              return null;
-            }
-            if (typeof onRejected === "function") {
-              try {
-                const handled = onRejected(error);
-                if (handled) {
-                  return null;
-                }
-              } catch (_) {
-                // Ignore rejection handler failures and continue to warning output.
-              }
-            }
-            this.isPlaying = false;
-            this.stopProgressSaving();
-            console.warn(warningLabel, error);
-            return null;
-          });
         })
-        .catch((error) => {
-          if (this.isExpectedPlayInterruption(error)) {
-            return;
-          }
-          this.isPlaying = false;
-          this.stopProgressSaving();
-          console.warn(warningLabel, error);
-        });
+        .catch(reportRejection);
     },
     choosePlaybackEngine(url, sourceType, itemType = this.currentItemType) {
       if (Platform.isTizen() && this.canUseAvPlay() && !this.isTizenHlsSource(url, sourceType)) {
@@ -201,13 +197,25 @@ export function createPlayerControllerMethods16() {
       });
 
       this.video.addEventListener("error", (e) => {
+        const customErrorCode = Number(e?.detail?.mediaErrorCode || 0);
+        const nativeErrorCode = Number(this.video?.error?.code || 0);
+        const mediaErrorCode = customErrorCode || nativeErrorCode || this.getLastPlaybackErrorCode();
+        if (
+          Platform.isVidaa() &&
+          isTransientVidaaTrackSwitchError({
+            video: e?.currentTarget || this.video,
+            currentVideo: this.video,
+            playRequestToken: this.playRequestToken,
+            mediaErrorCode,
+            eventDetail: e?.detail && typeof e.detail === "object" ? e.detail : {}
+          })
+        ) {
+          return;
+        }
         this.isPlaying = false;
         this.stopProgressSaving();
         this.cancelProgressSyncAfterSeek();
         this.syncWebOsPlaybackKeepAwake();
-        const customErrorCode = Number(e?.detail?.mediaErrorCode || 0);
-        const nativeErrorCode = Number(this.video?.error?.code || 0);
-        const mediaErrorCode = customErrorCode || nativeErrorCode || this.getLastPlaybackErrorCode();
         console.error("Video error:", {
           event: e?.type || "error",
           mediaErrorCode,

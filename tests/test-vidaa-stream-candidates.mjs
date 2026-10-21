@@ -12,6 +12,7 @@ const { StreamScreen, Router, streamRepository, watchProgressRepository } =
 
 const navigations = [];
 const originalNavigate = Router.navigate;
+Router.getCurrent = () => "stream";
 const originalPause = streamRepository.setLocalPluginSearchPaused;
 const originalResume = watchProgressRepository.getResumeByContentId;
 Router.navigate = (route, params) => navigations.push({ route, params });

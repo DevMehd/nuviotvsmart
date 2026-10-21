@@ -3,6 +3,7 @@ import { Platform } from "../../../platform/index.js";
 import { isVidaaNavigationBusy, VIDAA_NAVIGATION_SETTLE_MS } from "../../navigation/vidaaNavigationActivity.js";
 import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import { invalidateVidaaHomeTrackGeometry } from "./vidaaHomeNavigationGeometry.js";
+import { captureVidaaHomeTrackAppendInset } from "./vidaaHomeTrackCamera.js";
 
 export function createHomeScreenMethods29() {
   const { Router, catalogRepository, buildModernRowKey, MODERN_HOME_CONSTANTS, HOME_MAX_ITEMS_PER_ROW_DEFAULT, createPosterCardMarkup } =
@@ -149,6 +150,7 @@ export function createHomeScreenMethods29() {
               card.dataset.navCol = String(startIndex + index);
               card.dataset.navRowKey = rowKey;
             });
+            if (Platform.isVidaa()) captureVidaaHomeTrackAppendInset(this, track);
             track.appendChild(frag);
             invalidateVidaaHomeTrackGeometry(this, track);
             if (navigationRowIndex >= 0 && this.navModel?.rows?.[navigationRowIndex]) {

@@ -1,3 +1,4 @@
+import { MediaServerRepository, canResolveMediaServerStream } from "../../../data/mediaserver/mediaServerRepository.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 
@@ -275,6 +276,7 @@ export function createStreamScreenMethods07() {
       if (this.getWebOsNativeLaunchUrl(stream)) {
         return true;
       }
+      if (canResolveMediaServerStream(stream)) return true;
       if (WebOsEngineFsResolver.canResolveStream(stream)) {
         return true;
       }
@@ -290,6 +292,7 @@ export function createStreamScreenMethods07() {
       this.streams = this.streams.map((stream) => (stream.id === streamId ? { ...stream, ...nextStream } : stream));
     },
     async resolveStreamForNativePlayer(stream = {}) {
+      if (canResolveMediaServerStream(stream)) return MediaServerRepository.resolve(stream);
       const directUrl = this.getWebOsNativeLaunchUrl(stream);
       if (directUrl) {
         return { status: "success", stream };

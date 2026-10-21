@@ -2,7 +2,7 @@
 import * as internals from "./playerScreenContext.js";
 
 export function createPlayerScreenMethods59() {
-  const { isSelectKeyCode, SUBTITLE_LANGUAGE_OFF_KEY, getAudioTrackSupportState, formatAudioTrackDisplay, clamp } = internals;
+  const { isSelectKeyCode, SUBTITLE_LANGUAGE_OFF_KEY, getAudioTrackSupportState, formatAudioTrackDisplay, Environment, clamp } = internals;
 
   return {
     handleSubtitleDialogKey(event) {
@@ -166,13 +166,15 @@ export function createPlayerScreenMethods59() {
       const representedEmbeddedIndexes = new Set();
 
       audioTracks.forEach((track, index) => {
-        const embeddedTrack = this.getEmbeddedAudioTrackByNativeIndex(index) || this.getEmbeddedAudioTrack(index);
+        const mergedTrack = this.mergeEmbeddedAudioTrackMetadata(track, index);
+        const embeddedTrack = Environment.isVidaa()
+          ? this.getEmbeddedAudioTrackByEmbeddedIndex(mergedTrack.embeddedTrackIndex)
+          : this.getEmbeddedAudioTrackByNativeIndex(index) || this.getEmbeddedAudioTrack(index);
         const embeddedTrackIndex = Number(embeddedTrack?.embeddedTrackIndex);
         if (Number.isFinite(embeddedTrackIndex) && embeddedTrackIndex >= 0) {
           representedEmbeddedIndexes.add(embeddedTrackIndex);
         }
 
-        const mergedTrack = this.mergeEmbeddedAudioTrackMetadata(track, index);
         const support = getAudioTrackSupportState(mergedTrack);
         const display = formatAudioTrackDisplay(mergedTrack, index);
         entries.push({
@@ -180,13 +182,14 @@ export function createPlayerScreenMethods59() {
           label: display.label,
           secondary: display.secondary,
           selected:
-            Number.isFinite(embeddedTrackIndex) && this.selectedEmbeddedAudioTrackIndex >= 0
+            !Environment.isVidaa() && Number.isFinite(embeddedTrackIndex) && this.selectedEmbeddedAudioTrackIndex >= 0
               ? embeddedTrackIndex === this.selectedEmbeddedAudioTrackIndex
               : index === this.selectedAudioTrackIndex,
           supported: support.supported,
           canTryAudioConversion: Boolean(support.canTryAudioConversion),
           unsupportedReason: support.unsupportedReason,
           audioTrackIndex: index,
+          nativeAudioTrack: track,
           track: {
             ...mergedTrack,
             ...support
@@ -202,17 +205,23 @@ export function createPlayerScreenMethods59() {
           Number.isFinite(nativeTrackIndex) && nativeTrackIndex >= 0 && nativeTrackIndex < audioTracks.length;
         const representedByOrder = index < audioTracks.length;
 
-        if (representedEmbeddedIndexes.has(normalizedEmbeddedIndex) || representedByNativeIndex || representedByOrder) {
+        if (
+          representedEmbeddedIndexes.has(normalizedEmbeddedIndex) ||
+          (!Environment.isVidaa() && (representedByNativeIndex || representedByOrder))
+        ) {
           return;
         }
 
         const display = formatAudioTrackDisplay(track, index);
-        const support = getAudioTrackSupportState(track);
+        // Range-probe metadata does not provide an audio-switch API on VIDAA.
+        const support = Environment.isVidaa()
+          ? { supported: false, canTryAudioConversion: false, unsupportedReason: "native-track-unavailable" }
+          : getAudioTrackSupportState(track);
         entries.push({
           id: `audio-embedded-${normalizedEmbeddedIndex}`,
           label: display.label,
           secondary: display.secondary,
-          selected: normalizedEmbeddedIndex === this.selectedEmbeddedAudioTrackIndex,
+          selected: !Environment.isVidaa() && normalizedEmbeddedIndex === this.selectedEmbeddedAudioTrackIndex,
           supported: support.supported,
           canTryAudioConversion: Boolean(support.canTryAudioConversion),
           unsupportedReason: support.unsupportedReason,

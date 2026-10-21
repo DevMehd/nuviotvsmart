@@ -6,6 +6,7 @@ import { streamDomOptions, updateStreamDom } from "./streamDomUpdate.js";
 // Retained rows also retain image elements. Track their current URL so a logo
 // that failed earlier can recover when an addon supplies a replacement.
 const addonLogoFallbacks = new WeakMap();
+import { renderPlayerLoadingOverlay } from "../../components/playerLoadingOverlay.js";
 
 export function createStreamScreenMethods09() {
   const {
@@ -27,9 +28,43 @@ export function createStreamScreenMethods09() {
   return {
     render() {
       this.cancelScheduledRender();
+      this.syncAutoPlayUiState();
+      if (this.autoPlayUiActive) {
+        const markup = renderPlayerLoadingOverlay(
+          {
+            title: this.params?.itemTitle || this.params?.playerTitle || this.params?.itemId || "Nuvio",
+            subtitle: this.params?.episodeTitle || this.params?.playerSubtitle || "",
+            logoUrl: this.params?.logo || "",
+            backdropUrl: this.getBackdropUrl() || ""
+          },
+          {
+            id: "streamAutoPlayLoadingOverlay",
+            status: this.autoPlayUiError || "",
+            manualSelectionLabel: this.autoPlayUiError ? t("stream_choose_manually", {}, "Choose a source manually") : ""
+          }
+        );
+        if (this.renderedMarkup !== markup) {
+          this.container.innerHTML = markup;
+          this.renderedMarkup = markup;
+          this.container.querySelector(".player-loading-logo-base")?.addEventListener(
+            "error",
+            (event) => {
+              event.target.closest(".player-loading-identity")?.classList.add("logo-failed");
+            },
+            { once: true }
+          );
+          ScreenUtils.indexFocusables(this.container, ".focusable");
+          this.container.querySelector("[data-action='chooseManualStream']")?.focus();
+        }
+        this.hasRenderedStreamRouteShell = true;
+        return;
+      }
       const previousVirtualModel = this.streamVirtualized ? this.streamVirtualModel : null;
       const previousStreams = this.renderedStreamListItems || [];
       const previousFocusedIndex = Number(this.focusState?.row);
+      // New earlier sources replace the initial first result. Once the user
+      // navigates (or returns from playback), retain the selected identity.
+      const holdFirstResult = this.focusState?.zone === "card" && previousFocusedIndex === 0 && !this.streamUserMovedFocus;
       const previousFocusedKey =
         this.focusState?.zone === "card" &&
         Number.isInteger(previousFocusedIndex) &&
@@ -37,7 +72,7 @@ export function createStreamScreenMethods09() {
         previousFocusedIndex < previousStreams.length
           ? this.getStreamVirtualKeys(previousStreams)[previousFocusedIndex]
           : "";
-      if (previousVirtualModel && !this.streamVirtualFocusReset && Number(this.listScrollTop || 0) > 0) {
+      if (previousVirtualModel && !holdFirstResult && !this.streamVirtualFocusReset && Number(this.listScrollTop || 0) > 0) {
         const previousAnchorIndex = findStreamVirtualIndex(previousVirtualModel.offsets, Number(this.listScrollTop || 0));
         this.streamVirtualPendingAnchor =
           previousAnchorIndex >= 0
@@ -70,7 +105,7 @@ export function createStreamScreenMethods09() {
       // cards interactive while their images warm in the background; the card
       // renderer already has a text fallback for a missing logo.
       const virtualizedStreamList = Boolean(this.shouldUseStreamVirtualization(allStreams) && filtered.length);
-      if (filtered.length && previousFocusedKey && !this.streamVirtualFocusReset) {
+      if (filtered.length && previousFocusedKey && !holdFirstResult && !this.streamVirtualFocusReset) {
         const nextKeys = this.getStreamVirtualKeys(filtered);
         const nextFocusedIndex = nextKeys.indexOf(previousFocusedKey);
         if (nextFocusedIndex >= 0) {
@@ -82,6 +117,7 @@ export function createStreamScreenMethods09() {
           };
         }
       }
+      if (holdFirstResult && !this.streamVirtualFocusReset) this.listScrollTop = 0;
       if (virtualizedStreamList) {
         this.streamVirtualized = true;
       } else if (this.streamVirtualized) {
@@ -174,7 +210,11 @@ export function createStreamScreenMethods09() {
       // here because stream/addon text is part of the string and collisions could
       // otherwise cause a genuinely changed list to retain stale DOM.
       const shellMounted = Boolean(this.container.querySelector(".stream-route-shell"));
-      const domOptions = Environment.isVidaa() ? streamDomOptions(renderedStreams, badgeSettings) : null;
+      // Incremental row updates need a real document (VIDAA); test containers render whole markup.
+      const domOptions =
+        Environment.isVidaa() && typeof this.container?.ownerDocument?.createElement === "function"
+          ? streamDomOptions(renderedStreams, badgeSettings)
+          : null;
       const badgeSignature =
         domOptions && streamBadgesEnabled
           ? domOptions.presentationSignature(
@@ -195,13 +235,13 @@ export function createStreamScreenMethods09() {
           updateStreamDom(this.container, nextMarkup, {
             ...domOptions,
             incremental: this.hasRenderedStreamRouteShell,
-            focusedNode: this.focusedElement || this.container.ownerDocument.activeElement
+            focusedNode: this.focusedElement || this.container.ownerDocument?.activeElement || null
           });
         } else this.container.innerHTML = nextMarkup;
         this.renderedMarkup = nextMarkup;
         this.renderedStreamBadgeSignature = badgeSignature;
         this.streamFocusDomCache = null;
-        if (!this.container.contains(this.focusedElement)) this.focusedElement = null;
+        if (!domOptions || !this.container.contains?.(this.focusedElement)) this.focusedElement = null;
       }
 
       this.renderedStreamListStable = stableStreamList;

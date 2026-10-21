@@ -263,7 +263,7 @@ export function withTimeout(promise, ms, fallbackValue) {
   });
 }
 
-export async function fetchModernHeroTmdbEnrichment(hero = {}, itemType = "movie", layoutMode = "modern") {
+export async function fetchModernHeroTmdbEnrichment(hero = {}, itemType = "movie", layoutMode = "modern", { signal = null } = {}) {
   const settings = TmdbSettingsStore.get();
   if (!isHomeTmdbEnabled(layoutMode, settings) || !hero?.id) {
     return null;
@@ -271,14 +271,17 @@ export async function fetchModernHeroTmdbEnrichment(hero = {}, itemType = "movie
   try {
     const lookupId = resolveHomeTmdbLookupId(hero);
     if (!lookupId) return null;
-    const tmdbId = await TmdbService.ensureTmdbId(lookupId, itemType);
+    if (signal?.aborted) return null;
+    const tmdbId = await TmdbService.ensureTmdbId(lookupId, itemType, { signal });
     if (!tmdbId) {
       return null;
     }
     return await TmdbMetadataService.fetchEnrichment({
       tmdbId,
       contentType: itemType,
-      language: settings.language
+      language: settings.language,
+      includeExtras: false,
+      signal
     });
   } catch (_) {
     return null;
@@ -380,6 +383,7 @@ export function normalizeEpisodeEntry(video = {}) {
     title: String(video?.title || video?.name || "").trim(),
     thumbnail: firstNonEmpty(video?.thumbnail, video?.thumbnailUrl, video?.still, video?.stillUrl, video?.image, video?.poster),
     overview: firstNonEmpty(video?.overview, video?.description),
+    imdbRating: video?.imdbRating ?? video?.imdb_rating ?? video?.rating ?? null,
     released: firstNonEmpty(video?.released, video?.releaseInfo),
     runtimeMinutes: parseRuntimeMinutes(video?.runtimeMinutes ?? video?.runtime ?? 0),
     available: typeof video?.available === "boolean" ? video.available : null

@@ -17,6 +17,7 @@ export function createHomeScreenMethods21() {
     StartupSyncService,
     WatchProgressSource,
     buildWatchedTitleIdSet,
+    buildCatalogDisableKey,
     buildCatalogOrderKey,
     catalogShouldShowOnHome,
     catalogSkipStep,
@@ -109,6 +110,7 @@ export function createHomeScreenMethods21() {
 
       const addons = refreshManifests
         ? await addonRepository.getInstalledAddons({
+            includeMediaServers: true,
             staleWhileRevalidate: true,
             timeoutMs: HOME_ADDON_MANIFEST_TIMEOUT_MS
           })
@@ -163,9 +165,26 @@ export function createHomeScreenMethods21() {
 
       // Seed missing order keys from manifest order before progressive requests
       // can add rows in network-completion order.
-      HomeCatalogStore.ensureOrderKeys(
+      const orderedCatalogKeys = HomeCatalogStore.ensureOrderKeys(
         uniqueCatalogDescriptors.map((catalog) => buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId))
       );
+      const catalogOrder = new Map(orderedCatalogKeys.map((key, index) => [key, index]));
+      const disabledCatalogKeys = new Set(HomeCatalogStore.get().disabled || []);
+      // Choose the first batch from the surface the user will actually see.
+      // A hidden catalog or a late manifest entry moved to the top of Home
+      // must not wait behind unrelated requests (and their timeout barrier).
+      const visibleCatalogDescriptors = uniqueCatalogDescriptors
+        .map((catalog, manifestIndex) => ({
+          catalog,
+          manifestIndex,
+          orderKey: buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId),
+          disableKey: buildCatalogDisableKey(catalog.addonBaseUrl, catalog.type, catalog.catalogId, catalog.catalogName)
+        }))
+        .filter(({ orderKey, disableKey }) => !disabledCatalogKeys.has(orderKey) && !disabledCatalogKeys.has(disableKey))
+        .sort(
+          (left, right) => catalogOrder.get(left.orderKey) - catalogOrder.get(right.orderKey) || left.manifestIndex - right.manifestIndex
+        )
+        .map(({ catalog }) => catalog);
       const routeInputSignature = this.buildHomeRouteInputSignature(addons);
 
       let restoredCatalogSnapshot = false;
@@ -193,8 +212,8 @@ export function createHomeScreenMethods21() {
       }
 
       const initialCatalogLoad = this.getInitialCatalogLoadCount();
-      const initialDescriptors = uniqueCatalogDescriptors.slice(0, initialCatalogLoad);
-      const deferredDescriptors = uniqueCatalogDescriptors.slice(initialCatalogLoad);
+      const initialDescriptors = visibleCatalogDescriptors.slice(0, initialCatalogLoad);
+      const deferredDescriptors = visibleCatalogDescriptors.slice(initialCatalogLoad);
 
       const progressiveInitialRows = new Map();
       const initialRowsPromise = this.fetchCatalogRows(initialDescriptors, {
@@ -264,7 +283,7 @@ export function createHomeScreenMethods21() {
       // assigning it directly discards every already-rendered row outside that
       // batch. Merge the configured rows and let fresh data replace duplicates.
       const configuredCatalogKeys = new Set(
-        uniqueCatalogDescriptors.map((catalog) => buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId))
+        visibleCatalogDescriptors.map((catalog) => buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId))
       );
       const nextInitialRows = mergeRefreshedHomeRows(this.rows, initialRows, configuredCatalogKeys, {
         background: background || restoredCatalogSnapshot
@@ -319,6 +338,7 @@ export function createHomeScreenMethods21() {
         this.loadedHomeRouteInputSignature = routeInputSignature;
       }
       if (background && (Platform.isVidaa() || this.isHomeNavigationSettling?.())) this.requestBackgroundRender();
+      else if (Platform.isVidaa()) this.requestRender();
       else this.render();
       this.maybeStartPendingHomeBackgroundRefresh();
       logHomePerf("loadData", {
@@ -389,7 +409,7 @@ export function createHomeScreenMethods21() {
           });
       }
 
-      if (this.layoutMode !== "modern") {
+      if (!Platform.isVidaa() && this.layoutMode !== "modern") {
         this.enrichHero(this.heroCandidates[0] || null)
           .then(() => {
             if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {

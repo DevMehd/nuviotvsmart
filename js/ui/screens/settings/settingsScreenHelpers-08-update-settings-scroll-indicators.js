@@ -1,4 +1,5 @@
 import { Router } from "../../navigation/routerState.js";
+import { isWatchPartySectionVisible } from "./settingsWatchPartySection.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
 
@@ -41,8 +42,6 @@ import {
 } from "../../../core/player/subtitleTextOpacity.js";
 
 import { TorrentSettingsStore } from "../../../data/local/torrentSettingsStore.js";
-
-import { WebOsAudioCompatibilityStore } from "../../../data/local/webOsAudioCompatibilityStore.js";
 
 import { LayoutPreferences } from "../../../data/local/layoutPreferences.js";
 
@@ -229,7 +228,7 @@ export function getSessionEmail() {
 }
 
 export async function fetchAccountSyncOverview() {
-  const response = await SupabaseApi.rpc("get_sync_overview", {}, true);
+  const response = await SupabaseApi.rpc("get_sync_overview", {}, true, { timeoutMs: 12_000 });
   const source = response && typeof response === "object" && !Array.isArray(response) ? response : {};
   const addons = source.addons && typeof source.addons === "object" ? source.addons : {};
   const plugins = source.plugins && typeof source.plugins === "object" ? source.plugins : {};
@@ -306,6 +305,9 @@ export function getVisibleSections(model) {
     }
     if (section.id === "account" || section.id === "profiles") {
       return isPrimaryProfileActive;
+    }
+    if (section.id === "watchParty") {
+      return isWatchPartySectionVisible();
     }
     return true;
   });

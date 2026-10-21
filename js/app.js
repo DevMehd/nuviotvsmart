@@ -1,3 +1,7 @@
+import "./ui/components/serverWatchedNotice.js";
+import { MediaServerSyncService } from "./core/profile/mediaServerSyncService.js";
+import { installCustomPosterFallback } from "./core/poster/customPoster.js";
+import { AmbientMode } from "./ui/ambient/ambientMode.js";
 /* global __NUVIO_APP_VERSION__, __NUVIO_PERSONAL_CHANGELOG__ */
 
 import "./core/diagnostics/consoleDebugBuffer.js";
@@ -23,6 +27,7 @@ import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
 import { Platform } from "./platform/index.js";
+import { ServerConfigurationStore } from "./data/local/serverConfigurationStore.js";
 import { TizenCapabilities } from "./platform/tizen/tizenCapabilities.js";
 import { PluginServiceClient } from "./platform/pluginServiceClient.js";
 import {
@@ -30,13 +35,13 @@ import {
   getTvPerformanceMode
 } from "./platform/tvRuntimePerformance.js";
 import { LocalStore } from "./core/storage/localStore.js";
-import { ServerConfigurationStore } from "./data/local/serverConfigurationStore.js";
 import { I18n } from "./i18n/index.js";
 import { getLatestAppUpdateWithRetry } from "./core/update/appUpdateService.js";
 import { shouldShowUpdate } from "./core/update/updateBannerPolicy.js";
 import { showAppUpdatePrompt } from "./ui/components/appUpdatePrompt.js";
 import { resolveExperienceRoute } from "./core/profile/experienceModeRouting.js";
 import { PluginRuntime } from "./core/player/pluginRuntime.js";
+import { installPartyEffects } from "./ui/screens/party/partyEffects.js";
 
 // These legacy Web-only overrides are no longer user settings. Navigation now
 // uses the stable grid algorithm and simulator detection automatically.
@@ -253,6 +258,9 @@ function isAddonRemoteMode() {
 }
 
 async function shouldShowProfileSelection() {
+  // Login/restoration can start with only the device's fallback profile. Pull
+  // the account profile list before deciding whether the picker can be skipped.
+  await ProfileSyncService.pull();
   const [profiles, pinStates] = await Promise.all([
     ProfileManager.getProfiles(),
     ProfileSyncService.pullProfileLockStates()
@@ -331,8 +339,10 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
 }
 
 async function routeAfterAuthentication() {
+  const sessionGeneration = AuthManager.sessionGeneration;
   loginTrace("authenticated route begin", { currentRoute: Router.getCurrent() || "" });
   const profileRoute = await shouldShowProfileSelection();
+  if (!AuthManager.isAuthenticated || sessionGeneration !== AuthManager.sessionGeneration) return;
   loginTrace("authenticated route profile decision", { show: profileRoute.show === true });
   if (profileRoute.show) {
     await Router.navigate("profileSelection", {
@@ -399,6 +409,7 @@ function setupWebOsAppLifecycle() {
     }
     void DeviceSessionRegistration.requestForegroundRegistration();
     ProviderCredentialSyncService.requestForegroundPull();
+    MediaServerSyncService.requestForegroundPull();
     StartupSyncService.requestForegroundSync();
     const current = Router.getCurrent();
     if (!current) {
@@ -485,6 +496,7 @@ function setupProviderCredentialForegroundLifecycle() {
     if (!wasBackgrounded) return;
     wasBackgrounded = false;
     ProviderCredentialSyncService.requestForegroundPull();
+    MediaServerSyncService.requestForegroundPull();
     StartupSyncService.requestForegroundSync();
   };
   document.addEventListener("visibilitychange", () => {
@@ -612,6 +624,9 @@ async function bootstrapApp() {
   Router.init();
   PlayerController.init();
 
+  installCustomPosterFallback();
+  MediaServerSyncService.start();
+  AmbientMode.start();
   FocusEngine.init();
   setupProviderCredentialForegroundLifecycle();
   setupTizenPlaybackLifecycle();
@@ -649,12 +664,14 @@ async function bootstrapApp() {
     if (state === AuthState.LOADING) {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
+      void MediaServerSyncService.stop();
       return;
     }
 
     if (state === AuthState.SIGNED_OUT) {
       StartupSyncService.stop();
       ProviderCredentialSyncService.cancelForegroundPull();
+      void MediaServerSyncService.stop();
       hasSelectedProfileThisSession = false;
       const shouldBypassQr =
         ServerConfigurationStore.getActive().isLocal ||
@@ -722,6 +739,7 @@ async function bootstrapApp() {
 
   markBootStage("Checking authentication");
   await AuthManager.bootstrap();
+  installPartyEffects();
 }
 
 async function bootstrapAddonRemoteMode() {

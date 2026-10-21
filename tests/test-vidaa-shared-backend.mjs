@@ -143,6 +143,8 @@ if (!live) {
       release = resolve;
     });
   const pending = auth.signUpWithEmail("new@example.com", "valid-password");
+  // The request starts after the backend-scope check settles.
+  for (let index = 0; index < 50 && !release; index++) await Promise.resolve();
   auth.sessionGeneration++;
   release(new Response(JSON.stringify(response)));
   await assert.rejects(() => pending, /cancelled/);

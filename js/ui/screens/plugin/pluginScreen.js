@@ -2,6 +2,10 @@ import { ScreenUtils } from "../../navigation/screen.js";
 import { Router } from "../../navigation/routerState.js";
 import { AuthManager } from "../../../core/auth/authManager.js";
 import { LibrarySyncService } from "../../../core/profile/librarySyncService.js";
+import { CollectionSyncService } from "../../../core/profile/collectionSyncService.js";
+import { HomeCatalogSettingsSyncService } from "../../../core/profile/homeCatalogSettingsSyncService.js";
+import { ProfileSettingsSyncService } from "../../../core/profile/profileSettingsSyncService.js";
+import { ProfileManager } from "../../../core/profile/profileManager.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
 import { catalogRepository } from "../../../data/repository/catalogRepository.js";
 import { Platform } from "../../../platform/index.js";
@@ -100,7 +104,15 @@ export const PluginScreen = {
     this.syncing = true;
     await this.render({ refreshModel: true });
     try {
-      await LibrarySyncService.pull();
+      const profileId = ProfileManager.getActiveProfileId();
+      // The official phone manager edits all three Home inputs. Refresh them
+      // together so returning to Home also reflects collections and ordering.
+      await Promise.all([
+        LibrarySyncService.pull(),
+        CollectionSyncService.pull(profileId),
+        HomeCatalogSettingsSyncService.pull(profileId),
+        ProfileSettingsSyncService.pull(profileId)
+      ]);
     } catch (error) {
       console.warn("Addon refresh failed", error);
     } finally {

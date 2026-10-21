@@ -4,6 +4,7 @@ import * as internals from "./playerScreenContext.js";
 export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback) {
   const { PlayerController, PlayerSettingsStore, Environment, TrackingScrobbleService } = internals;
   const onWaiting = () => {
+    this.seekLoadingVisualComplete = false;
     if (this.sourcePlaybackStarting || this.sourceFallbackPending || this.isStartupErrorVisible()) {
       return;
     }
@@ -14,36 +15,18 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
       this.resetPostValidationRecoveryValidationWindow();
     }
     const currentSeconds = this.getPlaybackCurrentSeconds();
-    // AVPlay does not provide a browser-native buffering UI. Keep the
-    // startup overlay hidden after the first frame, but expose the same
-    // centered transient indicator that Android TV shows while rebuffering.
-    if (isTizenAvPlayPlayback() && this.hasPresentedPlaybackFrame && currentSeconds > 0) {
+    this.dismissPauseOverlay();
+    // Match Android's post-first-frame buffering state: keep the startup
+    // overlay closed and preserve the user's current controls visibility.
+    if (this.hasPresentedPlaybackFrame && !this.seekLoading && !this.sourcesPanelVisible && !this.isSeekOverlaySuppressingControls()) {
       this.bufferingActive = true;
       this.bufferingSpinnerBaselineSeconds = currentSeconds;
       this.lastPlaybackProgressAt = Date.now();
       this.loadingVisible = false;
       this.updateLoadingVisibility();
       this.scheduleBufferingSpinnerRefresh();
-      return;
-    }
-    const minimalBufferingUiEnabled =
-      Environment.isWebOS() &&
-      PlayerSettingsStore.get().minimalBufferingUiEnabled === true &&
-      this.hasPresentedPlaybackFrame &&
-      currentSeconds > 0 &&
-      !this.seekLoading &&
-      !this.sourcesPanelVisible &&
-      !this.isSeekOverlaySuppressingControls();
-    this.dismissPauseOverlay();
-    this.loadingVisible = true;
-    if (minimalBufferingUiEnabled) {
-      this.bufferingActive = true;
-      this.bufferingSpinnerBaselineSeconds = currentSeconds;
-      this.lastPlaybackProgressAt = Date.now();
-      this.setControlsVisible(false, { focus: false });
-      this.updateLoadingVisibility();
-      this.scheduleBufferingSpinnerRefresh();
     } else {
+      this.loadingVisible = true;
       this.bufferingActive = false;
       this.updateLoadingVisibility();
       if (!this.sourcesPanelVisible && !this.isSeekOverlaySuppressingControls()) {
@@ -189,7 +172,8 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
       return;
     }
     // Native decoder pauses during buffering must not replace playback intent.
-    // A user pause sets isPlaying=false and video.paused=true before its event.
+    // A user pause sets isPlaying=false and video.paused=true before its event, so it is
+    // still acknowledged (and cancels the source recovery deadline) on VIDAA too.
     if (this.isBufferingForPauseOverlay() && !(video.paused && PlayerController.isPlaying === false)) {
       this.dismissPauseOverlay();
       this.updateLoadingVisibility();
@@ -298,13 +282,19 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
     this.updateUiTick();
   };
 
-  const onSeeked = () => {
+  const onSeeked = (event) => {
     if (this.isStartupErrorVisible()) {
       return;
     }
     if (this.seekLoading) {
       this.seekLoadingSettled = true;
       this.seekLoadingProgressSeconds = null;
+      // The webOS adapter already confirmed real decode progress at the target.
+      // Hide only the spinner; Party readiness keeps its existing checks.
+      if (Environment.isWebOS() && event?.detail?.exactNativeSeek === true) {
+        this.seekLoadingVisualComplete = true;
+        this.updateLoadingVisibility();
+      }
     }
     if (this.hasPresentedPlaybackFrame && !this.playbackEngineValidated) {
       this.resetPlaybackEngineValidation();
@@ -321,7 +311,7 @@ export function createPlayerVideoLifecycleHandlers(video, isTizenAvPlayPlayback)
   };
 
   const onTrackListChanged = () => {
-    this.applyAspectMode({ showToast: false });
+    if (!Environment.isVidaa()) this.applyAspectMode({ showToast: false });
     this.refreshTrackDialogs();
     if (this.refreshSubtitleCueStyles()) {
       this.refreshWebOsEmbeddedSubtitleAfterCueMutation();

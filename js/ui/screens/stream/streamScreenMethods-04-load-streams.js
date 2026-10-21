@@ -1,10 +1,13 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./streamScreen.js";
 import { prepareStreamBadgeMatches } from "../../../core/streams/streamBadgeWarmup.js";
+import { WatchProgressSource } from "../../../data/local/traktSettingsStore.js";
 
 export function createStreamScreenMethods04() {
   const {
     streamRepository,
+    watchProgressRepository,
+    isWatchProgressInProgress,
     PluginManager,
     PLUGIN_REPOSITORY_TYPES,
     isExecutableScraper,
@@ -35,6 +38,27 @@ export function createStreamScreenMethods04() {
       const itemType = normalizeType(this.params?.itemType);
       const videoId = String(this.params?.videoId || this.params?.itemId || "");
       const preserveExistingResults = Boolean(preserveResults && this.streams.length);
+      const routeResumeProgress = {
+        positionMs: Number(this.params?.resumePositionMs || 0) || 0,
+        progressPercent: this.params?.resumeProgressPercent,
+        durationMs: Number(this.params?.resumeDurationMs || 0) || 0
+      };
+      if (
+        this.params?.itemId &&
+        !this.params?.startFromBeginning &&
+        !isWatchProgressInProgress(routeResumeProgress) &&
+        watchProgressRepository.getContinueWatchingSource() !== WatchProgressSource.NUVIO_SYNC
+      ) {
+        const resumeTarget =
+          itemType === "series" || itemType === "tv"
+            ? { videoId: this.params?.videoId || null, season: this.params?.season, episode: this.params?.episode }
+            : {};
+        // Warm the repository's shared remote snapshot while providers search.
+        // playStream still resolves progress afresh so local updates are included.
+        void watchProgressRepository.getResumeByContentId(this.params.itemId, resumeTarget).catch((error) => {
+          console.warn("Stream resume warmup failed", error);
+        });
+      }
 
       this.loading = preserveExistingResults ? false : true;
       this.streamSearchCompleted = false;
@@ -63,10 +87,11 @@ export function createStreamScreenMethods04() {
       const badgeSettings = StreamBadgeSettingsStore.snapshot();
       const showAddonLogo = badgeSettings.showAddonLogo === true;
       if (showAddonLogo) {
-        await ensureAddonLogoImageProxyReady();
-        if (token !== this.loadToken) {
-          return;
-        }
+        // The mount readiness listener refreshes logos when the proxy is ready.
+        // Its status request must not hold up usable streams or automatic play.
+        void ensureAddonLogoImageProxyReady().catch((error) => {
+          console.warn("Stream addon logo proxy warmup failed", error);
+        });
       }
 
       const upsertSourceChip = (addon, status = "loading") => {
@@ -312,6 +337,7 @@ export function createStreamScreenMethods04() {
         this.loading = false;
         this.autoResumeUiActive = false;
         this.error = error?.message || "Failed to load streams.";
+        if (this.autoPlayUiActive) this.showAutoPlaySelectionError(this.error);
         this.sourceChips = this.sourceChips.map((chip) => (chip.status === "loading" ? { ...chip, status: "error" } : chip));
         this.requestRender();
         this.scheduleErrorChipCleanup();

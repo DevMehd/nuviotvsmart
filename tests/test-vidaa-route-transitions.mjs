@@ -33,6 +33,11 @@ globalThis.requestAnimationFrame = (callback) => {
   return id;
 };
 globalThis.cancelAnimationFrame = (id) => frames.delete(id);
+// Home's personal rows load installed addons in the background; keep this suite offline so a real
+// request cannot outlive it on the stubbed timers.
+globalThis.fetch = async () => {
+  throw new Error("Network disabled in route transition checks");
+};
 
 function platform(name) {
   globalThis.__NUVIO_PLATFORM__ = name;

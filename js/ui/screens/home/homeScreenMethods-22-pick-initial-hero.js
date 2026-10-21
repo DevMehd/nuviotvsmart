@@ -49,7 +49,7 @@ export function createHomeScreenMethods22() {
     },
     async waitForCatalogBatch({ shouldContinue = () => true, isBusy = () => false, delayMs = -1 } = {}) {
       if (!shouldContinue()) return false;
-      if (delayMs >= 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
       while (shouldContinue() && isBusy()) {
         await new Promise((resolve) => setTimeout(resolve, 80));
       }
@@ -112,7 +112,9 @@ export function createHomeScreenMethods22() {
         }
       };
 
-      if (!(await this.waitForCatalogBatch({ shouldContinue, isBusy }))) return fetchedRows;
+      // Visible catalogs start synchronously; only a busy navigation postpones the first batch.
+      if (!shouldContinue()) return fetchedRows;
+      if (isBusy() && !(await this.waitForCatalogBatch({ shouldContinue, isBusy }))) return fetchedRows;
       if (batchSize > 0 && normalizedDescriptors.length > batchSize) {
         for (let index = 0; index < normalizedDescriptors.length; index += batchSize) {
           if (index > 0 && !(await this.waitForCatalogBatch({ shouldContinue, isBusy, delayMs: batchYieldMs }))) break;
@@ -163,10 +165,15 @@ export function createHomeScreenMethods22() {
       const retryBatchSize = Math.max(1, Number(this.getDeferredCatalogBatchSize() || pendingRows.length || 1));
       (async () => {
         for (let index = 0; index < pendingRows.length; index += retryBatchSize) {
-          if (
+          const shouldContinue = () => token === this.homeLoadToken && Router.getCurrent() === "home";
+          const isBusy = () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.());
+          // The first retry batch starts at once; later ones yield on VIDAA (bounded loading).
+          if (index === 0 && !isBusy()) {
+            if (!shouldContinue()) return;
+          } else if (
             !(await this.waitForCatalogBatch({
-              shouldContinue: () => token === this.homeLoadToken && Router.getCurrent() === "home",
-              isBusy: () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.()),
+              shouldContinue,
+              isBusy,
               delayMs: index > 0 && Platform.isVidaa() ? 120 : 0
             }))
           )

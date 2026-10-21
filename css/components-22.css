@@ -255,6 +255,83 @@
   display: none;
 }
 
+/* The combined tracking screen is also embedded in Settings, where the
+   standalone route's selectors do not apply. Keep its header above a single
+   scrolling list instead of inheriting the legacy two-column Trakt layout. */
+.settings-tracking-panel {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 24px;
+}
+
+.settings-tracking-hero {
+  height: auto;
+  min-height: 0;
+  justify-content: flex-start;
+}
+
+.settings-tracking-hero > div {
+  width: 100%;
+}
+
+.settings-tracking-hero .settings-trakt-title {
+  margin-top: 0;
+}
+
+.settings-tracking-panel > .settings-trakt-scroll-area {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  gap: 24px;
+  padding-bottom: 24px;
+}
+
+.settings-tracking-panel > .settings-trakt-scroll-area > .settings-trakt-card {
+  height: auto;
+  max-height: none;
+  flex: 0 0 auto;
+  padding: 24px;
+  background: var(--card-bg);
+}
+
+.settings-tracking-panel .settings-trakt-card-title {
+  margin: 0;
+}
+
+.settings-tracking-card-subtitle {
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.settings-tracking-panel .settings-trakt-options-stack {
+  margin-top: 20px;
+}
+
+.settings-tracking-sync-info {
+  margin: 8px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.settings-tracking-sync-info p {
+  margin: 0 0 8px;
+}
+
+.settings-tracking-sync-info p:last-child {
+  margin-bottom: 0;
+}
+
+.settings-tracking-attribution {
+  padding: 4px 8px 24px;
+  text-align: center;
+}
+
 .settings-trakt-scroll-frame {
   position: relative;
   min-height: 0;

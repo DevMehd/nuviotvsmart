@@ -28,6 +28,8 @@ export function homeMetadataSettingsSignature() {
   const tmdbPreferences = { ...settings };
   delete tmdbPreferences.apiKey;
   return JSON.stringify([
+    // Refresh artwork saved before the current backdrop and logo fallback rules.
+    "tmdb-localized-artwork-v3",
     ProfileManager.getActiveProfileId(),
     tmdbPreferences,
     credentialFingerprint(getTmdbApiKey(settings)),

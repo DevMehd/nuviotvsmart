@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run package:vidaa",
+  "buildCommand": "node scripts/import-official-trakt-config.mjs --if-missing && node scripts/import-official-mdblist-config.mjs --if-missing && npm run package:vidaa",
   "outputDirectory": "dist/vidaa",
   "regions": ["cdg1"],
   "functions": {

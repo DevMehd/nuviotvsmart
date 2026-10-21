@@ -95,6 +95,31 @@ export function createAuthQrSignInScreenMethods02() {
       this.lastActivation = { kind, at: now };
       return false;
     },
+    toggleLoginMode(useEmail) {
+      // Auth requests already in flight cannot safely be cancelled.
+      if (!this.isMounted || this.isLeaving || this.isSignedIn || this.isStartingQr || this.isPolling || this.isEmailSubmitting) return;
+      if (!this.supportsEmailAuth || !this.supportsQrAuth) return;
+      if (this.useEmailLogin === useEmail) {
+        this.isServerMenuOpen = false;
+        this.render();
+        return;
+      }
+      this.useEmailLogin = useEmail;
+      this.useQrLogin = !useEmail;
+      this.isServerMenuOpen = false;
+      this.stopIntervals();
+      this.clearQr();
+      this.qrStatusText = "";
+      this.render();
+      if (this.useQrLogin) {
+        const mountToken = this.authMountToken;
+        void this.startQr().catch((error) => {
+          if (this.isMounted && !this.isLeaving && mountToken === this.authMountToken) {
+            this.setStatus(this.toFriendlyQrError(error?.message || error));
+          }
+        });
+      }
+    },
     openSignOutConfirmation() {
       if (this.isLeaving || !this.isSignedIn) return;
       this.isServerMenuOpen = false;
@@ -119,6 +144,7 @@ export function createAuthQrSignInScreenMethods02() {
       if (!this.isMounted || this.isLeaving || this.isStartingQr || !this.useQrLogin || this.isSignedIn) {
         return;
       }
+      const mountToken = this.authMountToken;
       this.isStartingQr = true;
       const generation = this.loginMethodGeneration;
       this.updateActionButtons();

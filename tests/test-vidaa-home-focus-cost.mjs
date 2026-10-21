@@ -273,6 +273,7 @@ for (const name of ["vidaa", "webos", "tizen", "browser"]) {
   };
   globalThis.document = {
     createElement: () => ({
+      dataset: {},
       addEventListener() {},
       removeAttribute() {},
       contentWindow: { postMessage() {} }

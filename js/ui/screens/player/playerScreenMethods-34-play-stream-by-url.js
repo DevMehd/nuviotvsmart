@@ -8,10 +8,81 @@ export function createPlayerScreenMethods34() {
     isExpiredStreamUrl,
     Environment,
     WEBOS_REMOTE_MKV_AUDIO_GATE_MAX_WAIT_MS,
-    claimEngineFsPlayback
+    claimEngineFsPlayback,
+    localMediaEmbeddedSubtitleRepository
   } = internals;
 
   return {
+    resetSourceTrackState({ preserveWebOsTrackSelections = false, discoveryInProgress = false } = {}) {
+      // Retire the old source before a replacement resolver can wait on the network.
+      this.audioSelectionToken = Number(this.audioSelectionToken || 0) + 1;
+      if (!preserveWebOsTrackSelections) {
+        this.subtitleSelectionToken = Number(this.subtitleSelectionToken || 0) + 1;
+        this.webOsAddonSubtitleRestoreRequestId = Number(this.webOsAddonSubtitleRestoreRequestId || 0) + 1;
+        this.pendingWebOsAddonSubtitleRestore = null;
+      }
+      this.subtitleLoadToken = Number(this.subtitleLoadToken || 0) + 1;
+      this.embeddedSubtitleLoadToken = Number(this.embeddedSubtitleLoadToken || 0) + 1;
+      this.manifestLoadToken = Number(this.manifestLoadToken || 0) + 1;
+      this.manifestLoadAbortController?.abort?.();
+      this.manifestLoadAbortController = null;
+      this.trackDiscoveryToken = Number(this.trackDiscoveryToken || 0) + 1;
+      this.pendingNativeSubtitleSelection = null;
+      this.nativeTrackSwitchGuard = null;
+      this.subtitleLoading = false;
+      this.embeddedSubtitleLoading = false;
+      this.embeddedAudioLoading = false;
+      this.manifestLoading = false;
+      this.initialEmbeddedTrackBootstrapPromise = null;
+      this.embeddedTrackRequestPromise = null;
+      this.embeddedTrackRequestUrl = "";
+      this.clearStartupAudioPreferenceRetry();
+      this.pendingWebOsAudioSelection = null;
+      this.failedAutomaticAudioFallbackEntryId = "";
+      this.startupTrackPreferenceReady = false;
+      if (!preserveWebOsTrackSelections) {
+        this.selectedAddonSubtitleId = null;
+        this.selectedAddonSubtitleIdentity = null;
+        this.selectedSubtitleTrackIndex = -1;
+        this.selectedEmbeddedSubtitleTrackIndex = -1;
+        this.selectedManifestSubtitleTrackId = null;
+        this.selectedAudioTrackIndex = -1;
+        this.selectedEmbeddedAudioTrackIndex = -1;
+        this.selectedManifestAudioTrackId = null;
+        this.startupSubtitlePreferenceApplied = false;
+        this.startupSubtitlePreferenceApplying = false;
+        this.startupAudioPreferenceApplied = false;
+        this.startupAudioPreferenceApplying = false;
+        this.startupAudioFallbackApplied = false;
+        this.startupAudioTrackSetSignature = "";
+        this.builtInSubtitleCount = 0;
+        this.subtitles = [];
+        this.embeddedSubtitleTracks = [];
+        this.embeddedAudioTracks = [];
+        this.manifestSubtitleTracks = [];
+        this.manifestAudioTracks = [];
+        this.manifestVariants = [];
+        this.manifestMasterUrl = "";
+        this.lastEmbeddedTrackProbeUrl = "";
+        PlayerController.clearWebOsTrackSelections?.();
+      }
+      this.cancelExternalSubtitleActivation?.();
+      this.clearSubtitleCueStyleBindings();
+      this.clearEmbeddedSubtitleCueRefreshTimers();
+      if (!preserveWebOsTrackSelections) {
+        this.clearWebOsEmbeddedTextSubtitleOverlay({ dispose: true });
+        if (Environment.isVidaa()) localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
+        this.clearHtmlSubtitleOverlay();
+      }
+      this.clearBitmapSubtitleOverlay({ dispose: true });
+      this.clearMountedExternalSubtitleTracks();
+      this.trackDiscoveryInProgress = discoveryInProgress;
+      this.clearTrackDiscoveryTimer();
+      this.trackDiscoveryStartedAt = 0;
+      this.trackDiscoveryDeadline = 0;
+      this.lastEmbeddedTrackRetryAt = 0;
+      this.invalidateTrackDialogCaches();
+    },
     async playStreamByUrl(
       streamUrl,
       {
@@ -201,38 +272,7 @@ export function createPlayerScreenMethods34() {
       this.resetSubtitleAutoSyncState();
       this.audioDialogVisible = false;
       this.speedDialogVisible = false;
-      if (!preserveWebOsTrackSelections) {
-        this.selectedAddonSubtitleId = null;
-        this.selectedSubtitleTrackIndex = -1;
-        this.selectedEmbeddedSubtitleTrackIndex = -1;
-        this.selectedManifestSubtitleTrackId = null;
-        this.startupSubtitlePreferenceApplied = false;
-        this.startupSubtitlePreferenceApplying = false;
-        this.startupAudioPreferenceApplied = false;
-        this.startupAudioPreferenceApplying = false;
-        this.startupAudioFallbackApplied = false;
-        this.startupAudioTrackSetSignature = "";
-        this.builtInSubtitleCount = 0;
-        this.embeddedSubtitleTracks = [];
-        this.embeddedAudioTracks = [];
-        this.selectedEmbeddedAudioTrackIndex = -1;
-        PlayerController.clearWebOsTrackSelections?.();
-      }
-      this.clearStartupAudioPreferenceRetry();
-      if (!preserveWebOsTrackSelections && typeof PlayerController.cancelWebOsAudioTrackSelection === "function") {
-        PlayerController.cancelWebOsAudioTrackSelection();
-      }
-      this.pendingWebOsAudioSelection = null;
-      this.failedAutomaticAudioFallbackEntryId = "";
-      this.startupTrackPreferenceReady = false;
-      this.clearBitmapSubtitleOverlay({ dispose: true });
-      this.destroyAssSubtitleRenderer();
-      this.clearSubtitleCueStyleBindings();
-      this.clearMountedExternalSubtitleTracks();
-      this.trackDiscoveryInProgress = true;
-      this.clearTrackDiscoveryTimer();
-      this.trackDiscoveryStartedAt = 0;
-      this.trackDiscoveryDeadline = 0;
+      this.resetSourceTrackState({ preserveWebOsTrackSelections, discoveryInProgress: true });
       this.activePlaybackUrl = streamUrl;
       this.currentEngineFsStream = nextEngineFsState || null;
       if (this.currentEngineFsStream) {
@@ -242,12 +282,6 @@ export function createPlayerScreenMethods34() {
         this.engineFsPlaybackToken = "";
         this.stopEngineFsKeepAlive();
       }
-      this.embeddedTrackRequestPromise = null;
-      this.embeddedTrackRequestUrl = "";
-      if (!preserveWebOsTrackSelections) {
-        this.lastEmbeddedTrackProbeUrl = "";
-      }
-      this.lastEmbeddedTrackRetryAt = 0;
       this.lastTrackWarmupAt = Date.now();
       const playbackContext = {
         ...this.buildPlaybackContext(sourceCandidate),

@@ -22,6 +22,7 @@ export function createAuthQrSignInScreenMethods01() {
 
   return {
     async mount({ onboardingMode = false } = {}) {
+      const mountToken = (this.authMountToken = Number(this.authMountToken || 0) + 1);
       this.container = document.getElementById("account");
       this.onboardingMode = Boolean(onboardingMode);
       this.hasBackDestination = Router.stack.length > 0;
@@ -69,7 +70,7 @@ export function createAuthQrSignInScreenMethods01() {
 
       if (this.useQrLogin && !this.isSignedIn) {
         void this.startQr().catch((error) => {
-          if (!this.isMounted || this.isLeaving) {
+          if (!this.isMounted || this.isLeaving || mountToken !== this.authMountToken) {
             return;
           }
           console.warn("QR login background start failed", error);
@@ -245,10 +246,11 @@ export function createAuthQrSignInScreenMethods01() {
     },
     async loadConnectedStats() {
       if (!this.isMounted || !this.isSignedIn) return;
+      const mountToken = this.authMountToken;
       const profileId = ProfileManager.getActiveProfileId();
       try {
         const library = await savedLibraryRepository.getAll(1000, profileId);
-        if (!this.isMounted || !this.isSignedIn) return;
+        if (!this.isMounted || !this.isSignedIn || mountToken !== this.authMountToken) return;
         this.connectedStats = {
           addons: addonRepository.getInstalledAddonUrls().length,
           plugins: PluginManager.listRepositories().length,
@@ -257,11 +259,11 @@ export function createAuthQrSignInScreenMethods01() {
         };
       } catch (error) {
         console.warn("Unable to load connected account stats", error);
-        if (this.isMounted && this.isSignedIn) {
+        if (this.isMounted && this.isSignedIn && mountToken === this.authMountToken) {
           this.connectedStats = { addons: 0, plugins: 0, library: 0, watchProgress: 0 };
         }
       } finally {
-        if (this.isMounted && this.isSignedIn) {
+        if (this.isMounted && this.isSignedIn && mountToken === this.authMountToken) {
           this.isConnectedStatsLoading = false;
           this.updateConnectedStats();
         }

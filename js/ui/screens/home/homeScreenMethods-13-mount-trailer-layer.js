@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { reconcileHomeFocusMediaTracking } from "./homeFocusMediaTracking.js";
+import { positionVidaaHomePosterPreview, clearVidaaHomePosterPreviewPosition } from "./vidaaHomePosterExpansion.js";
 
 export function createHomeScreenMethods13() {
   const { Platform, metaRepository, isCollectionFolderItem, resolveTrailerSource, withTimeout, resolveTrailerMetaWithTmdbFallback } =
@@ -51,11 +52,18 @@ export function createHomeScreenMethods13() {
           if (!data || typeof data !== "object" || data.source !== "nuvio-youtube-proxy") {
             return;
           }
+          if (data.type === "ended" || data.type === "error") {
+            frame.dataset.ambientTrailerPlaying = "false";
+          }
           if (data.type === "firstFrame") {
+            frame.dataset.ambientTrailerPlaying = "true";
             reveal(150);
             return;
           }
           const state = data.type === "state" && data.state && typeof data.state === "object" ? data.state : null;
+          if (state) {
+            frame.dataset.ambientTrailerPlaying = String(state.paused === false && state.loading === false);
+          }
           if (state && Number(state.currentTime || 0) > 0 && state.paused === false) {
             reveal(150);
           } else if (state && state.controllable === false && state.loading === false) {
@@ -116,24 +124,23 @@ export function createHomeScreenMethods13() {
 
         let didActivate = false;
         const activate = () => {
-          if (didActivate) {
+          if (didActivate || !video.isConnected || video.parentElement !== container || video.paused || Number(video.readyState || 0) < 2) {
             return;
           }
           didActivate = true;
           container.classList.add("is-active");
           onReady?.();
         };
-        ["playing", "canplay", "loadeddata", "loadedmetadata", "timeupdate"].forEach((eventName) => {
+        ["playing", "timeupdate"].forEach((eventName) => {
           video.addEventListener(eventName, activate, { once: true });
         });
         video.addEventListener(
           "error",
           () => {
-            console.warn("Home inline MP4 hero video failed", {
-              url: String(source.url || ""),
-              code: video.error?.code || 0,
-              message: video.error?.message || ""
-            });
+            if (!video.isConnected || video.parentElement !== container) return;
+            this.clearTrailerLayer(container);
+            this.setHeroTrailerActive(false);
+            container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
           },
           { once: true }
         );
@@ -144,8 +151,11 @@ export function createHomeScreenMethods13() {
         } catch (_) {}
         const playAttempt = video.play?.();
         if (playAttempt?.then) {
-          playAttempt.then(activate).catch((error) => {
-            console.warn("Home inline MP4 hero video autoplay failed", error);
+          playAttempt.then(activate).catch(() => {
+            if (!video.isConnected || video.parentElement !== container) return;
+            this.clearTrailerLayer(container);
+            this.setHeroTrailerActive(false);
+            container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
           });
         } else {
           setTimeout(() => {
@@ -184,6 +194,7 @@ export function createHomeScreenMethods13() {
         if (overrideTransition && frame instanceof HTMLElement) {
           frame.style.setProperty("transition", "none", "important");
         }
+        if (Platform.isVidaa()) clearVidaaHomePosterPreviewPosition(target);
         target.classList.remove("is-expanded", "is-trailer-active", "is-expanded-backdrop-ready");
         this.homeActivePosterNodes?.delete(target);
         const trailerLayer = target.querySelector(".home-poster-trailer-layer");
@@ -227,13 +238,18 @@ export function createHomeScreenMethods13() {
       if ((this.expandedPosterNode && this.expandedPosterNode !== node) || hasOtherExpandedPosters) {
         this.collapseFocusedPoster(this.expandedPosterNode, { excludeNode: node });
       }
+      if (Platform.isVidaa()) {
+        positionVidaaHomePosterPreview(
+          node,
+          this.container?.querySelector(".home-modern-rows-viewport") || this.container?.querySelector(".home-main")
+        );
+      }
       node.classList.add("is-expanded");
       this.homeActivePosterNodes?.add(node);
       this.hydrateFocusedPosterAssets(node);
       this.expandedPosterNode = node;
-      // VIDAA navigation already anchors the focused card at the track's left
-      // inset. Expansion grows to the right: realigning during its width tween
-      // introduces a second camera movement (especially at the end of a row).
+      // VIDAA has already reserved the expanded slot and positioned the camera
+      // before its compositor-only preview animation starts.
       if (Platform.isVidaa()) {
         return;
       }

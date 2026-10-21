@@ -223,7 +223,7 @@ export function createPlayerScreenMethods51() {
       }
       return null;
     },
-    requestVidaaStartupAudioOption(option) {
+    requestVidaaStartupAudioOption(option, { automaticFallback = false } = {}) {
       // Keep ownership until the existing async selector settles. A change
       // event emitted by that selector must not start a duplicate request.
       const request = {
@@ -231,7 +231,8 @@ export function createPlayerScreenMethods51() {
         video: PlayerController.video,
         playToken: PlayerController.playRequestToken,
         preference: this.getAudioTrackPreference(option.entry),
-        remembered: Boolean(this.rememberedAudioTrackPreference)
+        remembered: Boolean(this.rememberedAudioTrackPreference),
+        automaticFallback: Boolean(automaticFallback)
       };
       this.startupVidaaAudioRequest = request;
       this.startupAudioPreferenceApplying = true;
@@ -241,7 +242,7 @@ export function createPlayerScreenMethods51() {
         PlayerController.playRequestToken === request.playToken;
       let result;
       try {
-        result = this.applyAudioTrack(option.entryIndex);
+        result = this.applyAudioTrack(option.entryIndex, { automaticFallback });
       } catch (_) {
         result = false;
       }
@@ -271,6 +272,19 @@ export function createPlayerScreenMethods51() {
           // Resolve the identity again: a native list can change order while the
           // request is pending. An old array index is not an audio preference.
           const currentOption = resolveAppliedOption();
+          if (request.automaticFallback) {
+            // The bounded fallback is terminal, but its native request still
+            // owns startup until confirmation settles. A failed request leaves
+            // the runtime's default output in place and must not loop forever.
+            this.startupAudioFallbackApplied = true;
+            this.startupAudioPreferenceApplied = true;
+            this.failedAutomaticAudioFallbackEntryId = currentOption ? "" : option.entry.id || "";
+            this.clearStartupAudioPreferenceRetry();
+            this.renderControlButtons();
+            if (this.audioDialogVisible) this.renderAudioDialog();
+            this.scheduleLoadingCompletionCheck(0);
+            return;
+          }
           const targetIndex = this.getStartupPreferredAudioLanguageTargets().findIndex((target) =>
             this.matchesStartupAudioTarget(currentOption, target)
           );
@@ -286,6 +300,25 @@ export function createPlayerScreenMethods51() {
       return false;
     },
     applyStartupAudioPreference() {
+      const implicitFallback = Environment.isVidaa() ? this.startupImplicitAudioFallback : null;
+      if (implicitFallback) {
+        const ownsStartup =
+          implicitFallback.video === PlayerController.video &&
+          implicitFallback.playToken === PlayerController.playRequestToken &&
+          implicitFallback.mountToken === this.playerMountToken &&
+          implicitFallback.sourceAttemptToken === this.sourcePlaybackAttemptToken &&
+          implicitFallback.playbackUrl === this.activePlaybackUrl &&
+          implicitFallback.audioToken === Number(this.audioSelectionToken || 0);
+        if (!ownsStartup || this.hasPresentedPlaybackFrame) {
+          this.startupImplicitAudioFallback = null;
+        } else if (!this.startupAudioPreferenceApplying && this.getAudioTracks().length > 0) {
+          // Consume once before issuing a native selection. A manual choice,
+          // new source or already presented playback keeps its own audio.
+          this.startupImplicitAudioFallback = null;
+          this.startupAudioPreferenceApplied = false;
+          this.startupAudioFallbackApplied = false;
+        }
+      }
       if (this.startupAudioPreferenceApplied || this.startupAudioPreferenceApplying) {
         return false;
       }

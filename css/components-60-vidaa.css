@@ -948,14 +948,28 @@ html.vidaa-tv .movie-cast-card {
   transition-delay: 0ms !important;
 }
 
-/* Expansion starts only after focus/navigation settles. Match the upstream
-   180ms width motion, but collapse immediately when is-expanded is removed so
-   D-pad geometry is final before the next card is measured. */
+/* Reserve the expanded flex slot once, matching upstream row spacing. The
+   preview helper animates that single layout change with compositor transforms. */
 html.vidaa-tv .home-screen-shell.home-layout-modern .home-poster-card.focused.is-expanded {
-  transition:
-    flex-basis 180ms ease-out,
-    min-width 180ms ease-out,
-    max-width 180ms ease-out !important;
+  --vidaa-poster-slot-width: var(
+    --vidaa-poster-expanded-slot-width,
+    var(--home-modern-portrait-expanded-width)
+  );
+  flex-basis: var(--vidaa-poster-slot-width) !important;
+  min-width: var(--vidaa-poster-slot-width) !important;
+  max-width: var(--vidaa-poster-slot-width) !important;
+  position: relative;
+  z-index: 2;
+  transition: none !important;
+}
+
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .home-poster-card.is-landscape.focused.is-expanded {
+  --vidaa-poster-slot-width: var(
+    --vidaa-poster-expanded-slot-width,
+    var(--home-landscape-poster-width)
+  );
 }
 
 /* Landscape preview changes media, not row height. Removing the shared 18px
@@ -971,7 +985,7 @@ html.vidaa-tv
   .home-screen-shell.home-layout-modern
   .home-poster-card:not(.is-landscape).is-expanded
   .content-poster {
-  width: var(--home-modern-portrait-poster-width);
+  width: var(--vidaa-poster-original-width, var(--home-modern-portrait-poster-width));
 }
 
 html.vidaa-tv .home-screen-shell .home-poster-frame,
@@ -987,6 +1001,17 @@ html.vidaa-tv .series-episode-thumb {
   transition: none !important;
 }
 
+/* No width/left tween: the preview and its neighbors share one FLIP transform
+   animation, so every intermediate frame retains the row's gap. */
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .home-poster-card.focused.is-expanded
+  .home-poster-frame {
+  width: 100%;
+  left: 0;
+  transition: none !important;
+}
+
 html.vidaa-tv .home-screen-shell.home-layout-modern .home-poster-card .content-poster,
 html.vidaa-tv
   .home-screen-shell.home-layout-modern
@@ -994,6 +1019,27 @@ html.vidaa-tv
   .home-poster-expanded-backdrop {
   transition: opacity 120ms cubic-bezier(0.2, 0, 0, 1) !important;
   transition-delay: 0ms !important;
+}
+
+/* Keep artwork and typography at their native proportions while the empty
+   preview surface opens. Reveal the landscape after its transform settles. */
+html.vidaa-tv .home-screen-shell.home-layout-modern .vidaa-poster-expanding .content-poster {
+  opacity: 1 !important;
+}
+
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .vidaa-poster-expanding
+  .home-poster-expanded-backdrop,
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .vidaa-poster-expanding
+  .home-poster-expanded-brand,
+html.vidaa-tv
+  .home-screen-shell.home-layout-modern
+  .vidaa-poster-expanding
+  .home-poster-expanded-gradient {
+  opacity: 0 !important;
 }
 
 /* A forced compositor layer for every horizontal track consumes TV graphics

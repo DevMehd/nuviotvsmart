@@ -1,6 +1,10 @@
 // Disable all outputs before enabling a different VIDAA text track. Retry only
 // pending modes: restarting an already-enabled target also restarts its renderer.
 let vidaaTextTrackAttempt = 0;
+const vidaaTextTrackModeRequests = new WeakMap();
+export function recordVidaaTextTrackModeRequest(track, mode) {
+  if (track && typeof track === "object") vidaaTextTrackModeRequests.set(track, mode);
+}
 export function selectVidaaTextTrack(
   tracks,
   index,
@@ -25,9 +29,11 @@ export function selectVidaaTextTrack(
   };
   const modesMatch = (liveTracks) => {
     try {
-      return liveTracks.every(
-        (track) => track.mode === (track === target ? "showing" : "disabled")
-      );
+      return liveTracks.every((track) => {
+        const desiredMode = track === target ? "showing" : "disabled";
+        const requestedMode = vidaaTextTrackModeRequests.get(track);
+        return track.mode === desiredMode && (!requestedMode || requestedMode === desiredMode);
+      });
     } catch (_) {
       return false;
     }
@@ -47,7 +53,11 @@ export function selectVidaaTextTrack(
       // mode to arrive. Disable only competing outputs in subsequent attempts.
       if (!initial && enableRequested && track === target) continue;
       try {
-        if (initial || track.mode !== "disabled") track.mode = "disabled";
+        if (track === target && track.mode === "showing") continue;
+        if (track.mode !== "disabled" || vidaaTextTrackModeRequests.get(track) === "showing") {
+          recordVidaaTextTrackModeRequest(track, "disabled");
+          track.mode = "disabled";
+        }
       } catch (_) {
         // Still disable the remaining outputs when one mode is readonly.
       }
@@ -57,9 +67,14 @@ export function selectVidaaTextTrack(
       const competitorsDisabled = liveTracks.every(
         (track) => track === target || track.mode === "disabled"
       );
-      if (!competitorsDisabled || (!enableRequested && !allDisabled(liveTracks))) return;
-      if (target.mode !== "showing") {
+      if (
+        !competitorsDisabled ||
+        (!enableRequested && target.mode !== "showing" && !allDisabled(liveTracks))
+      )
+        return;
+      if (target.mode !== "showing" || vidaaTextTrackModeRequests.get(target) === "disabled") {
         enableRequested = true;
+        recordVidaaTextTrackModeRequest(target, "showing");
         target.mode = "showing";
       }
     } catch (_) {

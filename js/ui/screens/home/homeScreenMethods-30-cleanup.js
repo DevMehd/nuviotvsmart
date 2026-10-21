@@ -4,6 +4,7 @@ import { forgetHomeMarkup } from "./patchHomeMarkup.js";
 import { suspendVidaaHomeCardWindow, discardVidaaHomeCards } from "./vidaaHomeCardWindow.js";
 
 import { cancelVidaaHomePosterPrefetches } from "./vidaaHomePosterPrefetch.js";
+import { clearVidaaHomePosterPreviews } from "./vidaaHomePosterExpansion.js";
 
 export function createHomeScreenMethods30() {
   const { ScreenUtils, Platform, getTvRuntimePerformanceProfile } = internals;
@@ -12,6 +13,7 @@ export function createHomeScreenMethods30() {
     cleanup() {
       clearHomeCollectionFocusGif(this);
       this.homeVidaaTrackGeometry = null;
+      this.heroMdbListRequest = null;
       const preserveRenderedTvHome = Boolean(
         getTvRuntimePerformanceProfile().isTvRuntime &&
         this.hasLoadedOnce &&
@@ -23,7 +25,6 @@ export function createHomeScreenMethods30() {
         if (preserveRenderedTvHome) suspendVidaaHomeCardWindow(this);
         else discardVidaaHomeCards(this);
       }
-      this.heroMdbListRequest = null;
       if (this.unsubscribeStartupSyncPullCompleted) {
         this.unsubscribeStartupSyncPullCompleted();
         this.unsubscribeStartupSyncPullCompleted = null;
@@ -61,7 +62,13 @@ export function createHomeScreenMethods30() {
       this.cancelFocusedPosterFlow();
       this.clearFocusedPosterFlowState();
       this.collapseFocusedPoster();
+      clearVidaaHomePosterPreviews(this.container);
       this.clearHomeTrailerLayers();
+      if (this.activeCollectionFocusGifNode) {
+        this.hydrateCollectionFocusGif(this.activeCollectionFocusGifNode, false);
+        this.activeCollectionFocusGifNode = null;
+      }
+      this.focusedPosterTrailerSourcePromises = null;
       this.teardownGridStickyHeader();
       this.teardownModernTrackScrollPagination();
       this.teardownContinueWatchingProgressiveRendering();

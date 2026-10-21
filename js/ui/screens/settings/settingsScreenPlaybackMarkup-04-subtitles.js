@@ -3,6 +3,7 @@ import * as internals from "./settingsScreenContext.js";
 
 export function renderPlaybackSubtitleBody(model) {
   const {
+    Platform,
     SUBTITLE_VERTICAL_OFFSET_DEFAULT,
     labelForOptionId,
     SUBTITLE_SIZE_OPTIONS,
@@ -44,7 +45,6 @@ export function renderPlaybackSubtitleBody(model) {
               subtitle: t("sub_show_only_preferred_languages_desc", {}, "Hide all other subtitles languages from selection list"),
               checked: Boolean(model.player.subtitleStyle?.showOnlyPreferredLanguages)
             })}
-            ${this.renderActionRow({ focusKey: "playback:subtitleStartupMode", title: t("sub_startup_mode_title", {}, "Subtitle startup mode"), subtitle: t("sub_startup_mode_all_desc", {}, "Choose how addon subtitles are loaded at startup"), value: t(model.player.addonSubtitleStartupMode === "FAST_STARTUP" ? "sub_startup_mode_fast" : model.player.addonSubtitleStartupMode === "PREFERRED_ONLY" ? "sub_startup_mode_preferred" : "sub_startup_mode_all") })}
             ${this.renderActionRow({
               focusKey: "playback:subtitleSize",
               title: t("settings.playback.subtitleSize.title", {}, "Subtitle size"),
@@ -91,7 +91,7 @@ export function renderPlaybackSubtitleBody(model) {
                 `${clampSubtitleTextOpacity(model.player.subtitleStyle?.textOpacity)}%`
               )
             })}
-            ${this.renderActionRow({ focusKey: "playback:subtitleBackgroundColor", title: t("sub_bg_color", {}, "Subtitle background color"), subtitle: t("sub_bg_color", {}, "Background behind subtitle text"), value: labelForOptionId(SUBTITLE_BACKGROUND_COLOR_OPTIONS, String(model.player.subtitleStyle?.backgroundColor || "#00000000").toUpperCase(), "Off") })}
+            ${this.renderActionRow({ focusKey: "playback:subtitleBackgroundColor", title: t("sub_bg_color", {}, "Subtitle background color"), subtitle: t("sub_bg_color", {}, "Background behind subtitle text"), value: labelForOptionId(SUBTITLE_BACKGROUND_COLOR_OPTIONS, Platform.isVidaa() ? "#00000000" : String(model.player.subtitleStyle?.backgroundColor || "#00000000").toUpperCase(), "Off"), disabled: Platform.isVidaa() })}
             ${this.renderToggleRow({
               focusKey: "playback:subtitleOutline",
               title: t("settings.playback.subtitleOutline.title", {}, "Subtitle outline"),

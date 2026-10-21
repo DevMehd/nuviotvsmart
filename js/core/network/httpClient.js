@@ -99,9 +99,17 @@ function waitWithAbort(delayMs, signal) {
   });
 }
 
-async function fetchWithBackendRetry(url, fetchInit, method) {
+async function fetchWithBackendRetry(url, fetchInit, method, assertRequestActive) {
+  if (!isSupabaseBackendRequest(url)) {
+    // Account rate limits must not hold up public addon/TMDB requests, and an
+    // addon's rate limit must not put the account backend into cooldown.
+    const proxyResponse = await fetchViaWebOsSupabaseProxy(url, fetchInit);
+    assertRequestActive();
+    return proxyResponse || fetch(url, fetchInit);
+  }
   const safeRetry = isSafeBackendRetryRequest(url, method);
   await waitWithAbort(Math.max(0, backendCooldownUntilMs - Date.now()), fetchInit.signal);
+  assertRequestActive();
   let response =
     (await fetchViaWebOsSupabaseProxy(url, fetchInit)) || (await fetch(url, fetchInit));
   recordBackendCooldown(response);
@@ -117,6 +125,7 @@ async function fetchWithBackendRetry(url, fetchInit, method) {
       await waitWithAbort(delayMs, fetchInit.signal);
     }
     await waitWithAbort(Math.max(0, backendCooldownUntilMs - Date.now()), fetchInit.signal);
+    assertRequestActive();
     response = (await fetchViaWebOsSupabaseProxy(url, fetchInit)) || (await fetch(url, fetchInit));
     recordBackendCooldown(response);
   }
@@ -183,18 +192,10 @@ function combineAbortSignals(...signals) {
 export async function httpRequest(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   const includeSessionAuth = options.includeSessionAuth !== false;
+  const sessionGeneration = AuthManager.sessionGeneration;
   let refreshFailedTransiently = false;
 
   const headers = toHeaderObject(options.headers);
-
-  if (includeSessionAuth && SessionStore.refreshToken && AuthManager.isAccessTokenExpired()) {
-    await AuthManager.refreshSessionIfNeeded();
-    refreshFailedTransiently = AuthManager.wasLastSessionRefreshTransientFailure?.() === true;
-  }
-
-  if (includeSessionAuth && SessionStore.accessToken && !hasHeader(headers, "Authorization")) {
-    headers["Authorization"] = `Bearer ${SessionStore.accessToken}`;
-  }
 
   const body = options.body;
   const hasBody = body != null && method !== "GET" && method !== "HEAD";
@@ -218,9 +219,34 @@ export async function httpRequest(url, options = {}) {
     callerSignal,
     includeSessionAuth ? AuthManager.getSessionSignal?.() : null
   );
+  let requestFinished = false;
   try {
     return await withRequestTimeout(
       async (requestSignal) => {
+        const assertCurrentSession = () => {
+          if (
+            requestFinished ||
+            requestSignal?.aborted ||
+            (includeSessionAuth && sessionGeneration !== AuthManager.sessionGeneration)
+          ) {
+            throw createAbortError();
+          }
+        };
+        assertCurrentSession();
+        // Include token refresh in the request deadline. Previously a stalled
+        // refresh could block every account operation before the timer began.
+        if (includeSessionAuth && SessionStore.refreshToken && AuthManager.isAccessTokenExpired()) {
+          await AuthManager.refreshSessionIfNeeded();
+          assertCurrentSession();
+          refreshFailedTransiently = AuthManager.wasLastSessionRefreshTransientFailure?.() === true;
+        }
+        if (
+          includeSessionAuth &&
+          SessionStore.accessToken &&
+          !hasHeader(headers, "Authorization")
+        ) {
+          headers["Authorization"] = `Bearer ${SessionStore.accessToken}`;
+        }
         const fetchInit = {
           ...fetchOptions,
           method,
@@ -229,10 +255,12 @@ export async function httpRequest(url, options = {}) {
           ...(requestSignal ? { signal: requestSignal } : {})
         };
 
-        let response = await fetchWithBackendRetry(url, fetchInit, method);
+        let response = await fetchWithBackendRetry(url, fetchInit, method, assertCurrentSession);
+        assertCurrentSession();
 
         if (response.status === 401 && includeSessionAuth && SessionStore.refreshToken) {
           const refreshed = await AuthManager.refreshSessionIfNeeded({ force: true });
+          assertCurrentSession();
           refreshFailedTransiently = AuthManager.wasLastSessionRefreshTransientFailure?.() === true;
           if (refreshed && SessionStore.accessToken) {
             const retryInit = {
@@ -243,7 +271,8 @@ export async function httpRequest(url, options = {}) {
                 Authorization: `Bearer ${SessionStore.accessToken}`
               }
             };
-            response = await fetchWithBackendRetry(url, retryInit, method);
+            response = await fetchWithBackendRetry(url, retryInit, method, assertCurrentSession);
+            assertCurrentSession();
           }
         }
 
@@ -304,6 +333,7 @@ export async function httpRequest(url, options = {}) {
           return response.text();
         }
         const text = await response.text();
+        assertCurrentSession();
         const normalized = typeof text === "string" ? text.trim() : "";
         if (!normalized) {
           return null;
@@ -314,6 +344,7 @@ export async function httpRequest(url, options = {}) {
       combinedSignals.signal
     );
   } finally {
+    requestFinished = true;
     combinedSignals.cleanup();
   }
 }

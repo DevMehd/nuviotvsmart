@@ -1,11 +1,11 @@
 import { AuthManager } from "../../../core/auth/authManager.js";
+import { Platform } from "../../../platform/index.js";
 import { discoverServer } from "../../../core/server/serverDiscovery.js";
 import { ServerConfigurationStore } from "../../../data/local/serverConfigurationStore.js";
 import { I18n } from "../../../i18n/index.js";
 import { Router } from "../../navigation/routerState.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 import { LocalStore } from "../../../core/storage/localStore.js";
-import { Platform } from "../../../platform/index.js";
 
 function text(key, fallback, params = {}) {
   return I18n.t(key, params, { fallback });

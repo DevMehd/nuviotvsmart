@@ -33,15 +33,7 @@ jobs:
         run: npm ci
 
       - name: Run reproducible core tests
-        shell: bash
-        run: |
-          if [[ -f tests/test-plugin-system.mjs && -f tests/test-plugin-localization.mjs ]]; then
-            npm test
-          else
-            echo "::warning::npm test references plugin test files that are not tracked in this repository or upstream; running the reproducible tracked subset instead."
-            npm run build
-            node ./scripts/test-webos-plugin-forwarding.cjs
-          fi
+        run: npm test
 
       - name: Run lint
         run: npm run lint
