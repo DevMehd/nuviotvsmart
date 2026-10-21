@@ -65,7 +65,44 @@ function normalizeEnvelopeProfiles(profiles = {}, normalize) {
   return normalized;
 }
 
+// Parsed and normalized envelopes, keyed by storage key and validated against the raw
+// stored text: reading the text is cheap, parsing and normalizing every profile on each
+// get() cost ~12% of the main thread while navigating on a VIDAA TV. Any write (this
+// module, another module, a sync or another tab) changes the text and invalidates.
+const envelopeCache = new Map();
+
+function readRawText(key) {
+  try {
+    return globalThis.localStorage?.getItem(key) ?? null;
+  } catch (_) {
+    return undefined;
+  }
+}
+
+/** Test hook: drop the parsed envelopes. */
+export function resetProfileScopedStoreCache() {
+  envelopeCache.clear();
+}
+
 function readEnvelope(key, normalize, legacyProfileIds = null) {
+  const rawText = readRawText(key);
+  const cached = envelopeCache.get(key);
+  if (
+    cached &&
+    rawText !== undefined &&
+    cached.rawText === rawText &&
+    cached.normalize === normalize
+  ) {
+    return cached.envelope;
+  }
+  const envelope = parseEnvelope(key, normalize, legacyProfileIds);
+  const storedText = readRawText(key);
+  if (storedText !== undefined)
+    envelopeCache.set(key, { rawText: storedText, normalize, envelope });
+  return envelope;
+}
+
+function parseEnvelope(key, normalize, legacyProfileIds = null) {
   const raw = LocalStore.get(key, null);
   if (isProfileScopedEnvelope(raw)) {
     const next = {
