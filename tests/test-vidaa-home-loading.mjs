@@ -232,7 +232,9 @@ for (const name of ["vidaa", "tizen", "webos", "browser"]) {
           ["https://example.com/final.jpg"],
           `${label}: release allows hero artwork before the heavier focus effects`
         );
-        assert.deepEqual(work, { metadata: ["final"], trailers: [], promoted: [], activated: [] });
+        // The hero commit and its metadata wait for the VIDAA calm window (they cost a few
+        // hundred milliseconds of main thread on the TV).
+        assert.deepEqual(work, { metadata: [], trailers: [], promoted: [], activated: [] });
       } else {
         assert.deepEqual(imageLoads, [], `${label}: retain the burst quiet window`);
         assert.deepEqual(work, { metadata: [], trailers: [], promoted: [], activated: [] });
@@ -336,13 +338,17 @@ for (const direction of [39, 40]) {
   assert.deepEqual(trailers, []);
   assert.deepEqual(expanded, []);
   noteVidaaNavigationKeyUp(direction);
+  // Rapid input: the hero waits its calm window (600 ms after the last key on VIDAA) and its
+  // artwork warms just before the commit.
   await advance(690);
+  assert.deepEqual(imageLoads, [], "Hero artwork waits for the calm window");
+  await advance(800);
   assert.deepEqual(
     imageLoads,
     ["https://example.com/final.jpg"],
-    "Hero artwork warms after a short quiet period while heavier poster work remains deferred"
+    "Hero artwork warms after the quiet period while heavier poster work remains deferred"
   );
-  await advance(750);
+  await advance(1100);
   await paint();
   assert.deepEqual(metadata, ["final"]);
   assert.deepEqual(trailers, ["final"]);

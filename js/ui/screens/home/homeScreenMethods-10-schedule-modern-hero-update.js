@@ -1,5 +1,5 @@
 import * as internals from "./homeScreenContext.js";
-import { isVidaaHomePreviewBusy } from "./vidaaHomePreviewPolicy.js";
+import { getVidaaHeroPreloadDelay, isVidaaHomePreviewBusy } from "./vidaaHomePreviewPolicy.js";
 
 export function createHomeScreenMethods10() {
   const { MODERN_HOME_CONSTANTS, getTvRuntimePerformanceProfile, shouldEnrichModernHero, preloadHeroAssets, buildHeroIdentity } = internals;
@@ -54,7 +54,7 @@ export function createHomeScreenMethods10() {
         }
         callback();
       };
-      const preloadDelay = isVidaa ? (isRapidNav ? 60 : 20) : Math.max(0, Math.min(120, delay - 80));
+      const preloadDelay = isVidaa ? getVidaaHeroPreloadDelay(delay, { rapid: isRapidNav }) : Math.max(0, Math.min(120, delay - 80));
       this.heroBackdropPreloadTimer = setTimeout(() => {
         this.heroBackdropPreloadTimer = null;
         waitForVerticalSettle(() => {

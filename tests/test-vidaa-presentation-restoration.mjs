@@ -7,7 +7,8 @@ import {
 } from "../js/core/streams/streamPresentationBadges.js";
 import {
   isVidaaHomePreviewBusy,
-  getVidaaHeroFocusDelay
+  getVidaaHeroFocusDelay,
+  getVidaaHeroPreloadDelay
 } from "../js/ui/screens/home/vidaaHomePreviewPolicy.js";
 import {
   setHomeCollectionFocusGif,
@@ -63,8 +64,11 @@ assert.ok(
   getStreamPresentationBadges({ streamPresentation: { visualTags: {}, languages: null } })
     .length === 0
 );
-assert.equal(getVidaaHeroFocusDelay(), 80);
-assert.equal(getVidaaHeroFocusDelay({ rapid: true }), 140);
+// The hero waits for a calm period on VIDAA; its images load just before the commit.
+assert.equal(getVidaaHeroFocusDelay(), 450);
+assert.equal(getVidaaHeroFocusDelay({ rapid: true }), 600);
+assert.equal(getVidaaHeroPreloadDelay(450), 20);
+assert.equal(getVidaaHeroPreloadDelay(600, { rapid: true }), 520);
 assert.equal(
   isVidaaHomePreviewBusy({ lastHomeInputAt: 1000, homeDirectionalInputBurst: true }, 1100),
   true
