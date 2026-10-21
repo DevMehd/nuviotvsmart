@@ -1,6 +1,22 @@
 import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import * as internals from "./homeScreenContext.js";
 
+/**
+ * Cheap signature of the hero copy layout, read without forcing layout: viewport, and for
+ * each other block its classes and text length (in ~24-character steps, enough to tell a
+ * one-line from a two-line title).
+ */
+export function modernHeroCopyLayoutKey(copy, description) {
+  const parts = [globalThis.innerWidth || 0, globalThis.innerHeight || 0];
+  for (const node of Array.from(copy.children || [])) {
+    if (node === description) continue;
+    const hasLogo = Boolean(node.classList?.contains("home-hero-brand") && node.querySelector?.("img"));
+    const size = hasLogo ? "logo" : Math.ceil(String(node.textContent || "").trim().length / 24);
+    parts.push(`${node.className}:${size}`);
+  }
+  return parts.join("|");
+}
+
 export function createHomeScreenMethods14() {
   const { Router, Platform, applyTrailerAudioPreferences } = internals;
 
@@ -226,6 +242,21 @@ export function createHomeScreenMethods14() {
           return;
         }
 
+        // Performance mode (VIDAA): the bounds depend on which blocks share the copy area and
+        // roughly how long their text is. Measuring them on every hero commit forced style and
+        // layout for ~150 ms on the TV; one measurement per layout signature is enough.
+        const constrained = typeof this.isPerformanceConstrained === "function" && this.isPerformanceConstrained();
+        const copyNode = constrained ? description.closest(".home-modern-hero-copy") : null;
+        const layoutKey = copyNode ? modernHeroCopyLayoutKey(copyNode, description) : "";
+        const cachedBounds = layoutKey ? this.modernHeroBoundsCache?.get(layoutKey) : null;
+        if (cachedBounds) {
+          if (description.style.maxHeight !== cachedBounds.maxHeight) description.style.maxHeight = cachedBounds.maxHeight;
+          if (description.style.webkitLineClamp !== cachedBounds.lineClamp) {
+            description.style.webkitLineClamp = cachedBounds.lineClamp;
+          }
+          return;
+        }
+
         const descriptionStyle = getComputedStyle(description);
         const lineHeight = parseFloat(descriptionStyle.lineHeight || "0") || 0;
         const fontSize = parseFloat(descriptionStyle.fontSize || "0") || 0;
@@ -247,6 +278,11 @@ export function createHomeScreenMethods14() {
         }
         if (description.style.webkitLineClamp !== lineClamp) {
           description.style.webkitLineClamp = lineClamp;
+        }
+        if (layoutKey && copy && copy.clientHeight > 0) {
+          this.modernHeroBoundsCache ||= new Map();
+          if (this.modernHeroBoundsCache.size > 64) this.modernHeroBoundsCache.clear();
+          this.modernHeroBoundsCache.set(layoutKey, { maxHeight, lineClamp });
         }
       });
     },
