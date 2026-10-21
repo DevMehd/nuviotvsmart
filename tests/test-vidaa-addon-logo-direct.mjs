@@ -42,4 +42,24 @@ assert.ok(
   "old data URL cache removed"
 );
 
-console.log("PASS: VIDAA addon logos and badges load directly from their URL.");
+// No startup preload of every imported pack on VIDAA.
+const { preloadStreamBadgeImages } =
+  await import("../js/ui/screens/stream/streamScreenHelpers-02-flatten-streams.js");
+const before = images.length;
+await preloadStreamBadgeImages({
+  rules: {
+    imports: [
+      {
+        filters: [
+          { imageURL: "https://example.test/badges/a.webp" },
+          { imageURL: "https://example.test/badges/b.webp" }
+        ]
+      }
+    ]
+  }
+});
+assert.equal(images.length, before, "no image loaded for packs at startup");
+
+console.log(
+  "PASS: VIDAA addon logos and badges load directly from their URL, without a startup pack preload."
+);

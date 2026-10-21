@@ -213,6 +213,12 @@ export async function ensureAddonLogoImageProxyReady() {
 }
 
 export async function preloadStreamBadgeImages(settings = StreamBadgeSettingsStore.snapshot()) {
+  // VIDAA: loading every badge of every imported pack at startup competed with the first
+  // minutes of navigation on the TV. The first sources of each list warm their own badges
+  // (preloadMatchedStreamBadgeImages) and the HTTP cache keeps them.
+  if (Environment.isVidaa()) {
+    return;
+  }
   await ensureAddonLogoImageProxyReady();
   const rules = normalizeStreamBadgeRules(settings?.rules);
   const urls = new Set();
