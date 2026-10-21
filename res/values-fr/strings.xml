@@ -2781,4 +2781,5 @@
     <string name="perso_discovery_skip">Pas vu · passer</string>
     <string name="perso_discovery_open">Voir la fiche</string>
     <string name="perso_discovery_scale">toutes les notes</string>
+    <string name="player_audio_unsupported_all">Le son de cette source n’est pas lu par la télé : choisis une autre source</string>
 </resources>

@@ -154,21 +154,26 @@ export function createPlayerScreenMethods11() {
 
       if (Environment.isVidaa()) {
         if (this.getTextTracks().length > (this.externalTrackNodes?.length || 0)) return false;
-        if (this.isCurrentSourceLikelyMkv()) return true;
-        // Signed streaming URLs often omit filename/container. A bounded EBML
-        // header probe identifies those sources; known other containers skip it.
-        const declared = String(this.resolvePlaybackMediaSourceType(this.getCurrentStreamCandidate()) || "")
-          .toLowerCase()
-          .split(";")[0]
-          .trim();
-        return (
-          (!declared || declared === "application/octet-stream") &&
-          /^https?:/i.test(probeUrl) &&
-          !/\.(?:mp4|m4v|mov|avi|ts|m2ts|wmv|webm)(?:$|[?#])/i.test(probeUrl)
-        );
+        return this.isVidaaMatroskaProbeCandidate(probeUrl);
       }
 
       return typeof PlayerController.isLikelyDirectFileUrl === "function" ? PlayerController.isLikelyDirectFileUrl(probeUrl) : false;
+    },
+    /** VIDAA: sources whose container header can be read (MKV or an undeclared container). */
+    isVidaaMatroskaProbeCandidate(probeUrl = this.getTrackProbeUrl()) {
+      if (!probeUrl || this.isCurrentSourceAdaptiveManifest()) return false;
+      if (this.isCurrentSourceLikelyMkv()) return true;
+      // Signed streaming URLs often omit filename/container. A bounded EBML
+      // header probe identifies those sources; known other containers skip it.
+      const declared = String(this.resolvePlaybackMediaSourceType(this.getCurrentStreamCandidate()) || "")
+        .toLowerCase()
+        .split(";")[0]
+        .trim();
+      return (
+        (!declared || declared === "application/octet-stream") &&
+        /^https?:/i.test(probeUrl) &&
+        !/\.(?:mp4|m4v|mov|avi|ts|m2ts|wmv|webm)(?:$|[?#])/i.test(probeUrl)
+      );
     },
     canDiscoverEmbeddedAudioTracks() {
       if (Environment.isTizen()) {
@@ -177,6 +182,13 @@ export function createPlayerScreenMethods11() {
         const usingAvPlay = typeof PlayerController.isUsingAvPlay === "function" ? PlayerController.isUsingAvPlay() : false;
         const probeUrl = this.getTrackProbeUrl();
         return Boolean(usingNativePlayback && usingAvPlay && probeUrl && !this.isCurrentSourceAdaptiveManifest());
+      }
+      // VIDAA names its audio tracks from the container header (nuv-089), even when the
+      // TV already exposes its own subtitle tracks.
+      if (Environment.isVidaa()) {
+        const usingNativePlayback =
+          typeof PlayerController.isUsingNativePlayback === "function" ? PlayerController.isUsingNativePlayback() : false;
+        return Boolean(usingNativePlayback && this.isVidaaMatroskaProbeCandidate());
       }
       return this.canDiscoverEmbeddedSubtitleTracks();
     },

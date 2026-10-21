@@ -6,8 +6,11 @@ import {
   getAuthoritativeAudioCodecValue,
   getAudioTrackCodecCompatibilityText,
   getAudioTrackLabelPrefix,
-  mapAudioTrackNativeIndexes
+  mapAudioTrackNativeIndexes,
+  audioCodecCapabilityKey,
+  isAudioCodecDeclaredUnsupported
 } from "../../../core/player/audioTrackCodecMetadata.js";
+import { playbackCapabilities } from "../../../core/diagnostics/playbackDiagnostics.js";
 
 import {
   canReleasePlayingNativeStartupAudioGate,
@@ -439,6 +442,17 @@ export function isUnsupportedWebOsAudioTrack(track = {}) {
 }
 
 export function getAudioTrackSupportState(track = {}) {
+  if (Environment.isVidaa()) {
+    // VIDAA (nuv-089): a track whose codec the TV declares it cannot decode plays without sound.
+    const key = audioCodecCapabilityKey(getAuthoritativeAudioCodecValue(track) || getTrackMetadataStrings(track).join(" "));
+    let unsupported = false;
+    try {
+      unsupported = Boolean(key) && isAudioCodecDeclaredUnsupported(playbackCapabilities()[key]);
+    } catch (_error) {
+      unsupported = false;
+    }
+    return { supported: !unsupported, canTryAudioConversion: false, unsupportedReason: unsupported ? "codec" : null };
+  }
   const supported = !isUnsupportedWebOsAudioTrack(track);
   return {
     supported,

@@ -79,7 +79,7 @@ export function createPlayerScreenMethods40() {
         if (Environment.isVidaa()) {
           const diagnostic = localMediaEmbeddedSubtitleRepository.getVidaaDiagnostics();
           this.embeddedTextSubtitleSupportNotice =
-            tracks.length || !diagnostic.errorCode ? "" : getVidaaEmbeddedTextNotice(diagnostic.errorCode);
+            tracks.some((track) => track?.type === "text") || !diagnostic.errorCode ? "" : getVidaaEmbeddedTextNotice(diagnostic.errorCode);
         }
         this.embeddedSubtitleTracks = canLoadSubtitleTracks ? this.normalizeEmbeddedSubtitleTracks(tracks) : [];
         this.embeddedAudioTracks = canLoadAudioTracks ? this.normalizeEmbeddedAudioTracks(tracks) : [];

@@ -26,7 +26,14 @@ export function createPlayerScreenMethods52() {
     applyStartupAudioFallback() {
       this.clearStartupAudioPreferenceRetry();
       this.startupAudioFallbackApplied = true;
-      const fallbackOption = selectStartupAudioFallbackOption(this.collectAudioOptionItems());
+      const audioOptions = this.collectAudioOptionItems();
+      const fallbackOption = selectStartupAudioFallbackOption(audioOptions);
+      // VIDAA (nuv-089): every track uses a codec the TV declares it cannot decode.
+      if (Environment.isVidaa() && audioOptions.length && audioOptions.every((entry) => entry?.supported === false)) {
+        this.showAspectToast?.(
+          t("player_audio_unsupported_all", {}, "This source's sound cannot be played by the TV: choose another source")
+        );
+      }
       if (!fallbackOption?.entry || !Number.isFinite(fallbackOption.entryIndex)) {
         this.startupAudioPreferenceApplied = true;
         return true;

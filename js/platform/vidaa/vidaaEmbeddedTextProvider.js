@@ -24,6 +24,42 @@ export const VIDAA_EMBEDDED_TEXT_LIMITS = Object.freeze({
 const fail = demux.error;
 const encoder = () => new TextEncoder();
 
+/** Matroska audio CodecID → codec name understood by the player track labels and checks. */
+export function vidaaAudioCodecName(codecId = "") {
+  const id = String(codecId || "").toUpperCase();
+  if (id.startsWith("A_EAC3")) return "eac3";
+  if (id.startsWith("A_AC3")) return "ac3";
+  if (id.startsWith("A_DTS")) return "dts";
+  if (id.startsWith("A_TRUEHD") || id.startsWith("A_MLP")) return "truehd";
+  if (id.startsWith("A_AAC")) return "aac";
+  if (id.startsWith("A_OPUS")) return "opus";
+  if (id.startsWith("A_FLAC")) return "flac";
+  if (id.startsWith("A_MPEG/L3")) return "mp3";
+  if (id.startsWith("A_PCM")) return "pcm";
+  return id.replace(/^A_/, "").toLowerCase();
+}
+
+/** Audio tracks of the container, in order: the TV exposes them in the same order. */
+function audioTrackEntries(tracks = [], identity = "") {
+  return tracks
+    .filter((track) => track.type === 2)
+    .map((track, ordinal) => ({
+      type: "audio",
+      id: track.number,
+      codecId: track.codecId,
+      codec: vidaaAudioCodecName(track.codecId),
+      name: track.name,
+      language: track.language,
+      channels: track.channels || "",
+      channelCount: track.channels || "",
+      isDefault: track.isDefault !== false,
+      trackOrdinal: ordinal,
+      nativeTrackIndex: ordinal,
+      sourceIdentity: identity,
+      containerTrackUid: track.uid
+    }));
+}
+
 export function createVidaaEmbeddedTextProvider({
   fetchImpl = (...args) => fetch(...args),
   now = () => Date.now()
@@ -696,6 +732,9 @@ export function createVidaaEmbeddedTextProvider({
         throw fail("TEXT_DECODER_UNAVAILABLE");
       const head = await range(s, 0, limits.headerBytes, operation, signal);
       const metadata = await loadMetadata(s, head, operation, signal);
+      // Keep the audio tracks before narrowing to text: they name the TV's audio tracks
+      // even when the file has no usable text subtitle.
+      s.audioTracks = audioTrackEntries(metadata.tracks, s.identity);
       metadata.tracks = metadata.tracks.filter(
         (track) =>
           track.type === 17 &&
@@ -815,19 +854,20 @@ export function createVidaaEmbeddedTextProvider({
   async function getTracks(url, { headers = {}, probeTimeSeconds = 0 } = {}) {
     const s = source(url, headers);
     s.probeTimeSeconds = probeTimeSeconds;
+    const audioOnly = () => (s === current && Array.isArray(s.audioTracks) ? s.audioTracks : []);
     if (!s.accessVerified) {
-      if (s.retryAt > now()) return [];
+      if (s.retryAt > now()) return audioOnly();
       s.pending ||= discover(s).finally(() => {
         s.pending = null;
       });
       try {
         await s.pending;
       } catch (_) {
-        return [];
+        return audioOnly();
       }
     }
-    if (s !== current || !s.metadata) return [];
-    return s.metadata.tracks.map((track, ordinal) => ({
+    if (s !== current || !s.metadata) return audioOnly();
+    const textTracks = s.metadata.tracks.map((track, ordinal) => ({
       type: "text",
       id: track.number,
       codecId: track.codecId,
@@ -842,6 +882,7 @@ export function createVidaaEmbeddedTextProvider({
       containerTrackUid: track.uid,
       textAccessVerified: true
     }));
+    return [...textTracks, ...audioOnly()];
   }
   async function scanWindow(s, track, start, end, operation, signal) {
     const metadata = s.metadata;

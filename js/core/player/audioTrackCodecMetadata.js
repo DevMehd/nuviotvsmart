@@ -134,3 +134,28 @@ export function mapAudioTrackNativeIndexes(
     return nativeIndex;
   });
 }
+
+/** Key of the TV capability probe (core/diagnostics/playbackDiagnostics.js) for an audio codec. */
+export function audioCodecCapabilityKey(codecText = "") {
+  const text = String(codecText || "").toLowerCase();
+  if (!text) return "";
+  if (/true\s*hd|mlpa|\bmlp\b|a_truehd/.test(text)) return "truehd";
+  if (/\bdts|dtsc|dtsh|dtse|a_dts/.test(text)) return "dts";
+  if (/e-?ac-?3|ec-3|eac3|ddp|dd\+|dolby digital plus/.test(text)) return "eac3";
+  if (/\bac-?3\b|a_ac3|dolby digital/.test(text)) return "ac3";
+  if (/\baac\b|mp4a|a_aac/.test(text)) return "aac";
+  if (/opus/.test(text)) return "opus";
+  if (/flac/.test(text)) return "flac";
+  return "";
+}
+
+/**
+ * True when the TV declared it cannot decode this codec: canPlayType answered "" and, when
+ * MediaSource exists, it refused the type too ("no" or "no/no-mse"). Unknown stays supported.
+ */
+export function isAudioCodecDeclaredUnsupported(capabilityValue) {
+  const value = String(capabilityValue || "");
+  if (!value) return false;
+  const [play, mse] = value.split("/");
+  return play === "no" && (mse === undefined || mse === "no-mse");
+}

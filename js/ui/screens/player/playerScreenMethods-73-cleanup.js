@@ -5,7 +5,7 @@ import { maybeOfferRatingAfterPlayback } from "./persoRatingOffer.js";
 import { WatchJournal } from "../../../core/perso/watchJournal.js";
 
 export function createPlayerScreenMethods73() {
-  const { PlayerController, streamRepository, TrackingScrobbleService, ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS } = internals;
+  const { PlayerController, streamRepository, TrackingScrobbleService, ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS, Environment } = internals;
 
   return {
     cleanup() {
@@ -13,6 +13,13 @@ export function createPlayerScreenMethods73() {
       this.personalWatchRun = null;
       maybeOfferRatingAfterPlayback(this, PlayerController.video);
       localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
+      // VIDAA (nuv-089): free the 4K decoder and its buffers before the rest of the teardown
+      // and the next screen's rendering; leaving playback used to exhaust the TV's memory.
+      if (Environment?.isVidaa?.()) {
+        try {
+          PlayerController.stop();
+        } catch (_) {}
+      }
       try {
         this.cancelSourceLoad();
         streamRepository.setLocalPluginSearchPaused(true);

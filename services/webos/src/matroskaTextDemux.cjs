@@ -178,6 +178,8 @@ function tracks(data, parent = readElement(data, 0)) {
             ? view.getFloat64(scaleElement.dataStart)
             : NaN;
       const offsetElement = find(data, entry, 0x537f);
+      const audioElement = find(data, entry, 0xe1);
+      const defaultFlag = find(data, entry, 0x88);
       return {
         number: number(data, entry, 0xd7),
         uid: uidHex,
@@ -186,6 +188,9 @@ function tracks(data, parent = readElement(data, 0)) {
         language: text(data, entry, 0x22b59d) || text(data, entry, 0x22b59c),
         name: text(data, entry, 0x536e),
         forced: Boolean(number(data, entry, 0x55aa)),
+        // Audio tracks: channel count and the container default flag (absent means default).
+        channels: audioElement ? number(data, audioElement, 0x9f) || 0 : 0,
+        isDefault: defaultFlag ? Boolean(unsigned(data, defaultFlag)) : true,
         encoded: Boolean(find(data, entry, 0x6d80)),
         defaultDurationNs: number(data, entry, 0x23e383) || 0,
         codecDelayNs: number(data, entry, 0x56aa) || 0,

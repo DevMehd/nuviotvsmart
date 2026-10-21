@@ -3097,4 +3097,5 @@
     <string name="perso_discovery_skip">Haven\'t seen it · skip</string>
     <string name="perso_discovery_open">Open the details</string>
     <string name="perso_discovery_scale">every rating</string>
+    <string name="player_audio_unsupported_all">This source's sound cannot be played by the TV: choose another source</string>
 </resources>
