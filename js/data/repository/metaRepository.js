@@ -3,6 +3,23 @@ import { addonRepository } from "./addonRepository.js";
 import { MetaApi } from "../remote/api/metaApi.js";
 import { BoundedMap } from "../../core/storage/boundedMap.js";
 import { enrichEpisodeReleaseTimes } from "../../core/util/episodeReleaseTime.js";
+import { isVidaaNavigationBusy } from "../../ui/navigation/vidaaNavigationActivity.js";
+
+const RELEASE_TIMES_CALM_MS = 600;
+const RELEASE_TIMES_POLL_MS = 300;
+const RELEASE_TIMES_MAX_WAIT_MS = 10000;
+
+/** Runs secondary work once remote navigation is calm (VIDAA), or at once elsewhere. */
+export function whenNavigationCalm(task, startedAt = Date.now()) {
+  if (
+    !isVidaaNavigationBusy({ quietMs: RELEASE_TIMES_CALM_MS }) ||
+    Date.now() - startedAt >= RELEASE_TIMES_MAX_WAIT_MS
+  ) {
+    task();
+    return;
+  }
+  setTimeout(() => whenNavigationCalm(task, startedAt), RELEASE_TIMES_POLL_MS);
+}
 
 const INSTALLED_ADDONS_WAIT_MS = 750;
 
@@ -217,10 +234,15 @@ class MetaRepository {
     if (!Array.isArray(meta?.videos) || !meta.videos.length) {
       return;
     }
-    enrichEpisodeReleaseTimes(meta, id).then((timed) => {
-      if (timed !== meta && this.metaCache.get(cacheKey) === meta) {
-        this.metaCache.set(cacheKey, timed);
-      }
+    // The lookup and the rewrite of every episode wait until the remote is calm: they used
+    // to run in the middle of held navigation on the TV.
+    whenNavigationCalm(() => {
+      if (this.metaCache.get(cacheKey) !== meta) return;
+      enrichEpisodeReleaseTimes(meta, id).then((timed) => {
+        if (timed !== meta && this.metaCache.get(cacheKey) === meta) {
+          this.metaCache.set(cacheKey, timed);
+        }
+      });
     });
   }
 
