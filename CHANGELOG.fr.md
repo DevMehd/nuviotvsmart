@@ -1,17 +1,22 @@
 # Nuvio personnel — Historique des modifications
 
-## 2026-10-19 — 1.3.0
+## 2026-10-21 — 1.3.2
 
-- « Mon espace » rejoint le menu de la télé : Pour toi, Que regarder ?, Mes goûts, Calendrier, Statistiques et Listes partagées.
-- La télé prépare ses propres recommandations à partir des notes, de la bibliothèque et du visionnage. Les résultats enregistrés restent accessibles pendant l’actualisation.
+- Navigation plus fluide : le grand bandeau de l’accueil ne se met à jour que quand tu t’arrêtes sur une affiche, sa mise en page n’est plus recalculée à chaque déplacement, et les réglages ne sont plus relus à chaque touche. Les badges des sources s’affichent directement (sans conversion d’image) et ne sont plus tous préchargés au démarrage.
+- Son : les pistes audio portent leur vrai nom (langue, format, canaux) au lieu de « Audio 1, Audio 2 ». Une piste que la télé ne sait pas décoder (souvent DTS ou TrueHD) est évitée au démarrage au profit d’une piste lisible ; si aucune ne l’est, un message te propose de choisir une autre source. Dans la liste, ces sources portent le badge « Son non lu par la TV ».
+- Quitter la lecture : la vidéo est arrêtée et sa mémoire libérée en premier, pour éviter les plantages au retour.
+- « Mon espace » rejoint le menu de la télé : Pour toi, Que regarder ?, Mes goûts, Calendrier, Statistiques et Listes partagées. La télé prépare ses propres recommandations (notes, bibliothèque, visionnage), et les rangées « Pour toi » et « Parce que tu as aimé » apparaissent bien sur l’accueil.
 - Que regarder ? tient compte du temps disponible et de l’humeur, avec priorité aux épisodes en cours. Les fiches affichent une prédiction quand le profil est suffisamment renseigné.
-- Calendrier des séries suivies et statistiques par période, avec réunion du journal de tes appareils associés. Les pauses et déplacements dans une vidéo ne gonflent pas le temps regardé.
-- Listes partagées : créer, rejoindre par code, ajouter depuis une fiche, aimer, noter et marquer vu. Les changements hors connexion restent en attente d’envoi.
-- « Pas pour moi » : un appui long sur une affiche permet de refuser un titre (ou d’annuler le refus), synchronisé avec tes recommandations sur le téléphone.
-- Présentation rapprochée du mobile : couleurs, contrastes, surfaces et animations courtes. Les cinq notes sont regroupées dans un seul bouton pour laisser Lecture bien visible. Polices et icônes embarquées dans l’application (plus de chargement depuis Google Fonts).
-- Liste des sources : seules les lignes modifiées sont redessinées, la liste est allégée dès 40 sources et libérée à l’ouverture du lecteur.
-- Retour à la sélection de Mon espace, isolation par profil et délais de synchronisation bornés. Les contrôles de lecture depuis le téléphone restent disponibles.
+- Calendrier des séries suivies et statistiques par période, avec réunion du journal de tes appareils associés. Listes partagées : créer, rejoindre par code, ajouter depuis une fiche, aimer, noter et marquer vu.
 - Dates de sortie des épisodes corrigées : une date américaine sans heure (ex. VisionQuest le 20) n’apparaît plus « aujourd’hui » en France ; l’épisode compte comme sorti la nuit suivante. Quand l’heure exacte est connue (TVmaze), le calendrier et « Diffusion demain » l’affichent, par exemple « Diffusion demain · 03:00 ».
+- Présentation rapprochée du mobile : couleurs, contrastes et surfaces ; les cinq notes sont regroupées dans un seul bouton pour laisser Lecture bien visible. Les flèches maintenues ne sont plus freinées par un délai fixe.
+
+## 2026-10-19 — 1.3.1
+
+- Typographie et icônes locales : JetBrains Sans et Material Icons sont désormais embarquées directement sur la télé, sans dépendre d'appels réseau Google Fonts externes. Démarrage et affichage plus fluides et réactifs.
+- Action « Pas pour moi » : appui long sur une affiche permet désormais de marquer un titre « Pas pour moi » (ou d'annuler le refus) directement sur la télé, synchronisé avec les recommandations personnelles partagées avec le mobile.
+- Performances d'affichage : hachage FNV-1a optimisé pour la réconciliation des flux et régulateur anti-patinage de 90 ms sur les répétitions de la télécommande pour un défilement ultra-fluide sans à-coups sur MT9602.
+- Optimisations mémoire et fluidité : activation de la virtualisation des listes de flux dès 40 éléments (au lieu de 100), libération instantanée des textures graphiques de flux lors du lancement du lecteur vidéo pour préserver la mémoire du décodeur 4K/HDR, et suspension des notifications réseau superflues lors des défilements continus à la télécommande.
 
 ## 2026-10-16 — 1.2.8
 

@@ -34,6 +34,9 @@ export function personalHomeRows(rows = []) {
         type: "movie",
         apiType: "movie",
         items,
+        // Home rows read their titles from result.data.items (catalog format, nuv-090).
+        homeCatalogKey: id,
+        result: { status: "success", data: { items, hasMore: false } },
         isLoading: false,
         hasMore: false,
         supportsSkip: false
