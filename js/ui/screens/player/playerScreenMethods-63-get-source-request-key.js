@@ -3,6 +3,8 @@ import * as internals from "./playerScreenContext.js";
 import { Platform } from "../../../platform/index.js";
 import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 
+const VIDAA_SOURCE_CARD_WINDOW = 24;
+
 export function createPlayerScreenMethods63() {
   const {
     ensureWebOsImageProxyReady,
@@ -189,6 +191,11 @@ export function createPlayerScreenMethods63() {
       const badgePlacement = resolvePlayerSourceBadgePlacement(badgeSettings);
       const vidaaSourceFocusAttributes = Platform.isVidaa() ? ' tabindex="-1" role="button"' : "";
       this.ensureSourcesFocus(filters, filtered);
+      // VIDAA: render only the cards around the focus; syncSourcesFocusDom re-renders
+      // when the focus leaves this window (hundreds of cards froze 4K playback).
+      const focusIndex = this.sourcesFocus.zone === "list" ? Number(this.sourcesFocus.index || 0) : 0;
+      const windowStart = Platform.isVidaa() ? Math.max(0, Math.min(focusIndex - 6, filtered.length - VIDAA_SOURCE_CARD_WINDOW)) : 0;
+      const visibleSources = Platform.isVidaa() ? filtered.slice(windowStart, windowStart + VIDAA_SOURCE_CARD_WINDOW) : filtered;
 
       const nextMarkup = `
           <div class="player-sources-header">
@@ -227,8 +234,9 @@ export function createPlayerScreenMethods63() {
             ${
               !this.sourcesLoading && !filtered.length
                 ? `<div class="player-sources-empty">${escapeHtml(t("sources_no_streams", {}, "No streams found"))}</div>`
-                : filtered
-                    .map((stream, index) => {
+                : visibleSources
+                    .map((stream, visibleIndex) => {
+                      const index = windowStart + visibleIndex;
                       const focused = this.sourcesFocus.zone === "list" && this.sourcesFocus.index === index;
                       const isCurrent = this.streamCandidates[this.currentStreamIndex]?.url === stream.url;
                       const badges = renderPlayerSourceBadges(stream, badgeSettings);
