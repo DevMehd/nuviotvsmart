@@ -22,8 +22,14 @@ export function sizedImageUrl(url, width) {
  */
 export function createImageQueue({ concurrency = 3, isBusy = () => false, retryMs = 120 } = {}) {
   const pending = new Map();
-  let active = 0;
+  // Nodes holding a slot. Changing or removing src mid-load cancels it without load/error events.
+  const loading = new Set();
   let timer = null;
+
+  function release(node) {
+    node.onload = node.onerror = null;
+    loading.delete(node);
+  }
 
   function pump() {
     timer = null;
@@ -32,16 +38,13 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
       return;
     }
     for (const [node, url] of pending) {
-      if (active >= concurrency) return;
+      if (!loading.has(node) && loading.size >= concurrency) return;
       pending.delete(node);
-      active += 1;
-      const done = () => {
-        node.onload = node.onerror = null;
-        active -= 1;
+      loading.add(node);
+      node.onload = node.onerror = () => {
+        release(node);
         pump();
       };
-      node.onload = done;
-      node.onerror = done;
       node.src = url;
     }
   }
@@ -52,6 +55,10 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
       if (!url) {
         pending.delete(node);
         if (node.getAttribute?.("src")) node.removeAttribute("src");
+        if (loading.has(node)) {
+          release(node);
+          if (!timer) pump();
+        }
         return;
       }
       pending.delete(node);
@@ -61,6 +68,7 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
     },
     clear() {
       pending.clear();
+      loading.forEach(release);
       if (timer) clearTimeout(timer);
       timer = null;
     },

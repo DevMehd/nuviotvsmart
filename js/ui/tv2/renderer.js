@@ -135,7 +135,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       const index = focusedIndex(focus, rows);
       focusedNode =
         view?.slots.find(
-          (node) => node.dataset.index === String(index) && node.style.visibility !== "hidden"
+          (node) => node?.dataset.index === String(index) && node.style.visibility !== "hidden"
         ) || null;
     }
     focusedNode?.classList.add("focused");
