@@ -64,8 +64,6 @@ const { createHomeScreenMethods22 } =
 const { buildVisibleHomeCatalogDescriptors } =
   await import("../js/ui/screens/home/homeCatalogDescriptors.js");
 const { formatCatalogRowTitle } = await import("../js/ui/screens/home/homeUtils.js");
-const { t } =
-  await import("../js/ui/screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js");
 const { loadHomeRows } = await import("../js/ui/tv2/homeModel.js");
 const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
 
@@ -158,8 +156,10 @@ try {
   const loading = loadHomeRows({ onRows: (rows) => emits.push(rows) });
   await flush();
   const latest = () => emits.at(-1);
-  assert.equal(latest()[0].key, "continue_watching");
-  assert.equal(latest()[0].title, t("home.continueWatching", {}, "Continue Watching"));
+  assert.ok(
+    emits.every((rows) => !rows.some((row) => row.kind === "continue")),
+    "continueWatchingEnabled: false, no Continue Watching row"
+  );
   await advance(3499);
   assert.ok(
     !latest().some((row) => row.key === key("alpha", "movie", "c3")),

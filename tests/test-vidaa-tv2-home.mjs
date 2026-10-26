@@ -16,7 +16,7 @@ const { cardGeometry, railWindow, slotFor, rowsOffset } =
 const { createFocus, moveFocus, focusSnapshot, restoreFocus } =
   await import("../js/ui/tv2/focusModel.js");
 const { sizedImageUrl, createImageQueue } = await import("../js/ui/tv2/imagePipeline.js");
-const { continueWatchingRow } = await import("../js/ui/tv2/homeModel.js");
+const { continueWatchingRows } = await import("../js/ui/tv2/homeModel.js");
 const { buildVisibleHomeCatalogDescriptors } =
   await import("../js/ui/screens/home/homeCatalogDescriptors.js");
 const setting = await import("../js/ui/tv2/newHomeSetting.js");
@@ -110,7 +110,7 @@ queue.request(images[1], "");
 assert.equal(images[1].src, "", "a recycled card drops its image");
 queue.clear();
 
-// Model: disabled catalogs filtered, no cap; continue watching sorted by recency.
+// Model: disabled catalogs filtered, no cap; continue watching in display order.
 const addons = [
   {
     baseUrl: "https://addon.example",
@@ -127,10 +127,8 @@ const entries = buildVisibleHomeCatalogDescriptors(addons).visibleCatalogDescrip
 assert.equal(entries.length, 14, "every visible catalog, no 10-row cap");
 assert.equal(`${entries[0].addonId}_${entries[0].type}_${entries[0].catalogId}`, "addon_movie_c0");
 assert.equal(entries[0].type, "movie");
-const continueRow = continueWatchingRow([
-  { contentId: "old", contentType: "movie", updatedAt: 1, positionMs: 10, durationMs: 100 },
-  { contentId: "new", contentType: "movie", updatedAt: 2, positionMs: 10, durationMs: 100 }
-]);
+// Continue Watching keeps the display order (getRecent, then enrichment sorting), lot C3.
+const [continueRow] = continueWatchingRows([{ id: "new" }, { id: "old" }]);
 assert.equal(continueRow.kind, "continue");
 assert.deepEqual(
   continueRow.items.map((item) => item.id),

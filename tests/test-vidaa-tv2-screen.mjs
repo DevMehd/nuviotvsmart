@@ -137,9 +137,11 @@ function mountScreen() {
 }
 
 const originalAllProgress = watchProgressRepository.getAllForContinueWatching;
+const originalRecent = watchProgressRepository.getRecent;
 const originalAddons = addonRepository.getInstalledAddons;
 const originalCatalog = catalogRepository.getCatalog;
 watchProgressRepository.getAllForContinueWatching = async () => [];
+watchProgressRepository.getRecent = async () => [];
 addonRepository.getInstalledAddons = async () => [
   {
     baseUrl: "https://addon.example",
@@ -159,10 +161,11 @@ try {
     catalogResult = () => pending.promise;
     const { screen, calls } = mountScreen();
     await flush();
-    // Like the current Home, a catalog row appears once its page answers or times out.
+    // Like the current Home, a catalog row appears once its page answers or times out,
+    // and an empty Continue Watching row is not drawn once its progress is read (lot C3).
     assert.deepEqual(
       screen.rows.map((row) => `${row.key}:${row.status}`),
-      ["continue_watching:success"]
+      []
     );
     const before = calls.setRows;
     assert.ok(before > 0, "rows reached the renderer before cleanup");
@@ -182,7 +185,10 @@ try {
     const { screen, calls } = mountScreen();
     await flush();
     const filled = screen.rows.findIndex((row) => row.items.length);
-    assert.ok(filled > 0, "Continue Watching is empty");
+    assert.ok(
+      !screen.rows.some((row) => row.kind === "continue"),
+      "no empty Continue Watching row"
+    );
     assert.equal(screen.focus.row, filled);
     assert.equal(screen.view.focusedNode()?.dataset.itemId, "m0");
 
@@ -223,11 +229,17 @@ try {
     // Driver POSTER_SELECTOR: '.home-poster-card.focusable[data-action="openDetail"]'.
     assert.ok(node.classList.contains("home-poster-card") && node.classList.contains("focusable"));
     assert.equal(node.dataset.action, "openDetail");
-    assert.deepEqual(position(), ["0", "0"], "the empty Continue Watching row is not counted");
+    assert.deepEqual(position(), ["0", "0"], "first catalog row");
     screen.onKeyDown({ keyCode: 39 });
     assert.deepEqual(position(), ["0", "1"]);
-    const continueRow = { ...screen.rows[0], items: [{ id: "cw1", type: "movie", name: "CW" }] };
-    screen.applyRows([continueRow, ...screen.rows.slice(1)]);
+    const continueRow = {
+      key: "continue_watching",
+      kind: "continue",
+      title: "CW",
+      status: "success",
+      items: [{ id: "cw1", type: "movie", name: "CW" }]
+    };
+    screen.applyRows([continueRow, ...screen.rows]);
     assert.deepEqual(position(), ["1", "1"], "a filled Continue Watching row shifts navRow");
     screen.cleanup();
     assert.equal(screen.getCurrentFocusedNode(), null);
@@ -273,6 +285,7 @@ try {
   }
 } finally {
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;
+  watchProgressRepository.getRecent = originalRecent;
   addonRepository.getInstalledAddons = originalAddons;
   catalogRepository.getCatalog = originalCatalog;
   Recommendations.refresh = originalRefresh;

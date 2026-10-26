@@ -6,7 +6,19 @@ import { Recommendations } from "../../core/perso/personalRecommendations.js";
 import { personalContext, isCurrentContext } from "../../core/perso/personalContext.js";
 import { Platform } from "../../platform/index.js";
 import { isVidaaNavigationBusy } from "../navigation/vidaaNavigationActivity.js";
-import { normalizeContinueWatchingItem } from "../screens/home/homeScreenHelpers-09-normalize-continue-watching-item.js";
+import {
+  watchedItemsRepository,
+  StartupSyncService,
+  WatchProgressSource,
+  CW_MAX_VISIBLE_ITEMS,
+  CW_MAX_NEXT_UP_LOOKUPS,
+  partitionContinueWatchingRows,
+  buildVisibleContinueWatchingItems,
+  buildCompleteContinueWatchingDisplay,
+  getContinueWatchingNextUpSeedOptions,
+  readContinueWatchingDisplaySnapshot,
+  shouldProtectContinueWatchingDisplay
+} from "../screens/home/homeScreenContext.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import { buildVisibleHomeCatalogDescriptors } from "../screens/home/homeCatalogDescriptors.js";
 import { HOME_ADDON_MANIFEST_TIMEOUT_MS } from "../screens/home/homeConstants.js";
@@ -16,23 +28,30 @@ import { createHomeDataHost } from "./homeDataHost.js";
 
 // Rows of the new TV Home (nuv-091), without DOM: {key, kind, title, items, status, ...}.
 
-export const HOME_MODEL_LIMITS = Object.freeze({
-  continueWatching: 20
-});
-
-export function continueWatchingRow(progressItems = []) {
-  const items = [...progressItems]
-    .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
-    .map(normalizeContinueWatchingItem)
-    .filter((item) => item?.id)
-    .slice(0, HOME_MODEL_LIMITS.continueWatching);
-  return {
-    key: "continue_watching",
-    kind: "continue",
-    title: t("home.continueWatching", {}, "Continue Watching"),
-    items,
-    status: "success"
-  };
+/**
+ * Current Home Continue Watching rows (render L134-263): the main row while loading or filled,
+ * and in split_upcoming mode an "Upcoming" row, drawn with the same continue cards.
+ */
+export function continueWatchingRows(display = [], { loading = false, sortMode } = {}) {
+  const { main, upcoming } = partitionContinueWatchingRows(display, sortMode);
+  const rows = [];
+  if (main.length || loading)
+    rows.push({
+      key: "continue_watching",
+      kind: "continue",
+      title: t("home.continueWatching", {}, "Continue Watching"),
+      items: main,
+      status: main.length ? "success" : "loading"
+    });
+  if (upcoming.length)
+    rows.push({
+      key: "upcoming_section",
+      kind: "continue",
+      title: t("upcoming_section_title", {}, "Upcoming"),
+      items: upcoming,
+      status: "success"
+    });
+  return rows;
 }
 
 export function personalRows() {
@@ -51,19 +70,43 @@ export function personalRows() {
  */
 export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
   let rows = [];
-  const emit = (next) => {
+  let continueRows = [];
+  let catalogRows = [];
+  const emit = () => {
     if (!isCurrent()) return false;
-    rows = next;
+    rows = [...continueRows, ...catalogRows, ...personalRows()];
     onRows?.(rows);
     return true;
   };
 
-  const progress = await watchProgressRepository.getAllForContinueWatching().catch(() => []);
-  const continueRow = continueWatchingRow(progress);
-  // Personal rows always come last, as in the current Home.
-  if (!emit([continueRow, ...personalRows()])) return rows;
-
   const host = createHomeDataHost({ layoutPrefs: LayoutPreferences.get() });
+  // Continue Watching meta requests wait for the first catalog batch, so first navigation stays smooth.
+  let releaseEnrichment;
+  const firstBatch = new Promise((resolve) => (releaseEnrichment = resolve));
+  if (host.layoutPrefs.continueWatchingEnabled !== false) {
+    // Current Home mount: the saved display paints first; without one, the CW placeholder anchors focus.
+    host.continueWatchingDisplay = readContinueWatchingDisplaySnapshot(
+      watchProgressRepository.getContinueWatchingSourceKey()
+    );
+    host.continueWatchingHydratedFromSnapshot = host.continueWatchingDisplay.length > 0;
+    host.continueWatchingInitialResolved = host.continueWatchingHydratedFromSnapshot;
+    const publish = (loading) => {
+      continueRows = continueWatchingRows(host.continueWatchingDisplay, {
+        loading,
+        sortMode: host.layoutPrefs.continueWatchingSortMode
+      });
+      emit();
+    };
+    continueRows = continueWatchingRows(host.continueWatchingDisplay, {
+      loading: !host.continueWatchingHydratedFromSnapshot,
+      sortMode: host.layoutPrefs.continueWatchingSortMode
+    });
+    if (!emit()) return rows;
+    void loadContinueWatching(host, { isCurrent, firstBatch, publish }).catch(
+      continueWatchingFailed(publish)
+    );
+  } else if (!emit()) return rows;
+
   const addons = await addonRepository
     .getInstalledAddons({
       includeMediaServers: true,
@@ -78,13 +121,13 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
   const fetched = new Map();
   // Current Home order: pinned collections, then catalogs and collections in store order.
   const emitOrdered = () => {
-    const ordered = host
+    catalogRows = host
       .sortAndFilterRows([...fetched.values()], host.collections)
       .map((row) =>
         row.rowKind === "collection" ? collectionRow(row) : catalogRow(row, showTypeSuffix)
       )
       .filter((row) => row.status !== "success" || row.items.length);
-    return emit([continueRow, ...ordered, ...personalRows()]);
+    return emit();
   };
   if (!emitOrdered()) return rows;
   // Same batches as the current Home: visible first in parallel, then deferred batches.
@@ -98,6 +141,7 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
   };
   const initialCount = host.getInitialCatalogLoadCount();
   await host.fetchCatalogRows(visibleCatalogDescriptors.slice(0, initialCount), options);
+  releaseEnrichment();
   await host.fetchCatalogRows(visibleCatalogDescriptors.slice(initialCount), {
     ...options,
     batchSize: host.getDeferredCatalogBatchSize(),
@@ -117,6 +161,125 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
     })
     .catch(() => {});
   return rows;
+}
+
+const continueWatchingFailed = (publish) => (error) => {
+  console.warn("Continue watching load failed", error);
+  publish(false);
+};
+
+/**
+ * Current Home Continue Watching load (startHomeContinueWatchingLoad) without its render state:
+ * getRecent is the list, all progress only seeds Next Up; raw items publish at once, enrichment
+ * (meta, TMDB, Next Up) runs after `firstBatch`; an empty local list waits for the startup pull.
+ */
+async function loadContinueWatching(host, { isCurrent, firstBatch, publish, retry = false }) {
+  const generation = (host.continueWatchingGeneration || 0) + 1;
+  host.continueWatchingGeneration = generation;
+  const sourceKey = watchProgressRepository.getContinueWatchingSourceKey();
+  const current = () =>
+    isCurrent() &&
+    generation === host.continueWatchingGeneration &&
+    watchProgressRepository.getContinueWatchingSourceKey() === sourceKey;
+  const syncSource =
+    watchProgressRepository.getContinueWatchingSource() === WatchProgressSource.NUVIO_SYNC;
+  const pendingAtLoad = syncSource && StartupSyncService.isCurrentProfilePullPending();
+  const errors = {};
+  const [allProgress, recent, watchedItems] = await Promise.all([
+    watchProgressRepository
+      .getAllForContinueWatching()
+      .catch((error) => ((errors.all = error), [])),
+    watchProgressRepository
+      .getRecent(CW_MAX_VISIBLE_ITEMS, { enrichMetadata: false })
+      .catch((error) => ((errors.recent = error), [])),
+    watchedItemsRepository.getAll(2000).catch(() => [])
+  ]);
+  if (!current()) return;
+  const stillPending = syncSource && StartupSyncService.isCurrentProfilePullPending();
+  const pull = syncSource ? StartupSyncService.getCurrentProfilePullPromise() : null;
+  const pulledDuringLoad = pendingAtLoad && !stillPending;
+  const remote = watchProgressRepository.getContinueWatchingRemoteProgressState();
+  const hasLoadedRemoteProgress = Boolean(
+    !errors.all &&
+    !errors.recent &&
+    !pendingAtLoad &&
+    !stillPending &&
+    remote?.sourceKey === sourceKey &&
+    remote.loaded === true
+  );
+  const candidates = host
+    .selectNextUpProgressCandidates(allProgress, recent, watchedItems, {
+      ...getContinueWatchingNextUpSeedOptions(),
+      nextUpFromFurthestEpisode: host.layoutPrefs.nextUpFromFurthestEpisode
+    })
+    .slice(0, CW_MAX_NEXT_UP_LOOKUPS);
+  const hasWork = recent.length + candidates.length > 0;
+  const hydrated = host.continueWatchingHydratedFromSnapshot;
+  // Progress read during the startup pull is read again once it ends (current Home refreshAfterStartupPull).
+  if (!retry && (pull || pulledDuringLoad)) {
+    void Promise.resolve(pull)
+      .catch(() => {})
+      .then(
+        () =>
+          current() && loadContinueWatching(host, { isCurrent, firstBatch, publish, retry: true })
+      )
+      .catch(continueWatchingFailed(publish));
+  }
+  // Only an empty local list waits for the authoritative pull, like Android.
+  if (
+    !host.continueWatchingInitialResolved &&
+    !hasWork &&
+    (pull || pulledDuringLoad) &&
+    !errors.all &&
+    !errors.recent
+  )
+    return publish(true);
+  if (!hydrated) {
+    host.continueWatchingDisplay = buildVisibleContinueWatchingItems(recent, {
+      requireArtwork: false
+    });
+    if (host.continueWatchingDisplay.length) host.persistContinueWatchingSnapshot();
+    publish(hasWork && !host.continueWatchingDisplay.length);
+  }
+  host.continueWatchingInitialResolved = true;
+  const protect = (nextCount) =>
+    shouldProtectContinueWatchingDisplay({
+      existingCount: hydrated ? host.continueWatchingDisplay.length : 0,
+      nextCount,
+      hasLoadedRemoteProgress
+    });
+  if (!hasWork) {
+    if ((hydrated && (errors.all || errors.recent)) || protect(0)) return publish(false);
+    host.continueWatchingDisplay = [];
+    host.clearContinueWatchingSnapshot();
+    return publish(false);
+  }
+  await firstBatch;
+  if (!current()) return;
+  try {
+    const enriched = await host.enrichContinueWatching(recent, {
+      allProgress,
+      watchedItems,
+      nextUpProgressCandidates: candidates
+    });
+    if (!current()) return;
+    const strict = buildVisibleContinueWatchingItems(enriched, { requireArtwork: true });
+    const complete = buildCompleteContinueWatchingDisplay(enriched);
+    const loose = buildVisibleContinueWatchingItems(enriched, { requireArtwork: false });
+    const next =
+      strict.length === complete.length
+        ? strict
+        : loose.length >= complete.length
+          ? loose
+          : complete;
+    if (protect(next.length)) return publish(false);
+    host.continueWatchingDisplay = next;
+    if (next.length) host.persistContinueWatchingSnapshot();
+    else host.clearContinueWatchingSnapshot();
+  } catch (error) {
+    console.warn("Continue watching async enrichment failed", error);
+  }
+  publish(false);
 }
 
 const collectionItems = new WeakMap();

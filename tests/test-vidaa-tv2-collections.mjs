@@ -99,14 +99,8 @@ try {
   const emits = [];
   await loadHomeRows({ onRows: (rows) => emits.push(rows) });
   const rows = emits.at(-1);
-  const expected = [
-    "continue_watching",
-    "collection_pinned",
-    key("c1"),
-    "collection_mid",
-    key("c0"),
-    "perso:for-you"
-  ];
+  // continueWatchingEnabled: false, so no Continue Watching row (lot C3).
+  const expected = ["collection_pinned", key("c1"), "collection_mid", key("c0"), "perso:for-you"];
   assert.deepEqual(
     rows.map((row) => row.key),
     expected,
@@ -122,10 +116,10 @@ try {
   const old = createHomeScreenMethods22().sortAndFilterRows(fetched, collections);
   assert.deepEqual(
     old.map((row) => row.homeCatalogKey),
-    expected.slice(1, -1)
+    expected.slice(0, -1)
   );
 
-  const pinned = rows[1];
+  const pinned = rows[0];
   assert.equal(pinned.kind, "collection");
   assert.equal(pinned.title, "Pinned");
   assert.equal(pinned.status, "success");
@@ -133,10 +127,10 @@ try {
   assert.equal(pinned.items[0].id, "collection:pinned:p1");
   assert.equal(pinned.items[0].tileShape, "LANDSCAPE");
   assert.deepEqual(
-    rows[3].items.map((item) => item.folderId),
+    rows[2].items.map((item) => item.folderId),
     ["m1", "m2"]
   );
-  assert.equal(rows[3].tileShape, "SQUARE");
+  assert.equal(rows[2].tileShape, "SQUARE");
 
   // Recommendations refresh once after the load; a changed result is re-emitted, last.
   assert.ok(refreshDone, "Recommendations.refresh called");
