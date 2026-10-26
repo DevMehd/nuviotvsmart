@@ -124,7 +124,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  border-radius: 16px;
+  /* posterCardCornerRadiusDp * 2, set by the renderer (current Home --home-poster-radius). */
+  border-radius: var(--tv2-card-radius, 24px);
   overflow: hidden;
   background: var(--card-bg);
 }
@@ -149,6 +150,81 @@
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Watched mark: the shared .title-watched-badge (components-11.css), shown on watched titles. */
+.tv2-card:not(.is-watched) .title-watched-badge {
+  display: none;
+}
+
+/* Modern landscape posters (components-14/17.css): logo or title plus subtitle over a gradient. */
+.tv2-card-overlay {
+  display: none;
+}
+
+.tv2-card.is-landscape::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 54%;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.76) 100%);
+  pointer-events: none;
+}
+
+.tv2-card.is-landscape .tv2-card-overlay {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  z-index: 2;
+  display: block;
+  max-width: 76%;
+}
+
+.tv2-card-logo {
+  display: block;
+  width: 100%;
+  max-width: 68%;
+  max-height: 56px;
+  object-fit: contain;
+  object-position: left bottom;
+}
+
+.tv2-card-logo:not([src]) {
+  display: none;
+}
+
+.tv2-card-overlay-title {
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 600;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.tv2-card-overlay-subtitle {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.58);
+}
+
+/* Collection folder without a cover: its emoji, centred (current Home .home-collection-emoji). */
+.tv2-card.tv2-card-emoji .tv2-card-title {
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  text-shadow: none;
 }
 
 .tv2-card.focused {

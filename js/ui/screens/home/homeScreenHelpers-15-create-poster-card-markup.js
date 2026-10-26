@@ -289,40 +289,17 @@ export function createPosterCardMarkup(
     `;
   }
   const isLoading = Boolean(item?.isLoading);
-  const normalized = customPosterForItem(
-    normalizeCatalogItem(item, itemType),
-    Router.getCurrent() === "folderDetail" || rowData?.rowKind === "collection" ? "collections" : "home",
-    layoutMode === "modern" && preferLandscapePoster ? "landscape" : "poster"
+  const { normalized, subtitle, useLandscapePoster, backdropSrc, posterSrc, cardPosterSrc, expandedVisualSrc, watched } = posterCardModel(
+    item,
+    rowData,
+    { itemType, layoutMode, preferLandscapePoster, watchedTitleIds }
   );
-  const subtitle = buildPosterSubtitle(normalized, layoutMode);
-  const preferredLandscapePosterSrc = firstNonEmpty(normalized.landscapePoster);
-  const useLandscapePoster = layoutMode === "modern" && preferLandscapePoster;
-  const landscapeVisualSrc = firstNonEmpty(
-    preferredLandscapePosterSrc,
-    normalized.background,
-    normalized.backdrop,
-    normalized.backdropUrl,
-    normalized.poster,
-    normalized.thumbnail
-  );
-  const rawBackdropSrc = useLandscapePoster
-    ? landscapeVisualSrc
-    : firstNonEmpty(preferredLandscapePosterSrc, normalized.background, normalized.backdrop, normalized.backdropUrl, normalized.poster);
-  const rawPosterSrc = useLandscapePoster
-    ? landscapeVisualSrc
-    : firstNonEmpty(normalized.poster, normalized.thumbnail, preferredLandscapePosterSrc, normalized.backdrop, normalized.backdropUrl);
-  const backdropSrc = getVidaaArtworkUrl(normalizeTmdbBackdropUrl(rawBackdropSrc));
-  const posterSrc = useLandscapePoster ? backdropSrc : getVidaaArtworkUrl(normalizeTmdbPosterUrl(rawPosterSrc));
-  // A card is 212–232px wide in portrait mode and up to 418px in landscape
-  // mode. Keep its decoded artwork separate from the hero/expanded source.
-  const cardPosterSrc = Platform.isVidaa() ? limitTmdbImageWidth(posterSrc, useLandscapePoster ? 500 : 342) : posterSrc;
-  const expandedVisualSrc = firstNonEmpty(backdropSrc, posterSrc);
   const expandedClass = isExpanded ? " is-expanded" : "";
   const landscapeClass = useLandscapePoster ? " is-landscape" : "";
   const focusableClass = isLoading ? "" : " focusable";
   const loadingClass = isLoading ? " home-poster-card-loading" : "";
   const shouldShowLabels = showLabels && !isLoading && !suppressPosterText;
-  const watchedBadge = !isLoading && isTitleItemWatched(normalized, watchedTitleIds) ? renderTitleWatchedBadge() : "";
+  const watchedBadge = !isLoading && watched ? renderTitleWatchedBadge() : "";
   const titleWidths = [116, 128, 104, 132, 120, 140, 110, 124, 136, 112];
   const subtitleWidths = [82, 96, 74, 90, 88, 100, 80, 94, 86, 92];
   const safeIndex = Math.max(0, Number(itemIndex) || 0);
@@ -413,4 +390,54 @@ export function createPosterCardMarkup(
       }
     </article>
   `;
+}
+
+/**
+ * Catalog card artwork and watched state, shared by the current Home's markup and the new TV Home
+ * (nuv-091). `settings` defaults to the stored layout preferences (custom poster pattern).
+ */
+export function posterCardModel(
+  item,
+  rowData = null,
+  { itemType, layoutMode = "classic", preferLandscapePoster = false, watchedTitleIds = null, settings } = {}
+) {
+  const normalized = customPosterForItem(
+    normalizeCatalogItem(item, itemType),
+    Router.getCurrent() === "folderDetail" || rowData?.rowKind === "collection" ? "collections" : "home",
+    layoutMode === "modern" && preferLandscapePoster ? "landscape" : "poster",
+    settings
+  );
+  const subtitle = buildPosterSubtitle(normalized, layoutMode);
+  const preferredLandscapePosterSrc = firstNonEmpty(normalized.landscapePoster);
+  const useLandscapePoster = layoutMode === "modern" && preferLandscapePoster;
+  const landscapeVisualSrc = firstNonEmpty(
+    preferredLandscapePosterSrc,
+    normalized.background,
+    normalized.backdrop,
+    normalized.backdropUrl,
+    normalized.poster,
+    normalized.thumbnail
+  );
+  const rawBackdropSrc = useLandscapePoster
+    ? landscapeVisualSrc
+    : firstNonEmpty(preferredLandscapePosterSrc, normalized.background, normalized.backdrop, normalized.backdropUrl, normalized.poster);
+  const rawPosterSrc = useLandscapePoster
+    ? landscapeVisualSrc
+    : firstNonEmpty(normalized.poster, normalized.thumbnail, preferredLandscapePosterSrc, normalized.backdrop, normalized.backdropUrl);
+  const backdropSrc = getVidaaArtworkUrl(normalizeTmdbBackdropUrl(rawBackdropSrc));
+  const posterSrc = useLandscapePoster ? backdropSrc : getVidaaArtworkUrl(normalizeTmdbPosterUrl(rawPosterSrc));
+  // A card is 212–232px wide in portrait mode and up to 418px in landscape
+  // mode. Keep its decoded artwork separate from the hero/expanded source.
+  const cardPosterSrc = Platform.isVidaa() ? limitTmdbImageWidth(posterSrc, useLandscapePoster ? 500 : 342) : posterSrc;
+  const expandedVisualSrc = firstNonEmpty(backdropSrc, posterSrc);
+  return {
+    normalized,
+    subtitle,
+    useLandscapePoster,
+    backdropSrc,
+    posterSrc,
+    cardPosterSrc,
+    expandedVisualSrc,
+    watched: isTitleItemWatched(normalized, watchedTitleIds)
+  };
 }

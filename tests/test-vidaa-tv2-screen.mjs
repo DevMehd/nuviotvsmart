@@ -105,6 +105,9 @@ const { watchProgressRepository } =
 const { addonRepository } = await import("../js/data/repository/addonRepository.js");
 const { catalogRepository } = await import("../js/data/repository/catalogRepository.js");
 const { NewHomeScreen } = await import("../js/ui/tv2/newHomeScreen.js");
+// The router fills this singleton in the app; card models read the current route (lot C4).
+const { Router } = await import("../js/ui/navigation/routerState.js");
+Router.getCurrent = () => "home";
 const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
 
 const catalogPage = {

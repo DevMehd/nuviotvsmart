@@ -26,7 +26,7 @@ const { Platform } = await import("../js/platform/index.js");
 
 // Geometry: same formulas as the current Home, default 126dp.
 const geometry = cardGeometry({});
-assert.deepEqual(geometry.poster, { width: 229, height: 344 });
+assert.deepEqual(geometry.poster, { width: 229, height: 343 });
 assert.equal(geometry.landscape.width, 419);
 assert.equal(
   cardGeometry({ posterCardWidthDp: 10 }).poster.width,
@@ -74,14 +74,15 @@ assert.deepEqual(
 );
 assert.deepEqual(restoreFocus({ rowKey: "gone", index: 3 }, rows), createFocus());
 
-// Images: TMDB size buckets; queue bounded, latest request per node wins, waits while busy.
+// Images: TMDB size buckets, never upsized (lot C4); queue bounded, latest request per node
+// wins, waits while busy.
 assert.equal(
   sizedImageUrl("https://image.tmdb.org/t/p/original/x.jpg", 229),
   "https://image.tmdb.org/t/p/w342/x.jpg"
 );
 assert.equal(
   sizedImageUrl("https://image.tmdb.org/t/p/w500/x.jpg", 1280),
-  "https://image.tmdb.org/t/p/w1280/x.jpg"
+  "https://image.tmdb.org/t/p/w500/x.jpg"
 );
 assert.equal(sizedImageUrl("", 300), "");
 const fakeImage = () => ({

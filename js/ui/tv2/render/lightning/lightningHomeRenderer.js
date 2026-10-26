@@ -9,7 +9,7 @@ import {
 } from "../../railEngine.js";
 import { focusedIndex } from "../../focusModel.js";
 import { sizedImageUrl } from "../../imagePipeline.js";
-import { fillCard, navRowOf, setNavPosition } from "../../renderer.js";
+import { cardImageUrl, fillCard, navRowOf, setNavPosition } from "../../renderer.js";
 import { markWebglFailed } from "../../newHomeSetting.js";
 import { buildSdfAtlas } from "./sdfAtlas.js";
 
@@ -442,12 +442,11 @@ export function createLightningHomeRenderer(
           card.index = i;
           card.rowKey = row.key;
           card.title.text = String(item.name || item.title || "");
+          card.url = cardImageUrl(row, item, size, layout);
         }
         card.node.alpha = 1;
         card.node.x = i * pitch;
-        const source =
-          row.kind === "continue" ? item.landscapePoster || item.backdrop : item.poster;
-        imageQueue.request(card.image, loadImages ? sizedImageUrl(source, size.width) : "");
+        imageQueue.request(card.image, loadImages ? card.url : "");
         if (rowIndex === focus.row && i === focusedIndex(focus, rows)) ringCard = card;
       }
       view.track.x = RAIL_LEFT + win.offset;

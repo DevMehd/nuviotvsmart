@@ -32,6 +32,7 @@ export const NewHomeScreen = {
     this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
     this.viewOptions = { geometry: cardGeometry(layout), imageQueue: this.imageQueue, layout };
     this.profile = null;
+    this.watchedTitleIds = null;
     this.view = this.createView(token);
     this.rows = [];
     this.focus = createFocus();
@@ -47,7 +48,8 @@ export const NewHomeScreen = {
       .catch(() => {});
     void loadHomeRows({
       isCurrent: () => token === this.token,
-      onRows: (rows) => this.applyRows(rows)
+      onRows: (rows) => this.applyRows(rows),
+      onWatched: (ids) => this.applyWatched(ids)
     });
   },
 
@@ -77,6 +79,7 @@ export const NewHomeScreen = {
     this.view?.destroy();
     this.view = this.domView();
     if (this.profile) this.view.setProfile(this.profile);
+    if (this.watchedTitleIds) this.view.setWatched(this.watchedTitleIds);
     this.view.setRows(this.rows);
     this.render();
     this.view.setHero(this.currentItem());
@@ -103,6 +106,13 @@ export const NewHomeScreen = {
     this.view.setRows(rows);
     this.render();
     this.scheduleHero();
+  },
+
+  /** Watched badges: DOM only, the WebGL renderer has no setWatched. */
+  applyWatched(ids) {
+    this.watchedTitleIds = ids;
+    this.view?.setWatched?.(ids);
+    this.render();
   },
 
   render() {

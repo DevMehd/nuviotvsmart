@@ -3,13 +3,36 @@
 /** Card sizes in px, same formulas as buildModernHomeSizingStyle (homeScreenHelpers-01). */
 export function cardGeometry(layoutPrefs = {}) {
   const baseWidthDp = Math.max(72, Number(layoutPrefs?.posterCardWidthDp ?? 126) || 126);
-  const posterWidth = Math.round(baseWidthDp * 0.84 * 1.08 * 2);
+  const radiusDp = Math.max(0, Number(layoutPrefs?.posterCardCornerRadiusDp ?? 12) || 12);
   const landscapeWidth = Math.round(baseWidthDp * 1.24 * 1.34 * 2);
   return {
-    poster: { width: posterWidth, height: Math.round(posterWidth * 1.5) },
+    poster: {
+      width: Math.round(baseWidthDp * 0.84 * 1.08 * 2),
+      height: Math.round(baseWidthDp * 1.5 * 0.84 * 1.08 * 2)
+    },
     landscape: { width: landscapeWidth, height: Math.round(landscapeWidth / 1.77) },
-    gap: 24
+    gap: 24,
+    radius: Math.round(radiusDp * 2),
+    // Current Home render (methods-23): landscape catalog posters are a modern-only preference.
+    landscapePosters:
+      String(layoutPrefs?.homeLayout || "classic").toLowerCase() === "modern" &&
+      Boolean(layoutPrefs?.modernLandscapePostersEnabled)
   };
+}
+
+/**
+ * Card size of a row: continue cards and landscape posters are landscape; collection rows follow
+ * their tile shape (normalizeCollectionPosterShape: POSTER, LANDSCAPE, else SQUARE).
+ */
+export function rowCardSize(row, geometry) {
+  if (row.kind === "continue") return geometry.landscape;
+  if (row.kind === "collection") {
+    const shape = String(row.tileShape || "").toUpperCase();
+    if (shape === "POSTER") return geometry.poster;
+    if (shape === "LANDSCAPE" || shape === "WIDE") return geometry.landscape;
+    return { width: geometry.poster.height, height: geometry.poster.height };
+  }
+  return geometry.landscapePosters ? geometry.landscape : geometry.poster;
 }
 
 /**
@@ -48,7 +71,7 @@ export function homeLayout(rows, focus, geometry) {
   const heights = [];
   let top = 0;
   const placed = rows.map((row) => {
-    const size = row.kind === "continue" ? geometry.landscape : geometry.poster;
+    const size = rowCardSize(row, geometry);
     const pitch = size.width + geometry.gap;
     const win = railWindow({
       count: row.items.length,

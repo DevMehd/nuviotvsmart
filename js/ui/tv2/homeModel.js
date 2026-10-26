@@ -24,6 +24,8 @@ import { buildVisibleHomeCatalogDescriptors } from "../screens/home/homeCatalogD
 import { HOME_ADDON_MANIFEST_TIMEOUT_MS } from "../screens/home/homeConstants.js";
 import { formatCatalogRowTitle } from "../screens/home/homeUtils.js";
 import { personalHomeRows } from "../screens/perso/personalUi.js";
+import { watchedTitleStateRepository } from "../../data/repository/watchedTitleStateRepository.js";
+import { buildWatchedTitleIdSet } from "../components/watchedTitleBadge.js";
 import { createHomeDataHost } from "./homeDataHost.js";
 
 // Rows of the new TV Home (nuv-091), without DOM: {key, kind, title, items, status, ...}.
@@ -66,9 +68,9 @@ export function personalRows() {
 
 /**
  * Loads rows progressively: emits the list after each source. `isCurrent` lets a newer load
- * (profile change, remount) discard this one.
+ * (profile change, remount) discard this one. `onWatched` receives the watched title ids.
  */
-export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
+export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true } = {}) {
   let rows = [];
   let continueRows = [];
   let catalogRows = [];
@@ -119,6 +121,8 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
   const { visibleCatalogDescriptors } = buildVisibleHomeCatalogDescriptors(addons);
   const showTypeSuffix = host.layoutPrefs.catalogTypeSuffixEnabled !== false;
   const fetched = new Map();
+  const refreshWatched = watchedTitleRefresher({ fetched, isCurrent, onWatched });
+  void refreshWatched();
   // Current Home order: pinned collections, then catalogs and collections in store order.
   const emitOrdered = () => {
     catalogRows = host
@@ -136,7 +140,7 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
     shouldContinue: isCurrent,
     onRow: (row) => {
       fetched.set(row.homeCatalogKey, row);
-      emitOrdered();
+      if (emitOrdered()) void refreshWatched();
     }
   };
   const initialCount = host.getInitialCatalogLoadCount();
@@ -161,6 +165,36 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
     })
     .catch(() => {});
   return rows;
+}
+
+/**
+ * Current Home watched marks (load-data + refreshWatchedTitleState): stored watched items, then
+ * their Trakt series projection over the fetched rows' items; the latest call wins and an
+ * unchanged id set is not published again.
+ */
+function watchedTitleRefresher({ fetched, isCurrent, onWatched }) {
+  const base = watchedItemsRepository.getAll(2000).catch(() => []);
+  let request = 0;
+  let published = null;
+  return async () => {
+    const current = ++request;
+    const baseItems = await base;
+    const items = [...fetched.values()].flatMap((row) => row.result?.data?.items || []);
+    const projected = items.length
+      ? await watchedTitleStateRepository
+          .getTitleWatchedItems(items, { baseWatchedItems: baseItems, limit: 2000 })
+          .catch((error) => {
+            console.warn("Home watched title projection failed", error);
+            return baseItems;
+          })
+      : baseItems;
+    if (current !== request || !isCurrent()) return;
+    const ids = buildWatchedTitleIdSet(Array.isArray(projected) ? projected : baseItems);
+    const key = [...ids].sort().join("\n");
+    if (key === published) return;
+    published = key;
+    onWatched?.(ids);
+  };
 }
 
 const continueWatchingFailed = (publish) => (error) => {
