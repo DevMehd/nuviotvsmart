@@ -105,6 +105,8 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
     batchYieldMs: Platform.isVidaa() ? 120 : 0
   });
   // Like refreshPersonalHome: refresh recommendations once, re-emit only when they changed.
+  // A Home left during the load (Detail, player) starts no refresh, as in the current Home.
+  if (!isCurrent()) return rows;
   const ctx = personalContext();
   const personalItems = (list) =>
     JSON.stringify(list.filter((row) => row.key.startsWith("perso:")).map((row) => row.items));

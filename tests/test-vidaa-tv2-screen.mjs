@@ -105,6 +105,7 @@ const { watchProgressRepository } =
 const { addonRepository } = await import("../js/data/repository/addonRepository.js");
 const { catalogRepository } = await import("../js/data/repository/catalogRepository.js");
 const { NewHomeScreen } = await import("../js/ui/tv2/newHomeScreen.js");
+const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
 
 const catalogPage = {
   status: "success",
@@ -148,6 +149,9 @@ addonRepository.getInstalledAddons = async () => [
   }
 ];
 catalogRepository.getCatalog = () => catalogResult();
+// The post-load recommendation refresh (lot C2) is covered by test-vidaa-tv2-collections.mjs.
+const originalRefresh = Recommendations.refresh;
+Recommendations.refresh = async () => {};
 try {
   // cleanup() before getCatalog resolves: the late result never reaches the renderer.
   {
@@ -271,6 +275,7 @@ try {
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;
   addonRepository.getInstalledAddons = originalAddons;
   catalogRepository.getCatalog = originalCatalog;
+  Recommendations.refresh = originalRefresh;
 }
 
 console.log("PASS: new TV Home screen with real rows and DOM renderer");

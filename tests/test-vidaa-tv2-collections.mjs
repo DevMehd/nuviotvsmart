@@ -70,6 +70,7 @@ const key = (id) => buildCatalogOrderKey("alpha", "movie", id);
 const title = (id) => ({ type: "movie", id, name: id });
 let personal = { forYou: [title("tt1")], because: [], becauseTitle: null };
 let refreshDone;
+let refreshCalls = 0;
 
 replace(Router, "getCurrent", () => "home");
 replace(LayoutPreferences, "get", () => ({ homeLayout: "modern", continueWatchingEnabled: false }));
@@ -81,7 +82,10 @@ replace(catalogRepository, "getCatalog", async (args) => ({
 }));
 replace(watchProgressRepository, "getAllForContinueWatching", async () => []);
 replace(Recommendations, "snapshot", () => personal);
-replace(Recommendations, "refresh", () => new Promise((resolve) => (refreshDone = resolve)));
+replace(Recommendations, "refresh", () => {
+  refreshCalls += 1;
+  return new Promise((resolve) => (refreshDone = resolve));
+});
 
 try {
   HomeCatalogStore.set(
@@ -148,6 +152,16 @@ try {
       .map((row) => row.key),
     ["perso:for-you", "perso:because"]
   );
+
+  // A Home left during the load (cleanup, profile change) starts no recommendation refresh.
+  let current = true;
+  replace(catalogRepository, "getCatalog", async (args) => {
+    current = false;
+    return { status: "success", data: { items: [title(`${args.catalogId}-a`)] } };
+  });
+  const callsBefore = refreshCalls;
+  await loadHomeRows({ isCurrent: () => current, onRows: () => {} });
+  assert.equal(refreshCalls, callsBefore, "no refresh after the Home was left");
 
   // OK on a collection folder opens the folder, not Detail.
   const navigations = [];
