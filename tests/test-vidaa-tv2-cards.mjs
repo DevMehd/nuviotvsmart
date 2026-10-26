@@ -286,6 +286,20 @@ try {
   view.setWatched(new Set());
   view.update(rows, focus);
   assert.equal(first.classList.contains("is-watched"), false, "badge hidden again");
+  // Same row key and index, new item (Continue Watching enrichment, recommendations refresh).
+  const firstImage = first.querySelector(".tv2-card-image");
+  rows[0] = {
+    ...rows[0],
+    items: [{ ...rows[0].items[0], id: "tt3", background: tmdb("w780", "new") }, rows[0].items[1]]
+  };
+  view.setRows(rows);
+  view.update(rows, focus);
+  assert.equal(
+    requests.filter((r) => r.node === firstImage).at(-1).url,
+    tmdb("w500", "new"),
+    "a replaced item refills its card"
+  );
+  assert.equal(first.dataset.itemId, "tt3", "openDetail reads the new item");
   const folder = container.querySelector(".tv2-rows").children[1].querySelector(".tv2-track")
     .children[0];
   assert.equal(folder.style.width, "343px");

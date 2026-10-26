@@ -438,7 +438,8 @@ export function createLightningHomeRenderer(
       for (let i = win.start; i < win.end; i += 1) {
         const item = row.items[i];
         const card = slotCard(view, slotFor(i, win.poolSize));
-        if (card.index !== i || card.rowKey !== row.key) {
+        if (card.index !== i || card.rowKey !== row.key || card.item !== item) {
+          card.item = item;
           card.index = i;
           card.rowKey = row.key;
           card.title.text = String(item.name || item.title || "");

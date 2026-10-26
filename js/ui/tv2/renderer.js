@@ -52,17 +52,22 @@ const esc = (value) =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
 
+// Item each card node was filled with: a row can replace an item at the same index.
+const filledItems = new WeakMap();
+
 /**
- * Card dataset read by openDetail and the diagnostic driver; skipped when already filled for the
- * same `version` (the watched-state revision). Returns whether the card was refilled.
+ * Card dataset read by openDetail and the diagnostic driver; skipped when already filled with the
+ * same item for the same `version` (the watched-state revision). Returns whether it was refilled.
  */
 export function fillCard(node, item, index, row, version = "") {
   if (
+    filledItems.get(node) === item &&
     node.dataset.index === String(index) &&
     node.dataset.rowKey === row.key &&
     node.dataset.version === version
   )
     return false;
+  filledItems.set(node, item);
   node.dataset.index = String(index);
   node.dataset.rowKey = row.key;
   node.dataset.version = version;
