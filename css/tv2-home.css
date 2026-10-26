@@ -227,6 +227,101 @@
   text-shadow: none;
 }
 
+/* Continue Watching card (components-14/17.css, modern sizes): badge, copy, progress, blur. */
+.tv2-card.home-continue-card {
+  background: linear-gradient(145deg, #393939, #111);
+}
+
+.tv2-card.home-continue-card::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 45%,
+    rgb(var(--bg-color-rgb) / 0.7) 78%,
+    rgb(var(--bg-color-rgb) / 0.95) 100%
+  );
+  pointer-events: none;
+}
+
+.tv2-card.home-continue-card-blur-next-up .tv2-card-image {
+  filter: blur(12px);
+  transform: scale(1.08);
+}
+
+.tv2-cw-badge {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(19, 19, 19, 0.88);
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tv2-cw-copy {
+  position: absolute;
+  z-index: 2;
+  left: 24px;
+  right: 24px;
+  bottom: 24px;
+}
+
+.tv2-cw-kicker,
+.tv2-cw-subtitle {
+  font-size: 24px;
+  line-height: 1.33;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv2-cw-kicker {
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 1px;
+}
+
+.tv2-cw-subtitle {
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 0.8px;
+}
+
+.tv2-cw-copy .tv2-card-title {
+  position: static;
+  color: #fff;
+  font-size: 28px;
+  line-height: 1.42;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  text-shadow: none;
+}
+
+.tv2-cw-progress {
+  position: absolute;
+  z-index: 2;
+  left: 10px;
+  right: 10px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.tv2-cw-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--secondary-color);
+}
+
 .tv2-card.focused {
   box-shadow: 0 0 0 4px var(--focus-color);
 }

@@ -280,10 +280,14 @@ export function resolveContinueWatchingBlurNextUp(layoutPrefs) {
   return Boolean(layoutPrefs?.blurContinueWatchingNextUp);
 }
 
-export function renderContinueWatchingCard(item, index, options = {}) {
+/**
+ * Content of a Continue Watching card, shared by renderContinueWatchingCard and the new TV Home:
+ * artwork with its fallbacks (rawImage = the original behind a custom poster), badge, kicker,
+ * title, subtitle, progress percentage and Next Up blur.
+ */
+export function continueCardModel(item, options = {}) {
   const originalItem = normalizeContinueWatchingItem(item);
   const normalized = customPosterForItem(originalItem, "continue_watching");
-  const subtitle = normalized.episodeTitle || "";
   const isNextUp = Boolean(normalized?.isNextUp);
   const hasAired = normalized?.hasAired !== false;
   const requestedCardStyle = String(options?.cardStyle || "card")
@@ -292,7 +296,6 @@ export function renderContinueWatchingCard(item, index, options = {}) {
   const cardStyle = ["card", "wide", "poster"].includes(requestedCardStyle) ? requestedCardStyle : "card";
   const useEpisodeThumbnails = continueWatchingUsesEpisodeThumbnails(cardStyle, options?.useEpisodeThumbnails);
   const blurNextUp = Boolean(options?.blurNextUp && isNextUp && useEpisodeThumbnails);
-  const rowKey = String(options?.rowKey || "continue_watching").trim() || "continue_watching";
   const cardImageSources = continueWatchingImageSources(
     {
       poster: normalized.poster,
@@ -330,8 +333,35 @@ export function renderContinueWatchingCard(item, index, options = {}) {
   const normalizeCardImageUrl =
     cardStyle === "card" ? (Platform.isVidaa() ? normalizeTmdbCardBackdropUrl : normalizeTmdbBackdropUrl) : normalizeTmdbPosterUrl;
   const uniqueCardImageSources = uniqueNonEmptyValues(cardImageSources.map((source) => getVidaaArtworkUrl(normalizeCardImageUrl(source))));
-  const cardImage = uniqueCardImageSources[0] || "";
-  const fallbackQueue = encodeHeroBackdropFallbacks(uniqueCardImageSources.slice(1));
+  return {
+    normalized,
+    blur: blurNextUp,
+    image: uniqueCardImageSources[0] || "",
+    fallbacks: uniqueCardImageSources.slice(1),
+    rawImage: originalCardImages[0] || "",
+    badge: normalized.progressStatus || t("home.continueStatusContinue", {}, "Continue"),
+    kicker: normalized.episodeCode || "",
+    title: normalized.title,
+    subtitle: normalized.episodeTitle || "",
+    progressPct: Math.round((normalized.progressFraction || 0) * 100)
+  };
+}
+
+export function renderContinueWatchingCard(item, index, options = {}) {
+  const {
+    normalized,
+    blur: blurNextUp,
+    image: cardImage,
+    fallbacks,
+    rawImage,
+    badge,
+    kicker,
+    title,
+    subtitle,
+    progressPct
+  } = continueCardModel(item, options);
+  const rowKey = String(options?.rowKey || "continue_watching").trim() || "continue_watching";
+  const fallbackQueue = encodeHeroBackdropFallbacks(fallbacks);
   const deferContinueImage = getTvRuntimePerformanceProfile().isPerformanceConstrained;
   const continueImageAttrs = cardImage ? buildLazyImageAttributes(cardImage, { defer: deferContinueImage, fallbackHandler: false }) : "";
   return `
@@ -350,14 +380,14 @@ export function renderContinueWatchingCard(item, index, options = {}) {
              data-item-type="${escapeAttribute(normalized.type || "movie")}"
              data-item-title="${escapeAttribute(normalized.title || "Untitled")}">
       <div class="home-continue-media">
-        ${cardImage ? `<img class="home-continue-bg"${posterFallbackAttributes({ rawPosterUrl: originalCardImages[0] })} ${continueImageAttrs}${fallbackQueue ? ` data-fallback-srcs="${escapeAttribute(fallbackQueue)}"` : ""} alt="" aria-hidden="true" decoding="async" onerror="${buildImageFallbackErrorHandler()}" />` : ""}
-        <span class="home-continue-badge">${escapeHtml(normalized.progressStatus || t("home.continueStatusContinue", {}, "Continue"))}</span>
+        ${cardImage ? `<img class="home-continue-bg"${posterFallbackAttributes({ rawPosterUrl: rawImage })} ${continueImageAttrs}${fallbackQueue ? ` data-fallback-srcs="${escapeAttribute(fallbackQueue)}"` : ""} alt="" aria-hidden="true" decoding="async" onerror="${buildImageFallbackErrorHandler()}" />` : ""}
+        <span class="home-continue-badge">${escapeHtml(badge)}</span>
         <div class="home-continue-copy">
-          ${normalized.episodeCode ? `<div class="home-continue-kicker">${escapeHtml(normalized.episodeCode)}</div>` : ""}
-          <div class="home-continue-title" dir="auto">${escapeHtml(normalized.title)}</div>
+          ${kicker ? `<div class="home-continue-kicker">${escapeHtml(kicker)}</div>` : ""}
+          <div class="home-continue-title" dir="auto">${escapeHtml(title)}</div>
           ${subtitle ? `<div class="home-continue-subtitle">${escapeHtml(subtitle)}</div>` : ""}
         </div>
-        <div class="home-continue-progress"><span style="width:${Math.round((normalized.progressFraction || 0) * 100)}%"></span></div>
+        <div class="home-continue-progress"><span style="width:${progressPct}%"></span></div>
       </div>
     </article>
   `;

@@ -1,5 +1,9 @@
 import { renderLegacySidebar } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { posterCardModel } from "../screens/home/homeScreenHelpers-15-create-poster-card-markup.js";
+import {
+  continueCardModel,
+  resolveContinueWatchingBlurNextUp
+} from "../screens/home/homeScreenHelpers-12-build-hero-indicators.js";
 import { firstNonEmpty } from "../screens/home/homeUtils.js";
 import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimization.js";
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
@@ -15,11 +19,23 @@ import { sizedImageUrl } from "./imagePipeline.js";
 /**
  * Card image at its displayed size with the current Home's source order (posterCardModel for
  * catalog cards, cover for folders) and fallbacks: the custom poster's original, then the
- * unoptimized nuvio-art source. `model` is the catalog card model, used by the DOM card.
+ * unoptimized nuvio-art source. `model` is the catalog card model and `cw` the Continue Watching
+ * one (continueCardModel, its own source order and fallbacks), both used by the DOM card.
  */
 export function cardImage(row, item, size, settings) {
-  if (row.kind === "continue")
-    return { url: sizedImageUrl(item.landscapePoster || item.backdrop, size.width), fallbacks: [] };
+  if (row.kind === "continue") {
+    const cw = continueCardModel(item, {
+      cardStyle: settings?.continueWatchingCardStyle || "card",
+      useEpisodeThumbnails: settings?.useEpisodeThumbnailsInCw !== false,
+      blurNextUp: resolveContinueWatchingBlurNextUp(settings)
+    });
+    const url = sizedImageUrl(cw.image, size.width);
+    // Current Home order: custom poster original, nuvio-art original, then data-fallback-srcs.
+    const fallbacks = [cw.rawImage, getVidaaArtworkOriginal(cw.image), ...cw.fallbacks]
+      .filter(Boolean)
+      .map((source) => sizedImageUrl(source, size.width));
+    return { url, fallbacks: [...new Set(fallbacks)].filter((value) => value !== url), cw };
+  }
   if (row.kind === "collection")
     return {
       url: sizedImageUrl(firstNonEmpty(item.poster, item.coverImageUrl, item.backdrop), size.width),
@@ -114,10 +130,13 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   const watchedBadge = renderTitleWatchedBadge();
   let watchedIds = null;
   let watchedVersion = 0;
+  // Bumped by every row emit: continue cards refill then, their release labels depend on time.
+  let rowsVersion = 0;
   let focusedNode = null;
   root.style.setProperty("--tv2-card-radius", `${geometry.radius ?? 24}px`);
 
   function setRows(rows) {
+    rowsVersion += 1;
     const keys = new Set(rows.map((row) => row.key));
     for (const [key, view] of views) {
       if (!keys.has(key)) {
@@ -159,10 +178,16 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       node = document.createElement("article");
       node.className = `${view.kind === "continue" ? "home-continue-card" : "home-poster-card"} tv2-card focusable`;
       node.dataset.action = "openDetail";
+      const title = `<div class="tv2-card-title" dir="auto"></div>`;
       node.innerHTML = `<img class="tv2-card-image" alt="" decoding="async" />${watchedBadge}
         <div class="tv2-card-overlay"><img class="tv2-card-logo" alt="" decoding="async" />
           <div class="tv2-card-overlay-title"></div><div class="tv2-card-overlay-subtitle"></div></div>
-        <div class="tv2-card-title"></div>`;
+        ${
+          view.kind === "continue"
+            ? `<span class="tv2-cw-badge"></span><div class="tv2-cw-copy"><div class="tv2-cw-kicker"></div>
+          ${title}<div class="tv2-cw-subtitle"></div></div><div class="tv2-cw-progress"><span></span></div>`
+            : title
+        }`;
       const { width, height } = view.size;
       node.style.width = `${width}px`;
       node.style.height = `${height}px`;
@@ -172,6 +197,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         title: node.querySelector(".tv2-card-title"),
         overlayTitle: node.querySelector(".tv2-card-overlay-title"),
         overlaySubtitle: node.querySelector(".tv2-card-overlay-subtitle"),
+        badge: node.querySelector(".tv2-cw-badge"),
+        kicker: node.querySelector(".tv2-cw-kicker"),
+        subtitle: node.querySelector(".tv2-cw-subtitle"),
+        progress: node.querySelector(".tv2-cw-progress span"),
         source: null
       });
       view.track.appendChild(node);
@@ -180,11 +209,14 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     return node;
   }
 
-  /** Current Home card content: watched badge, landscape logo/title overlay, folder emoji. */
+  /**
+   * Current Home card content: watched badge, landscape logo/title overlay, folder emoji, and the
+   * Continue Watching badge, episode code, title, episode title, progress and Next Up blur.
+   */
   function fillContent(node, row, item, size) {
     const card = cards.get(node);
     const source = cardImage(row, item, size, layout);
-    const model = source.model;
+    const { model, cw } = source;
     const landscape = Boolean(model) && size.width > size.height;
     const emoji = row.kind === "collection" && !source.url ? item.coverEmoji || "" : "";
     node.classList.toggle(
@@ -193,8 +225,15 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     );
     node.classList.toggle("is-landscape", landscape);
     node.classList.toggle("tv2-card-emoji", Boolean(emoji));
-    // Posters show no title (D2); continue cards keep theirs until their own card (C5).
-    card.title.textContent = row.kind === "continue" ? node.dataset.itemTitle : emoji;
+    // Posters show no title (D2).
+    card.title.textContent = cw ? cw.title : emoji;
+    if (cw) {
+      node.classList.toggle("home-continue-card-blur-next-up", cw.blur);
+      card.badge.textContent = cw.badge;
+      card.kicker.textContent = cw.kicker;
+      card.subtitle.textContent = cw.subtitle;
+      card.progress.style.width = `${cw.progressPct}%`;
+    }
     const logo = landscape ? model.normalized.logo || "" : "";
     card.overlayTitle.textContent = landscape && !logo ? model.normalized.name || "Untitled" : "";
     card.overlaySubtitle.textContent = landscape ? model.subtitle || "" : "";
@@ -213,7 +252,9 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       view.slots.forEach((node) => (node.style.visibility = "hidden"));
       for (let i = win.start; i < win.end; i += 1) {
         const node = slotNode(view, slotFor(i, win.poolSize));
-        if (fillCard(node, row.items[i], i, row, String(watchedVersion)))
+        const version =
+          row.kind === "continue" ? `${watchedVersion}:${rowsVersion}` : String(watchedVersion);
+        if (fillCard(node, row.items[i], i, row, version))
           fillContent(node, row, row.items[i], view.size);
         setNavPosition(node, navRow, i);
         node.style.visibility = "";

@@ -11,6 +11,10 @@ export function cardGeometry(layoutPrefs = {}) {
       height: Math.round(baseWidthDp * 1.5 * 0.84 * 1.08 * 2)
     },
     landscape: { width: landscapeWidth, height: Math.round(landscapeWidth / 1.77) },
+    // Modern Continue Watching cards are fixed (components-16.css), whatever posterCardWidthDp.
+    continueCard: { width: 419, height: 236 },
+    // "wide" renders at the card size on TV (min/max-width win, components-29.css).
+    continuePosterStyle: layoutPrefs?.continueWatchingCardStyle === "poster",
     gap: 24,
     radius: Math.round(radiusDp * 2),
     // Current Home render (methods-23): landscape catalog posters are a modern-only preference.
@@ -21,11 +25,12 @@ export function cardGeometry(layoutPrefs = {}) {
 }
 
 /**
- * Card size of a row: continue cards and landscape posters are landscape; collection rows follow
+ * Card size of a row: continue cards follow their card style, landscape posters are landscape; collection rows follow
  * their tile shape (normalizeCollectionPosterShape: POSTER, LANDSCAPE, else SQUARE).
  */
 export function rowCardSize(row, geometry) {
-  if (row.kind === "continue") return geometry.landscape;
+  if (row.kind === "continue")
+    return geometry.continuePosterStyle ? geometry.poster : geometry.continueCard;
   if (row.kind === "collection") {
     const shape = String(row.tileShape || "").toUpperCase();
     if (shape === "POSTER") return geometry.poster;
