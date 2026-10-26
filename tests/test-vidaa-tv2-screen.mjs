@@ -155,9 +155,10 @@ try {
     catalogResult = () => pending.promise;
     const { screen, calls } = mountScreen();
     await flush();
+    // Like the current Home, a catalog row appears once its page answers or times out.
     assert.deepEqual(
       screen.rows.map((row) => `${row.key}:${row.status}`),
-      ["continue_watching:success", "addon_movie_top:loading"]
+      ["continue_watching:success"]
     );
     const before = calls.setRows;
     assert.ok(before > 0, "rows reached the renderer before cleanup");

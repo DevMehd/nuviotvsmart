@@ -16,7 +16,9 @@ const { cardGeometry, railWindow, slotFor, rowsOffset } =
 const { createFocus, moveFocus, focusSnapshot, restoreFocus } =
   await import("../js/ui/tv2/focusModel.js");
 const { sizedImageUrl, createImageQueue } = await import("../js/ui/tv2/imagePipeline.js");
-const { homeCatalogEntries, continueWatchingRow } = await import("../js/ui/tv2/homeModel.js");
+const { continueWatchingRow } = await import("../js/ui/tv2/homeModel.js");
+const { buildVisibleHomeCatalogDescriptors } =
+  await import("../js/ui/screens/home/homeCatalogDescriptors.js");
 const setting = await import("../js/ui/tv2/newHomeSetting.js");
 const { Router, HomeScreen } = await import("../js/ui/navigation/router.js");
 const { NewHomeScreen } = await import("../js/ui/tv2/newHomeScreen.js");
@@ -108,7 +110,7 @@ queue.request(images[1], "");
 assert.equal(images[1].src, "", "a recycled card drops its image");
 queue.clear();
 
-// Model: disabled catalogs filtered, bounded; continue watching sorted by recency.
+// Model: disabled catalogs filtered, no cap; continue watching sorted by recency.
 const addons = [
   {
     baseUrl: "https://addon.example",
@@ -121,9 +123,9 @@ const addons = [
     }))
   }
 ];
-const entries = homeCatalogEntries(addons, { order: [], disabled: [], customTitles: {} });
-assert.equal(entries.length, 10);
-assert.equal(entries[0].key, "addon_movie_c0");
+const entries = buildVisibleHomeCatalogDescriptors(addons).visibleCatalogDescriptors;
+assert.equal(entries.length, 14, "every visible catalog, no 10-row cap");
+assert.equal(`${entries[0].addonId}_${entries[0].type}_${entries[0].catalogId}`, "addon_movie_c0");
 assert.equal(entries[0].type, "movie");
 const continueRow = continueWatchingRow([
   { contentId: "old", contentType: "movie", updatedAt: 1, positionMs: 10, durationMs: 100 },

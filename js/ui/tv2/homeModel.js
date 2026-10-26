@@ -1,29 +1,21 @@
 import { addonRepository } from "../../data/repository/addonRepository.js";
-import { catalogRepository } from "../../data/repository/catalogRepository.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
-import { HomeCatalogStore } from "../../data/local/homeCatalogStore.js";
-import { buildOrderedHomeCatalogItems } from "../../core/addons/homeCatalogs.js";
+import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
+import { Platform } from "../../platform/index.js";
+import { isVidaaNavigationBusy } from "../navigation/vidaaNavigationActivity.js";
 import { normalizeContinueWatchingItem } from "../screens/home/homeScreenHelpers-09-normalize-continue-watching-item.js";
+import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
+import { buildVisibleHomeCatalogDescriptors } from "../screens/home/homeCatalogDescriptors.js";
+import { HOME_ADDON_MANIFEST_TIMEOUT_MS } from "../screens/home/homeConstants.js";
+import { formatCatalogRowTitle } from "../screens/home/homeUtils.js";
 import { personalHomeRows } from "../screens/perso/personalUi.js";
+import { createHomeDataHost } from "./homeDataHost.js";
 
-// Rows of the new TV Home (nuv-091), without DOM: {key, kind, title, items, status}.
+// Rows of the new TV Home (nuv-091), without DOM: {key, kind, title, items, status, ...}.
 
 export const HOME_MODEL_LIMITS = Object.freeze({
-  catalogs: 10,
-  continueWatching: 20,
-  catalogItems: 30
+  continueWatching: 20
 });
-
-/** Visible home catalogs in the user's order, bounded like the current Home's first batch. */
-export function homeCatalogEntries(
-  addons,
-  store = HomeCatalogStore.get(),
-  limit = HOME_MODEL_LIMITS.catalogs
-) {
-  return buildOrderedHomeCatalogItems(addons, [], store.order, store.disabled, store.customTitles)
-    .filter((entry) => !entry.isDisabled)
-    .slice(0, limit);
-}
 
 export function continueWatchingRow(progressItems = []) {
   const items = [...progressItems]
@@ -34,7 +26,7 @@ export function continueWatchingRow(progressItems = []) {
   return {
     key: "continue_watching",
     kind: "continue",
-    title: "Continuer à regarder",
+    title: t("home.continueWatching", {}, "Continue Watching"),
     items,
     status: "success"
   };
@@ -67,44 +59,70 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
   const continueRow = continueWatchingRow(progress);
   if (!emit([continueRow, ...personalRows()])) return rows;
 
+  const host = createHomeDataHost({ layoutPrefs: LayoutPreferences.get() });
   const addons = await addonRepository
-    .getInstalledAddons({ staleWhileRevalidate: true })
+    .getInstalledAddons({
+      includeMediaServers: true,
+      staleWhileRevalidate: true,
+      timeoutMs: HOME_ADDON_MANIFEST_TIMEOUT_MS
+    })
     .catch(() => []);
-  const entries = homeCatalogEntries(addons);
-  const catalogRows = entries.map((entry) => ({
-    key: entry.key,
-    kind: "poster",
-    title: entry.catalogName,
-    items: [],
-    status: "loading",
-    entry
-  }));
-  if (!emit([continueRow, ...personalRows(), ...catalogRows])) return rows;
-
-  for (const row of catalogRows) {
-    const { entry } = row;
-    const result = await catalogRepository
-      .getCatalog({
-        addonBaseUrl: entry.addonBaseUrl,
-        addonId: entry.addonId,
-        addonName: entry.addonName,
-        catalogId: entry.catalogId,
-        catalogName: entry.originalCatalogName,
-        type: entry.type,
-        skip: 0
-      })
-      .catch(() => null);
-    row.items = (result?.data?.items || [])
-      .slice(0, HOME_MODEL_LIMITS.catalogItems)
-      .map((item) => ({
-        ...item,
-        addonBaseUrl: entry.addonBaseUrl,
-        addonId: entry.addonId,
-        addonName: entry.addonName,
-        catalogType: entry.type
-      }));
-    row.status = result?.status === "success" ? "success" : "error";
-    if (!emit([continueRow, ...personalRows(), ...catalogRows])) return rows;
-  }
+  if (!isCurrent()) return rows;
+  const { visibleCatalogDescriptors } = buildVisibleHomeCatalogDescriptors(addons);
+  const showTypeSuffix = host.layoutPrefs.catalogTypeSuffixEnabled !== false;
+  const fetched = new Map();
+  // Same batches as the current Home: visible first in parallel, then deferred batches.
+  const options = {
+    allowLoading: true,
+    shouldContinue: isCurrent,
+    onRow: (row) => {
+      fetched.set(row.homeCatalogKey, row);
+      const ordered = host.sortAndFilterRows([...fetched.values()], host.collections);
+      const catalogRows = ordered
+        .map((catalog) => catalogRow(catalog, showTypeSuffix))
+        .filter((catalog) => catalog.status !== "success" || catalog.items.length);
+      emit([continueRow, ...personalRows(), ...catalogRows]);
+    }
+  };
+  const initialCount = host.getInitialCatalogLoadCount();
+  await host.fetchCatalogRows(visibleCatalogDescriptors.slice(0, initialCount), options);
+  await host.fetchCatalogRows(visibleCatalogDescriptors.slice(initialCount), {
+    ...options,
+    batchSize: host.getDeferredCatalogBatchSize(),
+    isBusy: () => Platform.isVidaa() && isVidaaNavigationBusy(),
+    batchYieldMs: Platform.isVidaa() ? 120 : 0
+  });
   return rows;
+}
+
+const catalogItems = new WeakMap();
+
+/** Current Home catalog row ({...descriptor, result}) as a new Home row; items mapped once per page. */
+function catalogRow(row, showTypeSuffix) {
+  const data = row.result?.data || {};
+  if (!catalogItems.has(row.result)) {
+    catalogItems.set(
+      row.result,
+      (data.items || []).map((item) => ({
+        ...item,
+        addonBaseUrl: row.addonBaseUrl,
+        addonId: row.addonId,
+        addonName: row.addonName,
+        catalogType: row.type
+      }))
+    );
+  }
+  return {
+    key: row.homeCatalogKey,
+    kind: "poster",
+    title: formatCatalogRowTitle(row.catalogName, row.type, showTypeSuffix),
+    items: catalogItems.get(row.result),
+    // A failed or timed-out page stays "loading" (D1), never an error.
+    status: row.result?.status === "success" ? "success" : "loading",
+    entry: row,
+    hasMore: Boolean(data.hasMore),
+    nextSkip: Number(data.nextSkip || 0),
+    supportsSkip: row.supportsSkip !== false && data.supportsSkip !== false,
+    skipStep: Number(row.skipStep || data.skipStep || 100)
+  };
 }
