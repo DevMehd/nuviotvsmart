@@ -118,7 +118,14 @@ const notes = await readFile(new URL("../CHANGELOG.fr.md", import.meta.url), "ut
 const { version } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const changelog = parsePersonalChangelog(notes, version);
 assert.match(changelog.date, /^\d{4}-\d{2}-\d{2}$/);
-assert.ok(changelog.notes.includes("Mon espace"));
+const latestFirstNote = notes
+  .split("\n## ")[1]
+  .split("\n")
+  .find((line) => line.startsWith("- "));
+assert.ok(
+  changelog.notes.includes(latestFirstNote.slice(2, 40)),
+  "The latest entry is the one shown"
+);
 assert.ok(
   !changelog.notes.includes("la télé ignorait les envois du téléphone"),
   "Only the latest entry is included in the TV prompt"

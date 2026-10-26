@@ -1,5 +1,12 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-26 — 1.3.3
+
+- Correctifs officiels intégrés pour la télé : le son ne reste plus coupé après un démarrage lent ou un changement automatique de source, la langue audio préférée est retrouvée même quand les pistes arrivent tard, la lecture reste stable en changeant d’audio ou de sous-titres, et les sources passant par un proxy (MediaFlow) se lisent.
+- Lecture : la recherche des pistes audio ne retarde plus le démarrage ; les noms des pistes viennent du fichier quand il les fournit. Le badge « Son non lu par la TV » est retiré (le son coupé ne venait pas du format).
+- Bouton Sources du lecteur : la liste ne dessine plus que les sources autour de la sélection, au lieu de toutes d’un coup ; l’ouverture ne gèle plus la télé pendant la lecture.
+- Nouveautés officielles : soirée à plusieurs (Watch Party) avec invitations par QR, mode ambiance au repos, lecture aléatoire des épisodes, listes MDBList, affiches personnalisées et synchronisation avec un serveur multimédia.
+
 ## 2026-10-21 — 1.3.2
 
 - Navigation plus fluide : le grand bandeau de l’accueil ne se met à jour que quand tu t’arrêtes sur une affiche, sa mise en page n’est plus recalculée à chaque déplacement, et les réglages ne sont plus relus à chaque touche. Les badges des sources s’affichent directement (sans conversion d’image) et ne sont plus tous préchargés au démarrage.
