@@ -367,13 +367,6 @@ export function createPlayerScreenMethods51() {
         }
       }
       if (!preferredTargets.length) {
-        // No language preference: still leave a track the TV cannot decode for a playable one
-        // (silent playback otherwise, nuv-089).
-        const options = this.collectAudioOptionItems();
-        const selected = options.find((entry) => entry.selected);
-        if (selected && selected.supported === false && options.some((entry) => entry.supported !== false)) {
-          return this.applyStartupAudioFallback();
-        }
         this.clearStartupAudioPreferenceRetry();
         this.startupAudioFallbackApplied = false;
         this.startupAudioPreferenceApplied = true;

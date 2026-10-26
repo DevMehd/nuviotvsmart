@@ -3095,7 +3095,6 @@
     <string name="perso_discovery_skip">Haven\'t seen it · skip</string>
     <string name="perso_discovery_open">Open the details</string>
     <string name="perso_discovery_scale">every rating</string>
-    <string name="player_audio_unsupported_all">This source's sound cannot be played by the TV: choose another source</string>
     <string name="addon_remote_title">Nuvio TV - Manage Addons</string>
     <string name="addon_remote_signed_in">Signed in. Addon and home catalog changes can be pushed through the web sync backend.</string>
     <string name="addon_remote_signed_out">Signed out. Changes save only in this browser unless you sign in on this phone.</string>

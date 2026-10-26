@@ -1,26 +1,3 @@
-import { playbackCapabilities } from "../diagnostics/playbackDiagnostics.js";
-import { isAudioCodecDeclaredUnsupported } from "../player/audioTrackCodecMetadata.js";
-import { Environment } from "../../platform/environment.js";
-
-let unsupportedAudioCache = null;
-/** Audio codecs this TV declares it cannot decode (VIDAA only; empty elsewhere). */
-function unsupportedAudioCodecs() {
-  if (unsupportedAudioCache) return unsupportedAudioCache;
-  const result = new Set();
-  try {
-    if (Environment.isVidaa()) {
-      const capabilities = playbackCapabilities();
-      for (const key of ["truehd", "dts"]) {
-        if (isAudioCodecDeclaredUnsupported(capabilities[key])) result.add(key);
-      }
-    }
-  } catch (_) {}
-  unsupportedAudioCache = result;
-  return result;
-}
-
-// Compact fallback badges use only declared source fields and recognizable
-// release tokens. URLs and unknown values never become labels or cache claims.
 export function getStreamPresentationBadges(stream = {}) {
   const raw = stream.raw || {};
   const presentation = stream.streamPresentation || raw.streamPresentation || {};
@@ -72,20 +49,6 @@ export function getStreamPresentationBadges(stream = {}) {
   else if (/\btrue[ .-]?hd\b/i.test(text)) add("TrueHD");
   else if (/\bdts\b/i.test(text)) add("DTS");
   else if (/\b(?:ddp|eac3|e[ .-]?ac[ .-]?3)\b|dd\+/i.test(text)) add("DD+");
-  // VIDAA (nuv-089): a TrueHD/DTS-only release plays without sound when the TV cannot decode it.
-  const audioKey =
-    labels.includes("TrueHD") || (labels.includes("Atmos") && /true[ .-]?hd/i.test(text))
-      ? "truehd"
-      : labels.includes("DTS")
-        ? "dts"
-        : "";
-  if (
-    audioKey &&
-    unsupportedAudioCodecs().has(audioKey) &&
-    !/\b(?:ac3|ac-3|dd5|ddp|eac3|aac)\b|dd\+/i.test(text)
-  ) {
-    add("Son non lu par la TV");
-  }
   if (/🇫🇷|\b(?:fr|fra|fre|french|français|vf|vff|vfi)\b/i.test(text)) add("FR");
   if (/🇬🇧|🇺🇸|\b(?:en|eng|english|anglais)\b/i.test(text)) add("EN");
   if (/\bmulti\b/i.test(text)) add("MULTI");

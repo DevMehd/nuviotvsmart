@@ -183,13 +183,6 @@ export function createPlayerScreenMethods11() {
         const probeUrl = this.getTrackProbeUrl();
         return Boolean(usingNativePlayback && usingAvPlay && probeUrl && !this.isCurrentSourceAdaptiveManifest());
       }
-      // VIDAA names its audio tracks from the container header (nuv-089), even when the
-      // TV already exposes its own subtitle tracks.
-      if (Environment.isVidaa()) {
-        const usingNativePlayback =
-          typeof PlayerController.isUsingNativePlayback === "function" ? PlayerController.isUsingNativePlayback() : false;
-        return Boolean(usingNativePlayback && this.isVidaaMatroskaProbeCandidate());
-      }
       return this.canDiscoverEmbeddedSubtitleTracks();
     },
     shouldUseEmbeddedSubtitleTracks() {

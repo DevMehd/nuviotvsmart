@@ -841,7 +841,7 @@ test("real ASS to VTT fallback produces readable dialogue when renderer cannot i
   await ui.applySubtitleEntry({ trackIndex: -1 });
   localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
 });
-test("a first empty window selects successfully; native text already exposed is kept while audio is named", async () => {
+test("a first empty window selects successfully; native text already exposed skips probing", async () => {
   const h = transport();
   const ui = screen(h);
   await ui.loadEmbeddedSubtitleTracks();
@@ -855,9 +855,7 @@ test("a first empty window selects successfully; native text already exposed is 
   const nativeUi = screen(other);
   PlayerController.video.textTracks = [{ mode: "showing", kind: "subtitles" }];
   await nativeUi.loadEmbeddedSubtitleTracks();
-  // The header is still read to name the audio tracks (nuv-089); native subtitles stay untouched.
-  assert.ok(other.calls.length > 0);
-  assert.equal(nativeUi.embeddedSubtitleTracks.length, 0);
+  assert.equal(other.calls.length, 0);
   assert.equal(PlayerController.video.textTracks[0].mode, "showing");
 });
 test("recovery replacing video/playback token rejects a late first selection on the same URL", async () => {
