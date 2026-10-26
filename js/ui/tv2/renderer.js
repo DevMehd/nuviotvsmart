@@ -6,8 +6,7 @@ import { sizedImageUrl } from "./imagePipeline.js";
 // Renderers of the new TV Home (nuv-091) share one interface:
 //   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item), setProfile(state),
 //   sidebarItems(), destroy().
-// This is the DOM one, the universal fallback; render/hybrid/ draws its images in WebGL under it,
-// render/lightning/ draws the whole Home in WebGL (lot B2).
+// This is the DOM one, the universal fallback; render/lightning/ draws the whole Home in WebGL.
 
 /** Card image at its displayed size; the WebGL layer asks for the very same URL. */
 export const cardImageUrl = (row, item, size) =>

@@ -14,12 +14,10 @@ import { createFocus, focusedIndex, moveFocus, focusSnapshot, restoreFocus } fro
 import { createImageQueue } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
 import { createLightningHomeRenderer } from "./render/lightning/lightningHomeRenderer.js";
-import { createGlLayer } from "./render/hybrid/glLayer.js";
-import { createHybridHomeRenderer } from "./render/hybrid/hybridRenderer.js";
 import { sessionNewHomeMode, homeEngine, noteHomeEngine } from "./newHomeSetting.js";
 
 // New TV Home (nuv-091). Enabled by the "Nouvel accueil (bêta)" setting: DOM renderer, or the
-// hybrid / full WebGL prototypes (lot B2), which fall back to DOM when WebGL fails.
+// full WebGL prototype (lot B2), which falls back to DOM when WebGL fails.
 
 const DIRECTIONS = { 37: "left", 38: "up", 39: "right", 40: "down" };
 const HERO_CALM_MS = 450;
@@ -56,11 +54,7 @@ export const NewHomeScreen = {
   /** Renderer of the chosen mode when WebGL works, else the DOM one; the engine goes to Diagnostic. */
   createView(token) {
     const mode = sessionNewHomeMode();
-    const fallBack = (why) => {
-      // Same textures on the next mount would hit the budget again: DOM for the run.
-      if (why === "budget") this.hybridFailure = why;
-      return token === this.token && this.fallBackToDom(why);
-    };
+    const fallBack = (why) => token === this.token && this.fallBackToDom(why);
     if (mode === "webgl" && homeEngine() === "webgl") {
       noteHomeEngine("webgl");
       return createLightningHomeRenderer(this.container, {
@@ -68,24 +62,7 @@ export const NewHomeScreen = {
         onFailure: fallBack
       });
     }
-    if (mode === "hybrid") {
-      // One canvas for the app run, so a return from the player reuses its textures.
-      if (this.glLayer === undefined)
-        this.glLayer = createGlLayer(document.createElement("canvas"));
-      const reason =
-        this.hybridFailure || (!this.glLayer ? "no-webgl" : this.glLayer.isLost() ? "lost" : "");
-      if (!reason) {
-        noteHomeEngine("hybrid");
-        return createHybridHomeRenderer(this.container, {
-          ...this.viewOptions,
-          glLayer: this.glLayer,
-          onFallback: fallBack
-        });
-      }
-      noteHomeEngine(`dom:${reason}`);
-    } else {
-      noteHomeEngine("dom");
-    }
+    noteHomeEngine("dom");
     return this.domView();
   },
 
