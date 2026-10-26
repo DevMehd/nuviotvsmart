@@ -1,3 +1,5 @@
+import { Platform } from "../../platform/index.js";
+import { getTvHeroTransitionMode } from "../../platform/tvRuntimePerformance.js";
 import { renderLegacySidebar } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { posterCardModel } from "../screens/home/homeScreenHelpers-15-create-poster-card-markup.js";
 import {
@@ -5,6 +7,20 @@ import {
   resolveContinueWatchingBlurNextUp
 } from "../screens/home/homeScreenHelpers-12-build-hero-indicators.js";
 import { firstNonEmpty } from "../screens/home/homeUtils.js";
+import { HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS } from "../screens/home/homeConstants.js";
+import {
+  buildModernHeroPresentation,
+  renderModernHeroPrimary,
+  renderModernHeroSecondary
+} from "../screens/home/homeScreenHelpers-11-build-hero-display-model.js";
+import { animateHeroBackdropSwap } from "../screens/home/homeScreenHelpers-03-animate-hero-backdrop-swap.js";
+import { animateHeroLogoSwap } from "../screens/home/homeScreenHelpers-04-animate-hero-logo-swap.js";
+import { buildHeroIdentity } from "../screens/home/homeScreenHelpers-10-get-cached-continue-watching-enrichment.js";
+import {
+  buildImageFallbackErrorHandler,
+  encodeHeroBackdropFallbacks
+} from "../screens/home/homeImageHelpers.js";
+import { setHomeHtmlIfChanged } from "../screens/home/homeStableMarkup.js";
 import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimization.js";
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
 import { slotFor, homeLayout, rowCardSize, ROW_TITLE_HEIGHT } from "./railEngine.js";
@@ -12,7 +28,7 @@ import { focusedIndex } from "./focusModel.js";
 import { sizedImageUrl } from "./imagePipeline.js";
 
 // Renderers of the new TV Home (nuv-091) share one interface:
-//   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item), setProfile(state),
+//   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item, { loading }), setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids) (DOM only, Lightning stays poster-only).
 // This is the DOM one, the universal fallback; render/lightning/ draws the whole Home in WebGL.
 
@@ -62,8 +78,6 @@ export function cardImage(row, item, size, settings) {
 
 /** Card image URL alone; the WebGL layer asks for the very same URL. */
 export const cardImageUrl = (row, item, size, settings) => cardImage(row, item, size, settings).url;
-export const heroImageUrl = (item) =>
-  sizedImageUrl(item?.background || item?.backdrop || item?.poster, 1280);
 
 const esc = (value) =>
   String(value ?? "").replace(
@@ -103,6 +117,30 @@ export function fillCard(node, item, index, row, version = "") {
   return true;
 }
 
+/**
+ * Current Home modern hero (renderModernHeroMarkup) inside its own .home-screen-shell, so the
+ * current hero CSS applies to this subtree only, never to the tv2 rails. Filled by setHero.
+ */
+const HERO_MARKUP = `
+  <div class="home-screen-shell home-layout-modern tv2-hero-shell">
+    <section class="home-hero home-hero-modern">
+      <article class="home-hero-card home-modern-hero-card">
+        <div class="home-modern-hero-media">
+          <div class="home-hero-backdrop-wrap">
+            <div class="home-hero-backdrop-loading"></div>
+            <img class="home-hero-backdrop placeholder" alt="" decoding="async" fetchpriority="high" onerror="${buildImageFallbackErrorHandler()}" />
+          </div>
+        </div>
+        <div class="home-hero-copy home-modern-hero-copy">
+          <div class="home-hero-brand"><h1 class="home-hero-title-text"></h1></div>
+          <div class="home-modern-hero-meta-line is-empty"></div>
+          <div class="home-modern-hero-secondary is-empty"></div>
+          <p class="home-hero-description is-empty"></p>
+        </div>
+      </article>
+    </section>
+  </div>`;
+
 /** Row index as the driver counts it: empty rows are not navigable, so they are skipped. */
 export const navRowOf = (rows, rowIndex) =>
   rows.slice(0, rowIndex).filter((row) => row.items.length).length;
@@ -117,16 +155,22 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   container.innerHTML = `
     <div class="tv2-home">
       ${renderLegacySidebar({ selectedRoute: "home", layout })}
-      <div class="tv2-hero"><img class="tv2-hero-backdrop" alt="" decoding="async" />
-        <div class="tv2-hero-text"><h1 class="tv2-hero-title"></h1><p class="tv2-hero-description"></p></div>
-      </div>
+      ${HERO_MARKUP}
       <div class="home-main tv2-main"><div class="tv2-rows"></div></div>
     </div>`;
   const root = container.querySelector(".tv2-home");
   const rowsHost = container.querySelector(".tv2-rows");
-  const heroBackdrop = container.querySelector(".tv2-hero-backdrop");
-  const heroTitle = container.querySelector(".tv2-hero-title");
-  const heroDescription = container.querySelector(".tv2-hero-description");
+  const hero = {
+    media: container.querySelector(".tv2-hero-shell .home-modern-hero-media"),
+    backdrop: container.querySelector(".tv2-hero-shell .home-hero-backdrop"),
+    brand: container.querySelector(".tv2-hero-shell .home-hero-brand"),
+    title: container.querySelector(".tv2-hero-shell .home-hero-title-text"),
+    primary: container.querySelector(".tv2-hero-shell .home-modern-hero-meta-line"),
+    secondary: container.querySelector(".tv2-hero-shell .home-modern-hero-secondary"),
+    description: container.querySelector(".tv2-hero-shell .home-hero-description"),
+    logo: null,
+    identity: ""
+  };
   const views = new Map();
   // Per pooled card: its child nodes and the image chosen at the last fill.
   const cards = new WeakMap();
@@ -295,10 +339,63 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     sidebar?.classList.toggle("content-expanded", sidebarIndex >= 0);
   }
 
-  function setHero(item) {
-    heroTitle.textContent = item?.name || item?.title || "";
-    heroDescription.textContent = item?.description || "";
-    imageQueue.request(heroBackdrop, heroImageUrl(item));
+  /**
+   * Current Home applyHeroToDom for the modern hero, on cached nodes: backdrop crossfade with its
+   * fallbacks, logo once loaded (title until then or on failure), meta lines and description.
+   * The hero image stays out of the card image queue. `loading` shows the skeleton (no item yet).
+   */
+  function setHero(item, { loading = false } = {}) {
+    hero.media.classList.toggle("home-modern-hero-media-loading", !item && loading);
+    const display = item ? buildModernHeroPresentation(item) : null;
+    if (!display) return;
+    const identity = buildHeroIdentity(item);
+    hero.identity = identity;
+    const crossfadeMs = Platform.isVidaa() ? 200 : HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS;
+    const transitionMode = getTvHeroTransitionMode();
+    hero.backdrop.dataset.fallbackSrcs = encodeHeroBackdropFallbacks(
+      display.backdropFallbacks || []
+    );
+    animateHeroBackdropSwap(
+      hero.backdrop,
+      display.backdrop || "",
+      display.title || "featured",
+      crossfadeMs,
+      { transitionMode }
+    );
+    hero.title.textContent = display.title || "";
+    hero.title.classList.remove("is-hidden");
+    if (display.logo) {
+      // animateHeroLogoSwap removes a logo that failed or was cleared: a new one is made then.
+      if (!hero.logo || hero.logo.parentNode !== hero.brand) {
+        hero.logo = document.createElement("img");
+        hero.logo.className = "home-hero-logo";
+        hero.logo.setAttribute("decoding", "async");
+        hero.logo.setAttribute("fetchpriority", "high");
+        hero.brand.insertBefore(hero.logo, hero.brand.firstChild);
+      }
+      const isCurrent = () => hero.identity === identity;
+      animateHeroLogoSwap(hero.logo, display.logo, display.title || "logo", crossfadeMs, {
+        transitionMode,
+        isCurrent,
+        onReady: (ready) => isCurrent() && hero.title.classList.toggle("is-hidden", ready)
+      });
+    } else if (hero.logo) animateHeroLogoSwap(hero.logo, "");
+    setHomeHtmlIfChanged(hero.primary, renderModernHeroPrimary(display));
+    hero.primary.classList.toggle(
+      "is-empty",
+      !display.leadingMeta.length && !display.trailingMeta.length && !display.showImdbPrimary
+    );
+    setHomeHtmlIfChanged(hero.secondary, renderModernHeroSecondary(display));
+    hero.secondary.classList.toggle(
+      "is-empty",
+      !display.secondaryHighlightText &&
+        !display.badges.length &&
+        !display.showImdbSecondary &&
+        !display.languageText &&
+        !display.mdbListMarkup
+    );
+    hero.description.textContent = display.description || " ";
+    hero.description.classList.toggle("is-empty", !display.description);
   }
 
   function setProfile(profile) {

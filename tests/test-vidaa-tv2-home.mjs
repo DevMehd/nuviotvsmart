@@ -213,6 +213,6 @@ assert.equal(
   0,
   "same episode after a return"
 );
-clearTimeout(screen.heroTimer);
+screen.cancelHero();
 
 console.log("PASS: new TV Home engines, setting, route choice and keys");

@@ -21,7 +21,10 @@ import {
   isCloudContinueWatchingItem,
   normalizeContinueWatchingItem
 } from "../screens/home/homeScreenHelpers-09-normalize-continue-watching-item.js";
-import { clearContinueWatchingDisplaySnapshot } from "../screens/home/homeScreenHelpers-10-get-cached-continue-watching-enrichment.js";
+import {
+  buildHeroIdentity,
+  clearContinueWatchingDisplaySnapshot
+} from "../screens/home/homeScreenHelpers-10-get-cached-continue-watching-enrichment.js";
 import {
   continueWatchingDetailParams,
   continueWatchingDetailsMenuParams,
@@ -29,6 +32,15 @@ import {
   removeContinueWatchingProgress
 } from "../screens/home/homeScreenHelpers-13-continue-watching-stream-params.js";
 import { createHomeScreenMethods08 } from "../screens/home/homeScreenMethods-08-open-hold-menu-for-node.js";
+import { createHomeScreenMethods22 } from "../screens/home/homeScreenMethods-22-pick-initial-hero.js";
+import { createHomeScreenMethods27 } from "../screens/home/homeScreenMethods-27-enrich-continue-watching.js";
+import { normalizeHomeRowItem } from "../screens/home/homeScreenHelpers-05-normalize-collection-folder-item.js";
+import { preloadHeroAssets } from "../screens/home/homeScreenHelpers-02-extract-release-date-text.js";
+import { MODERN_HOME_CONSTANTS } from "../screens/home/modernHomeLayout.js";
+import {
+  getVidaaHeroFocusDelay,
+  getVidaaHeroPreloadDelay
+} from "../screens/home/vidaaHomePreviewPolicy.js";
 import { loadHomeRows, loadNextCatalogPage } from "./homeModel.js";
 import { cardGeometry, rowCardSize, RAIL_VIEWPORT } from "./railEngine.js";
 import {
@@ -48,13 +60,24 @@ import { sessionNewHomeMode, homeEngine, noteHomeEngine } from "./newHomeSetting
 // full WebGL prototype (lot B2), which falls back to DOM when WebGL fails.
 
 const DIRECTIONS = { 37: "left", 38: "up", 39: "right", 40: "down" };
-const HERO_CALM_MS = 450;
+// Current Home scheduleModernHeroUpdate: busy navigation re-polls the hero every 60 ms.
+const HERO_BUSY_POLL_MS = MODERN_HOME_CONSTANTS.verticalScrollSettlePollMs;
 // Current Home modern pagination: next page once the projected last visible card is within 4
 // cards of the end (trackPaginationLoadAheadItems).
 const PAGE_AHEAD_ITEMS = 4;
 const PAGE_BUSY_RETRY_MS = 50;
 // The current Home's cloud resume uses no screen state.
 const { openCloudContinueWatchingFromItem } = createHomeScreenMethods08();
+// Hero choice of the current Home, called on plain objects (they read only what is passed).
+const { pickInitialHero } = createHomeScreenMethods22();
+const { pickHeroItem, collectHeroCandidates } = createHomeScreenMethods27();
+
+/** Hero source of a card, as the current Home's getNodeHeroSource (personal rows have no entry). */
+function heroSource(row, item) {
+  if (!row || !item) return null;
+  if (row.kind === "continue") return normalizeContinueWatchingItem(item);
+  return normalizeHomeRowItem(row.entry || { type: item.type }, item);
+}
 
 /** Current Home openDetailFromNode params, read from the card's item instead of its dataset. */
 const detailParams = (item) => ({
@@ -88,6 +111,10 @@ export const NewHomeScreen = {
     this.pagesInFlight = new Set();
     this.removedContinue = [];
     this.interacted = false;
+    this.heroItem = null;
+    this.heroCandidates = [];
+    this.heroLoading = false;
+    this.lastHeroNavAt = 0;
     this.pendingSnapshot =
       (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     this.restoring = Boolean(this.pendingSnapshot);
@@ -134,7 +161,7 @@ export const NewHomeScreen = {
     if (this.watchedTitleIds) this.view.setWatched(this.watchedTitleIds);
     this.view.setRows(this.rows);
     this.render();
-    this.view.setHero(this.currentItem());
+    this.view.setHero(this.heroItem, { loading: this.heroLoading });
   },
 
   applyRows(nextRows) {
@@ -165,7 +192,54 @@ export const NewHomeScreen = {
       this.focus = { ...this.focus, row: continueRow };
     this.view.setRows(rows);
     this.render();
+    this.applyInitialHero(rows);
     this.scheduleHero();
+  },
+
+  /**
+   * Current Home initial hero (pickInitialHero): until the first key, a filled Continue Watching
+   * row's first title, else the first hero candidate; a skeleton while Continue Watching loads.
+   * A return shows the restored card's title.
+   */
+  applyInitialHero(rows) {
+    const layoutPrefs = this.viewOptions.layout;
+    const entries = rows.map((row) => row.entry).filter(Boolean);
+    this.heroCandidates = collectHeroCandidates.call({ layoutPrefs }, entries);
+    if (this.interacted) return;
+    const continueRow = rows.find((row) => row.key === "continue_watching");
+    if (this.heroItem && !continueRow?.items.length) return;
+    let hero = null;
+    if (this.restoring) hero = this.pendingSnapshot ? null : this.focusedHeroSource();
+    else
+      hero = pickInitialHero.call({
+        layoutMode: "modern",
+        layoutPrefs,
+        continueWatchingLoading: continueRow?.status === "loading",
+        continueWatchingDisplay: continueRow?.items || [],
+        heroCandidates: this.heroCandidates,
+        rows: entries,
+        pickHeroItem
+      });
+    if (hero) {
+      this.showHero(hero);
+      return;
+    }
+    const loading = continueRow?.status === "loading";
+    if (loading === this.heroLoading) return;
+    this.heroLoading = loading;
+    this.view.setHero(null, { loading });
+  },
+
+  /** One hero write per title: the same identity is never written again. */
+  showHero(hero) {
+    this.heroLoading = false;
+    if (!hero || buildHeroIdentity(hero) === buildHeroIdentity(this.heroItem)) return;
+    this.heroItem = hero;
+    this.view?.setHero(hero);
+  },
+
+  focusedHeroSource() {
+    return heroSource(this.rows[this.focus.row], this.currentItem());
   },
 
   /** Removed Continue Watching titles stay out of the running load's later emits. */
@@ -202,10 +276,55 @@ export const NewHomeScreen = {
     return row?.items[focusedIndex(this.focus, this.rows)] || null;
   },
 
+  /**
+   * Current Home scheduleModernHeroUpdate without DOM: the focused title becomes the hero once
+   * the user settles (VIDAA 450 ms, 600 ms after moves under 130 ms apart), its artwork warmed
+   * just before; both wait while VIDAA navigation is busy. The current hero is not rescheduled.
+   */
   scheduleHero() {
+    this.cancelHero();
+    const hero = this.focusedHeroSource();
+    const identity = buildHeroIdentity(hero);
+    if (!hero?.id || identity === buildHeroIdentity(this.heroItem)) return;
+    const token = this.heroToken;
+    const now = Date.now();
+    const previous = Number(this.lastHeroNavAt || 0);
+    const rapid = previous > 0 && now - previous < MODERN_HOME_CONSTANTS.heroRapidNavThresholdMs;
+    this.lastHeroNavAt = now;
+    const vidaa = Platform.isVidaa();
+    const delay = vidaa
+      ? getVidaaHeroFocusDelay({ rapid })
+      : rapid
+        ? MODERN_HOME_CONSTANTS.heroRapidSettleMs
+        : MODERN_HOME_CONSTANTS.heroFocusDelayMs;
+    const preloadDelay = vidaa
+      ? getVidaaHeroPreloadDelay(delay, { rapid })
+      : Math.max(0, Math.min(120, delay - 80));
+    const whenCalm = (timer, run) => {
+      if (token !== this.heroToken) return;
+      const focused = this.focusedHeroSource();
+      if (buildHeroIdentity(focused) !== identity) return;
+      if (isVidaaNavigationBusy({ quietMs: HERO_BUSY_POLL_MS })) {
+        this[timer] = setTimeout(() => whenCalm(timer, run), HERO_BUSY_POLL_MS);
+        return;
+      }
+      run(focused);
+    };
+    this.heroPreloadTimer = setTimeout(
+      () => whenCalm("heroPreloadTimer", (focused) => void preloadHeroAssets(focused, "modern")),
+      preloadDelay
+    );
+    this.heroTimer = setTimeout(
+      () => whenCalm("heroTimer", (focused) => this.showHero(focused)),
+      delay
+    );
+  },
+
+  /** Drops the pending hero (move, sidebar, leaving Home). */
+  cancelHero() {
+    this.heroToken = (this.heroToken || 0) + 1;
     clearTimeout(this.heroTimer);
-    // One hero write after the user stops, like the current Home on VIDAA.
-    this.heroTimer = setTimeout(() => this.view?.setHero(this.currentItem()), HERO_CALM_MS);
+    clearTimeout(this.heroPreloadTimer);
   },
 
   onKeyDown(event) {
@@ -454,13 +573,16 @@ export const NewHomeScreen = {
       .findIndex((node) => node.classList.contains("selected"));
     this.sidebarIndex = Math.max(0, selected);
     this.sidebarOpenedByBack = openedByBack;
+    this.cancelHero();
     this.render();
   },
 
+  /** Back in the rails: the focused title becomes the hero again once calm. */
   closeSidebar() {
     this.sidebarIndex = -1;
     this.sidebarOpenedByBack = false;
     this.render();
+    this.scheduleHero();
   },
 
   /** Home picked again in the sidebar: back to the first card, like the current Home. */
@@ -468,7 +590,6 @@ export const NewHomeScreen = {
     const first = this.rows.findIndex((row) => row.items.length);
     this.focus = { ...createFocus(), row: Math.max(0, first) };
     this.closeSidebar();
-    this.scheduleHero();
   },
 
   /** Back: content opens the sidebar; the sidebar exits only when Back opened it, else closes. */
@@ -491,7 +612,7 @@ export const NewHomeScreen = {
   cleanup() {
     this.lastSnapshot = focusSnapshot(this.focus, this.rows) || this.lastSnapshot;
     this.token = (this.token || 0) + 1;
-    clearTimeout(this.heroTimer);
+    this.cancelHero();
     clearTimeout(this.pageTimer);
     this.cancelPendingContinueWatchingHold();
     // A menu left mounted would keep nuvio-modal-open and block every key.

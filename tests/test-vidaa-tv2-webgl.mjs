@@ -48,6 +48,8 @@ const oldQueue = { clear: () => calls.push("queue-cleared") };
 Object.assign(screen, {
   rows,
   focus: { row: 0, columns: { a: 1 } },
+  // The committed hero, not the focused card (lot C8: the hero follows focus after a delay).
+  heroItem: { id: "a1" },
   sidebarIndex: -1,
   imageQueue: oldQueue,
   viewOptions: { geometry: {}, imageQueue: oldQueue, layout: {} },

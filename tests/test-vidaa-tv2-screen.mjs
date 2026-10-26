@@ -56,6 +56,9 @@ class El {
   removeAttribute() {
     this.src = "";
   }
+  insertBefore(node) {
+    return this.appendChild(node);
+  }
   // Enough for a NuvioDialog (lot C7 menus).
   setAttribute() {}
   addEventListener() {}
@@ -75,6 +78,8 @@ globalThis.document = {
       : null
 };
 globalThis.window = { addEventListener() {}, removeEventListener() {} };
+// Hero swaps (lot C8) act on real images only: the fake nodes are skipped.
+globalThis.HTMLImageElement = class {};
 
 // Fake clock, as in test-vidaa-home-loading.mjs.
 let now = 0;
@@ -122,7 +127,7 @@ Router.getCurrent = () => "home";
 const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
 const { focusedIndex } = await import("../js/ui/tv2/focusModel.js");
 const { homeLayout, rowCardSize, RAIL_VIEWPORT } = await import("../js/ui/tv2/railEngine.js");
-const { noteVidaaNavigationKeyDown, noteVidaaNavigationKeyUp } =
+const { noteVidaaNavigationKeyDown, noteVidaaNavigationKeyUp, resetVidaaNavigationActivity } =
   await import("../js/ui/navigation/vidaaNavigationActivity.js");
 const { PosterOptionsDialogController } = await import("../js/ui/components/posterOptionsMenu.js");
 const { normalizeContinueWatchingItem } =
@@ -192,17 +197,19 @@ try {
       []
     );
     const before = calls.setRows;
+    const heroesBefore = calls.setHero.length;
     assert.ok(before > 0, "rows reached the renderer before cleanup");
     screen.cleanup();
     pending.resolve(catalogPage);
     await advance(1000);
     assert.equal(calls.setRows, before, "no setRows after cleanup");
-    assert.equal(calls.setHero.length, 0, "no hero after cleanup");
+    assert.equal(calls.setHero.length, heroesBefore, "no hero after cleanup");
     assert.equal(screen.view, null);
     catalogResult = async () => catalogPage;
   }
 
-  // Empty Continue Watching: focus lands on the first filled row; one hero once calm.
+  // Empty Continue Watching: focus lands on the first filled row; the first catalog title is the
+  // initial hero at once (current Home pickInitialHero), and the same title is not written again.
   {
     now = 0;
     timers.clear();
@@ -215,28 +222,103 @@ try {
     );
     assert.equal(screen.focus.row, filled);
     assert.equal(screen.view.focusedNode()?.dataset.itemId, "m0");
+    const heroes = () => calls.setHero.filter(Boolean);
+    assert.deepEqual(
+      heroes().map((item) => item.id),
+      ["m0"],
+      "initial hero before any calm delay"
+    );
+    await advance(1000);
+    assert.equal(heroes().length, 1, "the focused title is already the hero: no second write");
 
-    await advance(449);
-    assert.equal(calls.setHero.length, 0, "no hero before 450 ms");
-    await advance(450);
-    assert.equal(calls.setHero.length, 1, "exactly one hero after 450 ms");
-    assert.equal(calls.setHero[0].id, "m0");
+    // One tap: one hero 450 ms later, artwork warmed 20 ms after the move.
+    screen.onKeyDown({ keyCode: 39 });
+    const tapped = now;
+    await advance(tapped + 449);
+    assert.equal(heroes().length, 1, "no hero before 450 ms");
+    await advance(tapped + 450);
+    assert.deepEqual(
+      heroes().map((item) => item.id),
+      ["m0", "m1"],
+      "exactly one hero after 450 ms"
+    );
 
-    // Held right key: repeats every 100 ms never let the hero timer fire.
+    // Held right key: repeats every 100 ms never let the hero timer fire; rapid moves wait 600 ms.
     let released = now;
     for (let step = 1; step <= 10; step += 1) {
       released = now;
       screen.onKeyDown({ keyCode: 39, repeat: step > 1 });
       await advance(now + 100);
     }
-    assert.equal(calls.setHero.length, 1, "no hero while the key is held");
-    assert.equal(screen.view.focusedNode()?.dataset.itemId, "m10");
-    await advance(released + 449);
-    assert.equal(calls.setHero.length, 1);
-    await advance(released + 450);
-    assert.equal(calls.setHero.length, 2, "one hero once the key is released");
-    assert.equal(calls.setHero[1].id, "m10");
+    assert.equal(heroes().length, 2, "no hero while the key is held");
+    assert.equal(screen.view.focusedNode()?.dataset.itemId, "m11");
+    await advance(released + 599);
+    assert.equal(heroes().length, 2, "rapid moves: no hero before 600 ms");
+    await advance(released + 600);
+    assert.equal(heroes().length, 3, "one hero once the key is released");
+    assert.equal(heroes()[2].id, "m11");
+
+    // VIDAA navigation busy: the commit re-polls every 60 ms until 60 ms of quiet.
+    screen.onKeyDown({ keyCode: 37 });
+    const moved = now;
+    noteVidaaNavigationKeyDown(37);
+    await advance(moved + 900);
+    assert.equal(heroes().length, 3, "no hero while navigation is busy");
+    noteVidaaNavigationKeyUp(37);
+    const up = now;
+    await advance(up + 59);
+    assert.equal(heroes().length, 3, "no hero before 60 ms of quiet");
+    await advance(up + 120);
+    assert.equal(heroes().length, 4, "hero once navigation is quiet");
+    assert.equal(heroes()[3].id, "m10");
+    // The next cases restart the fake clock at 0.
+    resetVidaaNavigationActivity();
+
+    // Opening the sidebar drops the pending hero.
+    screen.onKeyDown({ keyCode: 39 });
+    await advance(now + 200);
+    screen.openSidebar(false);
+    await advance(now + 1000);
+    assert.equal(heroes().length, 4, "no hero once the sidebar opened");
+    screen.closeSidebar();
+    await advance(now + 450);
+    assert.equal(heroes().length, 5, "back in the rails: the focused title once calm");
+    assert.equal(heroes()[4].id, "m11");
     screen.cleanup();
+  }
+
+  // Continue Watching loading: hero skeleton, no catalog hero; its first title becomes the hero.
+  {
+    now = 0;
+    timers.clear();
+    const recent = deferred();
+    watchProgressRepository.getRecent = () => recent.promise;
+    const { screen, calls } = mountScreen();
+    await flush();
+    assert.ok(
+      screen.rows.some((row) => row.items.length),
+      "catalog rows arrived while Continue Watching loads"
+    );
+    assert.equal(calls.setHero[0], null, "skeleton first");
+    assert.equal(calls.setHero.filter(Boolean).length, 0, "no catalog hero while it loads");
+    recent.resolve([
+      {
+        contentId: "tt9",
+        contentType: "movie",
+        title: "Resume",
+        poster: "https://img.invalid/tt9.jpg",
+        positionMs: 10,
+        durationMs: 100,
+        updatedAt: 1
+      }
+    ]);
+    await flush();
+    // Later emits follow pickInitialHero again until the first key (here the enrichment fixture
+    // drops the artwork, so the first catalog title takes over).
+    const heroes = calls.setHero.filter(Boolean);
+    assert.equal(heroes[0]?.contentId, "tt9", "the first hero is the Continue Watching title");
+    screen.cleanup();
+    watchProgressRepository.getRecent = async () => [];
   }
 
   // Diagnostics hooks read by the benchmark driver.
