@@ -9,7 +9,7 @@ import {
   getSidebarProfileState
 } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { loadHomeRows, loadNextCatalogPage } from "./homeModel.js";
-import { cardGeometry } from "./railEngine.js";
+import { cardGeometry, rowCardSize, RAIL_VIEWPORT } from "./railEngine.js";
 import { createFocus, focusedIndex, moveFocus, focusSnapshot, restoreFocus } from "./focusModel.js";
 import { createImageQueue } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
@@ -21,7 +21,8 @@ import { sessionNewHomeMode, homeEngine, noteHomeEngine } from "./newHomeSetting
 
 const DIRECTIONS = { 37: "left", 38: "up", 39: "right", 40: "down" };
 const HERO_CALM_MS = 450;
-// Current Home modern pagination: next page within 4 cards of the end (trackPaginationLoadAheadItems).
+// Current Home modern pagination: next page once the projected last visible card is within 4
+// cards of the end (trackPaginationLoadAheadItems).
 const PAGE_AHEAD_ITEMS = 4;
 const PAGE_BUSY_RETRY_MS = 50;
 
@@ -186,7 +187,11 @@ export const NewHomeScreen = {
     clearTimeout(this.pageTimer);
     const row = this.rows[this.focus.row];
     if (row?.kind !== "poster" || !row.entry || !row.hasMore || !row.supportsSkip) return;
-    if (focusedIndex(this.focus, this.rows) < row.items.length - PAGE_AHEAD_ITEMS) return;
+    // Visible cards from the rail tables, as the current Home's ceil(track width / stride).
+    const { geometry } = this.viewOptions;
+    const visible = Math.ceil(RAIL_VIEWPORT / (rowCardSize(row, geometry).width + geometry.gap));
+    const lastVisible = focusedIndex(this.focus, this.rows) + visible - 1;
+    if (lastVisible < row.items.length - PAGE_AHEAD_ITEMS) return;
     const inFlight = this.pagesInFlight;
     if (inFlight.has(row.key)) return;
     if (isVidaaNavigationBusy()) {

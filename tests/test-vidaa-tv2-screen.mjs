@@ -110,6 +110,7 @@ const { Router } = await import("../js/ui/navigation/routerState.js");
 Router.getCurrent = () => "home";
 const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
 const { focusedIndex } = await import("../js/ui/tv2/focusModel.js");
+const { homeLayout, rowCardSize, RAIL_VIEWPORT } = await import("../js/ui/tv2/railEngine.js");
 const { noteVidaaNavigationKeyDown, noteVidaaNavigationKeyUp } =
   await import("../js/ui/navigation/vidaaNavigationActivity.js");
 
@@ -321,17 +322,26 @@ try {
     await flush();
     const row = () => screen.rows[screen.focus.row];
     assert.equal(row().items.length, 20);
-    for (let step = 0; step < 15; step += 1) screen.onKeyDown({ keyCode: 39 });
-    assert.equal(requests.length, 0, "no page before the last 4 cards");
+    // Current Home trigger: the projected last visible card (focus + visible - 1) within 4 cards
+    // of the end, early enough that the page lands before the camera reaches the row end.
+    const geometry = screen.viewOptions.geometry;
+    const visible = Math.ceil(RAIL_VIEWPORT / (rowCardSize(row(), geometry).width + geometry.gap));
+    const triggerAt = (count) => count - 4 - visible + 1;
+    const cameraOffset = () =>
+      homeLayout(screen.rows, screen.focus, geometry).rows[screen.focus.row].win.offset;
+    for (let step = 0; step < triggerAt(20) - 1; step += 1) screen.onKeyDown({ keyCode: 39 });
+    assert.equal(requests.length, 0, "no page before the last visible card nears the end");
     await advance(now + 1000);
     screen.onKeyDown({ keyCode: 39 });
-    assert.equal(requests.length, 1, "one page at index 16 of 20");
+    assert.equal(focusedIndex(screen.focus, screen.rows), triggerAt(20));
+    assert.equal(requests.length, 1, "one page once the last visible card is 4 from the end");
     assert.equal(requests[0].skip, 20);
     assert.equal(requests[0].catalogId, "top");
     assert.equal(requests[0].supportsSkip, true);
     screen.onKeyDown({ keyCode: 39 });
     assert.equal(requests.length, 1, "no second request while the page is in flight");
     const setRowsBefore = calls.setRows;
+    const offsetBefore = cameraOffset();
     nextPage.resolve({
       status: "success",
       data: { items: [...page(18, 2), ...page(20, 10)], hasMore: true }
@@ -340,16 +350,19 @@ try {
     assert.equal(row().items.length, 30, "duplicates dropped, 10 cards appended");
     assert.equal(row().items[29].id, "p29");
     assert.equal(row().nextSkip, 32);
-    assert.equal(focusedIndex(screen.focus, screen.rows), 17, "same column");
-    assert.equal(screen.view.focusedNode()?.dataset.itemId, "p17", "same focused card");
+    const column = triggerAt(20) + 1;
+    assert.equal(focusedIndex(screen.focus, screen.rows), column, "same column");
+    assert.equal(screen.view.focusedNode()?.dataset.itemId, `p${column}`, "same focused card");
+    assert.equal(cameraOffset(), offsetBefore, "the row does not slide when the page lands");
     assert.equal(calls.setRows, setRowsBefore, "appended without rebuilding the rows");
 
     // VIDAA: a page is not requested while keys are moving; it follows once navigation settles.
-    for (let step = 0; step < 8; step += 1) screen.onKeyDown({ keyCode: 39 });
+    while (focusedIndex(screen.focus, screen.rows) < triggerAt(30) - 1)
+      screen.onKeyDown({ keyCode: 39 });
     assert.equal(requests.length, 1);
     noteVidaaNavigationKeyDown(39);
     screen.onKeyDown({ keyCode: 39 });
-    assert.equal(focusedIndex(screen.focus, screen.rows), 26);
+    assert.equal(focusedIndex(screen.focus, screen.rows), triggerAt(30));
     assert.equal(requests.length, 1, "deferred while navigation is busy");
     noteVidaaNavigationKeyUp(39);
     await advance(now + 1000);
