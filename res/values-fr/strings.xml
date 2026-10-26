@@ -2861,4 +2861,5 @@
     <string name="layout_new_home_sub">Accueil plus fluide en cours de refonte pour la télé ; effet au prochain démarrage</string>
     <string name="layout_new_home_off">Désactivé</string>
     <string name="layout_new_home_dom">Activé</string>
+    <string name="layout_new_home_webgl">Activé, WebGL (prototype)</string>
 </resources>

@@ -619,6 +619,20 @@ async function buildBundle() {
     target: [`chrome${compatibilityPolicy.chromiumVersion}`]
   });
 
+  // WebGL Home prototype (nuv-091, lot B2): Lightning bundled apart like
+  // build-comparison.mjs, loaded on demand; VIDAA's Chromium 111 is its only target.
+  await build({
+    entryPoints: [path.join(rootDir, "js/ui/tv2/render/lightning/lightningLib.js")],
+    outfile: path.join(distDir, "assets/runtime/tv2-lightning.js"),
+    bundle: true,
+    minify: true,
+    format: "iife",
+    target: ["chrome111"],
+    conditions: ["browser"],
+    define: { "process.env.NODE_ENV": '"production"' },
+    legalComments: "linked"
+  });
+
   console.log("starting bundle build...");
   const result = await build({
     entryPoints: [path.join(rootDir, "js/app.js")],

@@ -133,7 +133,7 @@ assert.deepEqual(
 setting.resetSessionNewHomeMode();
 assert.equal(setting.getNewHomeMode(), "off");
 assert.equal(Router.routes.home, HomeScreen);
-assert.equal(setting.setNewHomeMode("webgl"), "off", "reserved modes are not selectable yet");
+assert.equal(setting.setNewHomeMode("hybrid"), "off", "reserved modes are not selectable yet");
 assert.equal(setting.setNewHomeMode("dom"), "dom");
 assert.equal(Router.routes.home, HomeScreen, "no switch under a running session");
 setting.resetSessionNewHomeMode();

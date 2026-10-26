@@ -6,16 +6,33 @@ import { sizedImageUrl } from "./imagePipeline.js";
 // Renderers of the new TV Home (nuv-091) share one interface:
 //   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item), setProfile(state),
 //   sidebarItems(), destroy().
-// This is the DOM one, the universal fallback; lot B2 adds the WebGL and hybrid ones.
+// This is the DOM one, the universal fallback; render/lightning/ is the WebGL one (lot B2).
 
-const ROW_TITLE_HEIGHT = 56;
-const VIEWPORT_WIDTH = 1920 - 220;
+export const ROW_TITLE_HEIGHT = 56;
+export const VIEWPORT_WIDTH = 1920 - 220;
 
 const esc = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
+
+/** Card dataset read by openDetail and the diagnostic driver; skipped when already filled. */
+export function fillCard(node, item, index, row) {
+  if (node.dataset.index === String(index) && node.dataset.rowKey === row.key) return;
+  node.dataset.index = String(index);
+  node.dataset.rowKey = row.key;
+  node.dataset.itemId = String(item.id || "");
+  node.dataset.itemType = String(item.type || item.apiType || "movie");
+  node.dataset.itemTitle = String(item.name || item.title || "");
+  node.dataset.posterSrc = String(item.poster || "");
+  node.dataset.backdropSrc = String(item.background || item.backdrop || "");
+  node.dataset.addonBaseUrl = String(item.addonBaseUrl || "");
+  node.dataset.addonId = String(item.addonId || "");
+  node.dataset.addonName = String(item.addonName || "");
+  node.dataset.catalogType = String(item.catalogType || item.type || "movie");
+  node.querySelector(".tv2-card-title").textContent = node.dataset.itemTitle;
+}
 
 export function createDomHomeRenderer(container, { geometry, imageQueue, layout = {} }) {
   container.innerHTML = `
@@ -82,22 +99,6 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     return node;
   }
 
-  function fill(node, item, index, row) {
-    if (node.dataset.index === String(index) && node.dataset.rowKey === row.key) return;
-    node.dataset.index = String(index);
-    node.dataset.rowKey = row.key;
-    node.dataset.itemId = String(item.id || "");
-    node.dataset.itemType = String(item.type || item.apiType || "movie");
-    node.dataset.itemTitle = String(item.name || item.title || "");
-    node.dataset.posterSrc = String(item.poster || "");
-    node.dataset.backdropSrc = String(item.background || item.backdrop || "");
-    node.dataset.addonBaseUrl = String(item.addonBaseUrl || "");
-    node.dataset.addonId = String(item.addonId || "");
-    node.dataset.addonName = String(item.addonName || "");
-    node.dataset.catalogType = String(item.catalogType || item.type || "movie");
-    node.querySelector(".tv2-card-title").textContent = node.dataset.itemTitle;
-  }
-
   function update(rows, focus, { sidebarIndex = -1 } = {}) {
     const heights = [];
     rows.forEach((row, rowIndex) => {
@@ -117,7 +118,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       view.slots.forEach((node) => (node.style.visibility = "hidden"));
       for (let i = win.start; i < win.end; i += 1) {
         const node = slotNode(view, slotFor(i, win.poolSize));
-        fill(node, row.items[i], i, row);
+        fillCard(node, row.items[i], i, row);
         node.style.visibility = "";
         node.style.transform = `translate3d(${i * pitch}px,0,0)`;
         const image = node.querySelector(".tv2-card-image");

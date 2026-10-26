@@ -13,8 +13,11 @@ import { cardGeometry } from "./railEngine.js";
 import { createFocus, focusedIndex, moveFocus, focusSnapshot, restoreFocus } from "./focusModel.js";
 import { createImageQueue } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
+import { homeEngine } from "./newHomeSetting.js";
+import { createLightningHomeRenderer } from "./render/lightning/lightningHomeRenderer.js";
 
-// New TV Home (nuv-091), DOM renderer. Enabled by the "Nouvel accueil (bêta)" setting.
+// New TV Home (nuv-091). Enabled by the "Nouvel accueil (bêta)" setting: DOM renderer, or the
+// WebGL prototype (lot B2) that falls back to DOM for the rest of the run when it fails.
 
 const DIRECTIONS = { 37: "left", 38: "up", 39: "right", 40: "down" };
 const HERO_CALM_MS = 450;
@@ -27,11 +30,14 @@ export const NewHomeScreen = {
     ScreenUtils.show(this.container);
     const layout = LayoutPreferences.get();
     this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
-    this.view = createDomHomeRenderer(this.container, {
-      geometry: cardGeometry(layout),
-      imageQueue: this.imageQueue,
-      layout
-    });
+    this.viewOptions = { geometry: cardGeometry(layout), imageQueue: this.imageQueue, layout };
+    this.view =
+      homeEngine() === "webgl"
+        ? createLightningHomeRenderer(this.container, {
+            ...this.viewOptions,
+            onFailure: () => token === this.token && this.fallbackToDom()
+          })
+        : this.domView();
     this.rows = [];
     this.focus = createFocus();
     this.sidebarIndex = -1;
@@ -63,6 +69,20 @@ export const NewHomeScreen = {
     this.view.setRows(rows);
     this.render();
     this.scheduleHero();
+  },
+
+  domView() {
+    return createDomHomeRenderer(this.container, this.viewOptions);
+  },
+
+  /** WebGL failed (see markWebglFailed): same rows, focus and hero, drawn by the DOM renderer. */
+  fallbackToDom() {
+    this.imageQueue?.clear();
+    this.view?.destroy();
+    this.view = this.domView();
+    this.view.setRows(this.rows);
+    this.render();
+    this.view.setHero(this.currentItem());
   },
 
   render() {

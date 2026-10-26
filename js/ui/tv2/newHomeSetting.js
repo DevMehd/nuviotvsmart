@@ -2,9 +2,9 @@ import { LocalStore } from "../../core/storage/localStore.js";
 
 // Device-local beta switch for the new TV Home (nuv-091), like tvPerfMode.
 const NEW_HOME_KEY = "tvNewHome";
-export const NEW_HOME_MODES = Object.freeze(["off", "dom"]);
-// Reserved for the lot B2 prototypes; not selectable until they exist.
-export const FUTURE_NEW_HOME_MODES = Object.freeze(["hybrid", "webgl"]);
+export const NEW_HOME_MODES = Object.freeze(["off", "dom", "webgl"]);
+// Reserved for the lot B2 hybrid prototype; not selectable until it exists.
+export const FUTURE_NEW_HOME_MODES = Object.freeze(["hybrid"]);
 
 export function getNewHomeMode() {
   try {
@@ -32,4 +32,22 @@ export function sessionNewHomeMode() {
 
 export function resetSessionNewHomeMode() {
   sessionMode = null;
+  webglFailure = null;
+}
+
+let webglFailure = null;
+/** After a WebGL failure (no WebGL, context lost on screen, texture budget) the run stays on DOM. */
+export function markWebglFailed(reason) {
+  webglFailure = webglFailure || String(reason || "unknown");
+}
+
+export function webglFailureReason() {
+  return webglFailure;
+}
+
+/** Renderer actually drawing the new Home: "webgl", "dom", or "off" for the current Home. */
+export function homeEngine() {
+  const mode = sessionNewHomeMode();
+  if (mode === "off") return "off";
+  return mode === "webgl" && !webglFailure ? "webgl" : "dom";
 }

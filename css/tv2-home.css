@@ -154,3 +154,27 @@
 .tv2-card.focused {
   box-shadow: 0 0 0 4px var(--focus-color);
 }
+
+/* WebGL prototype (lot B2): the canvas draws hero and rails under the DOM sidebar. */
+.tv2-gl-host {
+  position: absolute;
+  inset: 0;
+}
+
+.tv2-gl-canvas {
+  display: block;
+}
+
+/* Focused-card mirror for openDetail and the diagnostic driver; never visible. */
+.tv2-home .tv2-gl-proxy {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
