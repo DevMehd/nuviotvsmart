@@ -10,7 +10,7 @@ export function createHomeScreenMethods06() {
     isPosterWatchedType,
     partitionContinueWatchingRows,
     normalizeContinueWatchingItem,
-    isCloudContinueWatchingItem,
+    continueWatchingMenuOptions,
     TitleRatings
   } = internals;
 
@@ -71,25 +71,7 @@ export function createHomeScreenMethods06() {
       if (!item) {
         return [];
       }
-      const isCloud = isCloudContinueWatchingItem(item);
-      const options = [];
-      if (!isCloud) {
-        options.push({
-          action: "details",
-          label: t("cw_action_go_to_details", {}, "Go to details")
-        });
-      }
-      if (!isCloud && this.showContinueWatchingManualPlayOption) {
-        options.push({ action: "playManually", label: t("play_manually", {}, "Play manually") });
-      }
-      if (!item.isNextUp) {
-        options.push({
-          action: "startOver",
-          label: t("cw_action_start_from_beginning", {}, "Start from beginning")
-        });
-      }
-      options.push({ action: "remove", label: t("cw_action_remove", {}, "Remove") });
-      return options;
+      return continueWatchingMenuOptions(item, { manualPlay: this.showContinueWatchingManualPlayOption });
     },
     renderContinueWatchingMenu() {
       return "";

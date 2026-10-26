@@ -157,15 +157,13 @@ try {
   await loadHomeRows({ isCurrent: () => current, onRows: () => {} });
   assert.equal(refreshCalls, callsBefore, "no refresh after the Home was left");
 
-  // OK on a collection folder opens the folder, not Detail.
+  // OK on a collection folder opens the folder on key-down, not Detail and with no hold.
   const navigations = [];
   replace(Router, "navigate", (route, params) => navigations.push([route, params]));
   const screen = Object.create(NewHomeScreen);
   screen.rows = emits.at(-1);
-  screen.focus = { row: 1, columns: {} };
-  screen.view = { focusedNode: () => ({ dataset: {} }) };
-  screen.currentItem = () => pinned.items[0];
-  screen.openDetail();
+  screen.focus = { row: screen.rows.findIndex((row) => row.key === pinned.key), columns: {} };
+  screen.onKeyDown({ keyCode: 13 });
   assert.deepEqual(navigations, [
     ["folderDetail", { collectionId: "pinned", folderId: "p1", collectionTitle: "Pinned" }]
   ]);

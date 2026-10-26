@@ -334,6 +334,21 @@ export function writeContinueWatchingDisplaySnapshot(scopeKey, items = []) {
   LocalStore.set(CW_DISPLAY_SNAPSHOT_KEY, Object.fromEntries(entries));
 }
 
+/** Drops the saved Continue Watching display of one source; true when there was one. */
+export function clearContinueWatchingDisplaySnapshot(scopeKey) {
+  if (!scopeKey) {
+    return false;
+  }
+  const store = LocalStore.get(CW_DISPLAY_SNAPSHOT_KEY, {});
+  if (!store || typeof store !== "object" || !Object.prototype.hasOwnProperty.call(store, scopeKey)) {
+    return false;
+  }
+  const next = { ...store };
+  delete next[scopeKey];
+  LocalStore.set(CW_DISPLAY_SNAPSHOT_KEY, next);
+  return true;
+}
+
 export function buildContinueWatchingSignature(items = []) {
   return (items || [])
     .map((item) => {

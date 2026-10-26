@@ -4,13 +4,41 @@ import { allowDpadRepeat } from "../navigation/dpadRepeatThrottle.js";
 import { isVidaaNavigationBusy } from "../navigation/vidaaNavigationActivity.js";
 import { Platform } from "../../platform/index.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
+import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
+import {
+  watchedItemIdentityValues,
+  watchedItemsShareIdentity
+} from "../../data/repository/watchedIdentity.js";
+import { NuvioDialog } from "../components/nuvioDialog.js";
+import { PosterOptionsDialogController } from "../components/posterOptionsMenu.js";
 import {
   activateLegacySidebarAction,
   getSidebarProfileState
 } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
+import { CW_HOLD_DELAY_MS } from "../screens/home/homeConstants.js";
+import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
+import {
+  isCloudContinueWatchingItem,
+  normalizeContinueWatchingItem
+} from "../screens/home/homeScreenHelpers-09-normalize-continue-watching-item.js";
+import { clearContinueWatchingDisplaySnapshot } from "../screens/home/homeScreenHelpers-10-get-cached-continue-watching-enrichment.js";
+import {
+  continueWatchingDetailParams,
+  continueWatchingDetailsMenuParams,
+  continueWatchingMenuOptions,
+  removeContinueWatchingProgress
+} from "../screens/home/homeScreenHelpers-13-continue-watching-stream-params.js";
+import { createHomeScreenMethods08 } from "../screens/home/homeScreenMethods-08-open-hold-menu-for-node.js";
 import { loadHomeRows, loadNextCatalogPage } from "./homeModel.js";
 import { cardGeometry, rowCardSize, RAIL_VIEWPORT } from "./railEngine.js";
-import { createFocus, focusedIndex, moveFocus, focusSnapshot, restoreFocus } from "./focusModel.js";
+import {
+  createFocus,
+  focusedIndex,
+  itemIdentity,
+  moveFocus,
+  focusSnapshot,
+  restoreFocus
+} from "./focusModel.js";
 import { createImageQueue } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
 import { createLightningHomeRenderer } from "./render/lightning/lightningHomeRenderer.js";
@@ -25,6 +53,21 @@ const HERO_CALM_MS = 450;
 // cards of the end (trackPaginationLoadAheadItems).
 const PAGE_AHEAD_ITEMS = 4;
 const PAGE_BUSY_RETRY_MS = 50;
+// The current Home's cloud resume uses no screen state.
+const { openCloudContinueWatchingFromItem } = createHomeScreenMethods08();
+
+/** Current Home openDetailFromNode params, read from the card's item instead of its dataset. */
+const detailParams = (item) => ({
+  itemId: String(item.id),
+  itemType: String(item.type || item.apiType || "movie"),
+  fallbackTitle: String(item.name || item.title || "") || "Untitled",
+  fallbackPoster: String(item.poster || ""),
+  fallbackBackground: String(item.background || item.backdrop || ""),
+  addonBaseUrl: String(item.addonBaseUrl || ""),
+  addonId: String(item.addonId || ""),
+  addonName: String(item.addonName || ""),
+  catalogType: String(item.catalogType || item.type || "movie")
+});
 
 export const NewHomeScreen = {
   async mount(params = {}, navigation = {}) {
@@ -41,9 +84,13 @@ export const NewHomeScreen = {
     this.rows = [];
     this.focus = createFocus();
     this.sidebarIndex = -1;
+    this.sidebarOpenedByBack = false;
     this.pagesInFlight = new Set();
+    this.removedContinue = [];
+    this.interacted = false;
     this.pendingSnapshot =
       (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
+    this.restoring = Boolean(this.pendingSnapshot);
     void getSidebarProfileState({ cacheOnly: true })
       .then((profile) => {
         if (token !== this.token) return;
@@ -90,7 +137,8 @@ export const NewHomeScreen = {
     this.view.setHero(this.currentItem());
   },
 
-  applyRows(rows) {
+  applyRows(nextRows) {
+    const rows = this.withoutRemoved(nextRows);
     // Catalog rows arrive out of order: keep focus on the same row key, not the same index.
     const focusedKey = this.rows?.[this.focus.row]?.key;
     const keptRow = rows.findIndex((row) => row.key === focusedKey);
@@ -108,9 +156,29 @@ export const NewHomeScreen = {
       if (firstFilled >= 0 && !this.pendingSnapshot)
         this.focus = { ...this.focus, row: firstFilled };
     }
+    // Current Home late focus (shouldApplyLateContinueWatchingFocus): Continue Watching filled
+    // before any key takes focus, except on a return.
+    const continueRow = rows.findIndex(
+      (row) => row.key === "continue_watching" && row.items.length
+    );
+    if (continueRow >= 0 && !this.interacted && !this.restoring)
+      this.focus = { ...this.focus, row: continueRow };
     this.view.setRows(rows);
     this.render();
     this.scheduleHero();
+  },
+
+  /** Removed Continue Watching titles stay out of the running load's later emits. */
+  withoutRemoved(rows) {
+    if (!this.removedContinue?.length) return rows;
+    return rows.flatMap((row) => {
+      if (row.kind !== "continue") return [row];
+      const items = row.items.filter(
+        (item) => !this.removedContinue.some((gone) => watchedItemsShareIdentity(item, gone))
+      );
+      if (items.length === row.items.length) return [row];
+      return items.length ? [{ ...row, items }] : [];
+    });
   },
 
   /** Watched badges: DOM only, the WebGL renderer has no setWatched. */
@@ -142,12 +210,13 @@ export const NewHomeScreen = {
 
   onKeyDown(event) {
     const code = Number(event?.keyCode || 0);
-    if (Platform.isBackEvent(event)) {
-      event.preventDefault?.();
-      this.consumeBackRequest();
-      return;
-    }
     const direction = DIRECTIONS[code];
+    if (direction || code === 13) {
+      // Current Home: the first key cancels a late focus restore or Continue Watching jump.
+      this.interacted = true;
+      this.pendingSnapshot = null;
+    }
+    if (code !== 13) this.cancelPendingContinueWatchingHold();
     if (direction) {
       event.preventDefault?.();
       if (!allowDpadRepeat(this, event)) return;
@@ -155,25 +224,182 @@ export const NewHomeScreen = {
       else this.moveInRails(direction);
       return;
     }
-    if (code === 13) {
-      event.preventDefault?.();
-      if (this.sidebarIndex >= 0) {
-        const action = this.view.sidebarItems()[this.sidebarIndex]?.dataset.action;
-        activateLegacySidebarAction(action, "home");
-      } else {
-        this.openDetail();
-      }
+    if (code !== 13) return;
+    event.preventDefault?.();
+    if (this.sidebarIndex >= 0) {
+      const action = this.view.sidebarItems()[this.sidebarIndex]?.dataset.action;
+      activateLegacySidebarAction(action, "home");
+      return;
     }
+    const row = this.rows[this.focus.row];
+    const item = this.currentItem();
+    if (!item) return;
+    // Folders are no hold target: they open on key-down, like the current Home.
+    if (row.kind === "collection") this.openItem(row, item);
+    else if (!event.repeat && !this.pendingHold) this.armHold(row, item);
+  },
+
+  /**
+   * OK on a title: the short press acts on key-up, a 650 ms hold opens its menu (current Home
+   * hold targets). A key-up with no armed press is ignored: the OK that closed the changelog or
+   * the hand-off prompt.
+   */
+  onKeyUp(event) {
+    if (Number(event?.keyCode || 0) !== 13) return;
+    const target = this.pendingHold;
+    if (!target) return;
+    event.preventDefault?.();
+    this.cancelPendingContinueWatchingHold();
+    if (!this.isFocused(target)) return;
+    if (Number(event.keyDownDurationMs || 0) >= CW_HOLD_DELAY_MS) this.openHoldMenu();
+    else this.openItem(this.rows[this.focus.row], this.currentItem());
+  },
+
+  armHold(row, item) {
+    const target = { rowKey: row.key, identity: itemIdentity(item) };
+    this.pendingHold = target;
+    // Firmware can swallow the key-up: the timer opens the menu on its own.
+    this.holdTimer = setTimeout(() => {
+      if (this.pendingHold !== target) return;
+      this.cancelPendingContinueWatchingHold();
+      if (Router.getCurrent() === "home" && this.isFocused(target)) this.openHoldMenu();
+    }, CW_HOLD_DELAY_MS);
+  },
+
+  /** Named like the current Home's, so FocusEngine.resetVidaaKeyState cancels it on blur. */
+  cancelPendingContinueWatchingHold() {
+    clearTimeout(this.holdTimer);
+    this.holdTimer = null;
+    this.pendingHold = null;
+  },
+
+  isFocused(target) {
+    return (
+      this.sidebarIndex < 0 &&
+      this.rows[this.focus.row]?.key === target.rowKey &&
+      itemIdentity(this.currentItem()) === target.identity
+    );
+  },
+
+  /** Short OK per row kind: Continue Watching resumes, folders open, other titles open Detail. */
+  openItem(row, item) {
+    if (!row || !item) return;
+    this.lastSnapshot = focusSnapshot(this.focus, this.rows);
+    if (row.kind === "continue") {
+      this.resumeContinueWatching(item);
+      return;
+    }
+    if (row.kind === "collection") {
+      Router.navigate("folderDetail", {
+        collectionId: item.collectionId,
+        folderId: item.folderId,
+        collectionTitle: item.collectionTitle || ""
+      });
+      return;
+    }
+    if (item.id) Router.navigate("detail", detailParams(item));
+  },
+
+  /** Current Home openContinueWatchingFromItem: cloud items play, others resume through Detail. */
+  resumeContinueWatching(item, options = {}) {
+    const normalized = normalizeContinueWatchingItem(item);
+    if (!normalized?.contentId) return;
+    if (isCloudContinueWatchingItem(normalized)) {
+      void openCloudContinueWatchingFromItem(normalized, options).catch((error) =>
+        console.warn("Cloud Continue Watching playback failed", error)
+      );
+      return;
+    }
+    const params = continueWatchingDetailParams(normalized, options);
+    if (params) Router.navigate("detail", params);
+  },
+
+  openHoldMenu() {
+    const row = this.rows[this.focus.row];
+    const item = this.currentItem();
+    if (!row || !item) return;
+    if (row.kind === "continue") this.openContinueWatchingMenu(item);
+    else void this.openPosterMenu(item);
+  },
+
+  /** Shared title menu (details, library or lists, watched, Pas pour moi), as See All uses it. */
+  async openPosterMenu(item) {
+    const token = this.token;
+    const menu = (this.posterMenu ||= new PosterOptionsDialogController({
+      onDetails: (target) => Router.navigate("detail", detailParams(target)),
+      onDismiss: () => this.render(),
+      onChanged: (state) => this.markWatched(state)
+    }));
+    await menu.open(item);
+    // A Home left while the menu state loaded gets no dialog.
+    if (token !== this.token) menu.destroy({ restoreFocus: false });
+  },
+
+  /** Watched badge after the menu toggled it, before the next load publishes the stored state. */
+  markWatched({ item, isWatched }) {
+    const ids = new Set(this.watchedTitleIds || []);
+    watchedItemIdentityValues(item).forEach((id) => (isWatched ? ids.add(id) : ids.delete(id)));
+    this.applyWatched(ids);
+  },
+
+  /** Current Home Continue Watching menu (methods-07/09): Details, Start from beginning, Remove. */
+  openContinueWatchingMenu(item) {
+    this.cwDialog?.destroy();
+    this.cwDialog = new NuvioDialog({
+      title: item.title || "Untitled",
+      subtitle: t("cw_dialog_subtitle", {}, "Choose what you want to do with this item."),
+      widthVw: 37.5,
+      suppressEnterUntilKeyUp: true,
+      buttons: continueWatchingMenuOptions(item).map((option) => ({
+        label: option.label,
+        key: option.action,
+        onAction: () =>
+          void this.activateContinueWatchingOption(option.action, item).catch((error) =>
+            console.warn("Continue Watching menu action failed", error)
+          )
+      })),
+      onDismiss: () => {
+        this.cwDialog = null;
+        this.render();
+      }
+    }).mount(document.body);
+  },
+
+  async activateContinueWatchingOption(action, item) {
+    const dialog = this.cwDialog;
+    const normalized = normalizeContinueWatchingItem(item);
+    if (!dialog || !normalized?.contentId) return;
+    this.lastSnapshot = focusSnapshot(this.focus, this.rows);
+    if (action === "details") {
+      this.cwDialog = null;
+      const params = continueWatchingDetailsMenuParams(normalized);
+      dialog.destroy({ afterExit: () => Router.navigate("detail", params) });
+      return;
+    }
+    if (action === "startOver") {
+      this.cwDialog = null;
+      dialog.destroy();
+      this.resumeContinueWatching(item, { startOver: true });
+      return;
+    }
+    if (action !== "remove") return;
+    await removeContinueWatchingProgress(normalized);
+    if (this.cwDialog === dialog) this.cwDialog = null;
+    dialog.destroy();
+    // Current Home pruneContinueWatchingItem: the whole title leaves, its snapshot is dropped.
+    this.removedContinue.push({ ...normalized, videoId: null });
+    clearContinueWatchingDisplaySnapshot(watchProgressRepository.getContinueWatchingSourceKey());
+    this.applyRows(this.rows);
   },
 
   moveInRails(direction) {
     const next = moveFocus(this.focus, this.rows, direction);
     if (next === null) {
-      this.sidebarIndex = 0;
-    } else {
-      this.focus = next;
-      this.scheduleHero();
+      this.openSidebar(false);
+      return;
     }
+    this.focus = next;
+    this.scheduleHero();
     this.render();
     if (direction === "right") this.requestNextPage();
   },
@@ -215,47 +441,46 @@ export const NewHomeScreen = {
 
   moveInSidebar(direction) {
     const count = this.view.sidebarItems().length;
-    if (direction === "right") this.sidebarIndex = -1;
-    else if (direction === "up") this.sidebarIndex = Math.max(0, this.sidebarIndex - 1);
+    if (direction === "right") return this.closeSidebar();
+    if (direction === "up") this.sidebarIndex = Math.max(0, this.sidebarIndex - 1);
     else if (direction === "down") this.sidebarIndex = Math.min(count - 1, this.sidebarIndex + 1);
     this.render();
   },
 
-  openDetail() {
-    const node = this.view?.focusedNode();
-    const item = this.currentItem();
-    if (!node || !item?.id) return;
-    this.lastSnapshot = focusSnapshot(this.focus, this.rows);
-    if (item.type === "collection_folder") {
-      Router.navigate("folderDetail", {
-        collectionId: item.collectionId,
-        folderId: item.folderId,
-        collectionTitle: item.collectionTitle || ""
-      });
-      return;
-    }
-    const data = node.dataset;
-    Router.navigate("detail", {
-      itemId: data.itemId,
-      itemType: data.itemType || "movie",
-      fallbackTitle: data.itemTitle || "Untitled",
-      fallbackPoster: data.posterSrc || "",
-      fallbackBackground: data.backdropSrc || "",
-      addonBaseUrl: data.addonBaseUrl || "",
-      addonId: data.addonId || "",
-      addonName: data.addonName || "",
-      catalogType: data.catalogType || data.itemType || "movie"
-    });
+  /** Current Home openSidebar: focus lands on the selected item (Home), not the profile pill. */
+  openSidebar(openedByBack) {
+    const selected = this.view
+      .sidebarItems()
+      .findIndex((node) => node.classList.contains("selected"));
+    this.sidebarIndex = Math.max(0, selected);
+    this.sidebarOpenedByBack = openedByBack;
+    this.render();
   },
 
-  consumeBackRequest() {
-    if (globalThis?.document?.body?.classList?.contains("nuvio-modal-open")) return true;
-    if (this.sidebarIndex >= 0) {
-      Platform.exitApp();
-      return true;
-    }
-    this.sidebarIndex = 0;
+  closeSidebar() {
+    this.sidebarIndex = -1;
+    this.sidebarOpenedByBack = false;
     this.render();
+  },
+
+  /** Home picked again in the sidebar: back to the first card, like the current Home. */
+  onSidebarReselect() {
+    const first = this.rows.findIndex((row) => row.items.length);
+    this.focus = { ...createFocus(), row: Math.max(0, first) };
+    this.closeSidebar();
+    this.scheduleHero();
+  },
+
+  /** Back: content opens the sidebar; the sidebar exits only when Back opened it, else closes. */
+  consumeBackRequest() {
+    this.cancelPendingContinueWatchingHold();
+    // A menu's Back already closed it; its exit animation still holds the modal marker.
+    if (globalThis?.document?.body?.classList?.contains("nuvio-modal-open")) return true;
+    if (this.sidebarIndex < 0) this.openSidebar(true);
+    else if (this.sidebarOpenedByBack) {
+      this.sidebarOpenedByBack = false;
+      Platform.exitApp();
+    } else this.closeSidebar();
     return true;
   },
 
@@ -268,6 +493,12 @@ export const NewHomeScreen = {
     this.token = (this.token || 0) + 1;
     clearTimeout(this.heroTimer);
     clearTimeout(this.pageTimer);
+    this.cancelPendingContinueWatchingHold();
+    // A menu left mounted would keep nuvio-modal-open and block every key.
+    this.posterMenu?.destroy({ restoreFocus: false });
+    this.posterMenu = null;
+    this.cwDialog?.destroy();
+    this.cwDialog = null;
     this.imageQueue?.clear();
     this.view?.destroy();
     this.view = null;

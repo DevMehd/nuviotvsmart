@@ -56,14 +56,25 @@ class El {
   removeAttribute() {
     this.src = "";
   }
+  // Enough for a NuvioDialog (lot C7 menus).
+  setAttribute() {}
+  addEventListener() {}
+  focus() {}
 }
 const container = new El();
 globalThis.document = {
   getElementById: () => container,
   createElement: (tag) => new El(tag),
   documentElement: new El("html"),
-  body: new El("body")
+  body: new El("body"),
+  addEventListener() {},
+  removeEventListener() {},
+  querySelector: (selector) =>
+    selector === ".nuvio-dialog-backdrop"
+      ? document.body.children.find((node) => node.classList.contains(selector.slice(1))) || null
+      : null
 };
+globalThis.window = { addEventListener() {}, removeEventListener() {} };
 
 // Fake clock, as in test-vidaa-home-loading.mjs.
 let now = 0;
@@ -113,6 +124,9 @@ const { focusedIndex } = await import("../js/ui/tv2/focusModel.js");
 const { homeLayout, rowCardSize, RAIL_VIEWPORT } = await import("../js/ui/tv2/railEngine.js");
 const { noteVidaaNavigationKeyDown, noteVidaaNavigationKeyUp } =
   await import("../js/ui/navigation/vidaaNavigationActivity.js");
+const { PosterOptionsDialogController } = await import("../js/ui/components/posterOptionsMenu.js");
+const { normalizeContinueWatchingItem } =
+  await import("../js/ui/screens/home/homeScreenHelpers-09-normalize-continue-watching-item.js");
 
 const catalogPage = {
   status: "success",
@@ -160,6 +174,9 @@ addonRepository.getInstalledAddons = async () => [
 catalogRepository.getCatalog = () => catalogResult();
 // The post-load recommendation refresh (lot C2) is covered by test-vidaa-tv2-collections.mjs.
 const originalRefresh = Recommendations.refresh;
+const originalNavigate = Router.navigate;
+const originalPosterOpen = PosterOptionsDialogController.prototype.open;
+const originalRemoveProgress = watchProgressRepository.removeProgress;
 Recommendations.refresh = async () => {};
 try {
   // cleanup() before getCatalog resolves: the late result never reaches the renderer.
@@ -376,12 +393,167 @@ try {
     assert.equal(lastRow.items.length, 30, "late page ignored");
     assert.equal(lastRow.entry.result.data.items.length, 30, "shared page data untouched");
   }
+  // Actions (C7): OK acts on key-up, a 650 ms hold opens the menu, an orphan key-up does nothing.
+  {
+    now = 0;
+    timers.clear();
+    addonRepository.getInstalledAddons = async () => [
+      {
+        baseUrl: "https://addon.example",
+        id: "addon",
+        displayName: "Addon",
+        catalogs: [{ id: "top", apiType: "movie", name: "Top" }]
+      }
+    ];
+    // A fresh page: cards are mapped once per page object, with the addon of their first row.
+    catalogRepository.getCatalog = async () => ({ ...catalogPage });
+    const navigations = [];
+    Router.navigate = (route, params) => navigations.push([route, params]);
+    const menus = [];
+    PosterOptionsDialogController.prototype.open = async function (item) {
+      menus.push(item.id);
+      return true;
+    };
+    const ok = (screen, keyDownDurationMs = 0) => {
+      screen.onKeyDown({ keyCode: 13 });
+      screen.onKeyUp({ keyCode: 13, keyDownDurationMs });
+    };
+    const { screen } = mountScreen();
+    await flush();
+    screen.onKeyUp({ keyCode: 13, keyDownDurationMs: 0 });
+    assert.equal(navigations.length, 0, "an orphan key-up (changelog OK) does nothing");
+    ok(screen);
+    assert.deepEqual(navigations, [
+      [
+        "detail",
+        {
+          itemId: "m0",
+          itemType: "movie",
+          fallbackTitle: "M0",
+          fallbackPoster: "",
+          fallbackBackground: "",
+          addonBaseUrl: "https://addon.example",
+          addonId: "addon",
+          addonName: "Addon",
+          catalogType: "movie"
+        }
+      ]
+    ]);
+    screen.onKeyDown({ keyCode: 13 });
+    await advance(now + 649);
+    assert.equal(menus.length, 0);
+    await advance(now + 1);
+    assert.deepEqual(menus, ["m0"], "a 650 ms hold opens the poster menu");
+    screen.onKeyUp({ keyCode: 13, keyDownDurationMs: 700 });
+    assert.deepEqual(menus, ["m0"], "once");
+    assert.equal(navigations.length, 1, "the key-up after the menu opens nothing");
+    ok(screen, 700);
+    assert.equal(menus.length, 2, "a long key-up opens it when the timer is late");
+    screen.onKeyDown({ keyCode: 13 });
+    screen.onKeyDown({ keyCode: 39 });
+    await advance(now + 1000);
+    screen.onKeyUp({ keyCode: 13, keyDownDurationMs: 1000 });
+    assert.equal(menus.length, 2, "another key cancels the hold");
+    assert.equal(navigations.length, 1);
+
+    // A Continue Watching row filled after a key does not take focus.
+    const catalogRows = screen.rows;
+    const show = normalizeContinueWatchingItem({
+      contentId: "tt1",
+      type: "series",
+      title: "Show",
+      videoId: "tt1:1:2",
+      season: 1,
+      episode: 2,
+      positionMs: 60000,
+      durationMs: 1200000,
+      poster: "https://img.example/p.jpg"
+    });
+    const film = normalizeContinueWatchingItem({
+      contentId: "tt2",
+      type: "movie",
+      title: "Film",
+      positionMs: 1000,
+      durationMs: 5000,
+      poster: "https://img.example/f.jpg"
+    });
+    const cwRow = {
+      key: "continue_watching",
+      kind: "continue",
+      title: "CW",
+      status: "success",
+      items: [show, film]
+    };
+    screen.applyRows([cwRow, ...catalogRows]);
+    assert.equal(screen.rows[screen.focus.row].key, catalogRows[0].key, "no late jump after a key");
+    screen.cleanup();
+
+    // Before any key, it does (current Home shouldApplyLateContinueWatchingFocus).
+    const second = mountScreen().screen;
+    await flush();
+    second.applyRows([cwRow, ...second.rows]);
+    assert.equal(second.focus.row, 0, "late Continue Watching takes focus before any key");
+    ok(second);
+    const [route, params] = navigations.at(-1);
+    assert.equal(route, "detail");
+    assert.equal(params.itemId, "tt1");
+    assert.equal(params.autoOpenContinueWatching, true);
+    assert.equal(params.returnHomeOnBack, true);
+    assert.equal(params.resumeProgressMs, 60000);
+    assert.equal(params.resumeDurationMs, 1200000);
+    assert.equal(params.startFromBeginning, false);
+    assert.equal(params.resumeVideoId, "tt1:1:2");
+    assert.equal(params.resumeSeason, 1);
+    assert.equal(params.resumeEpisode, 2);
+
+    // Continue Watching menu: Details, Start from beginning, Remove.
+    const removed = [];
+    watchProgressRepository.removeProgress = async (id) => removed.push(id);
+    second.onKeyDown({ keyCode: 13 });
+    await advance(now + 650);
+    const dialog = second.cwDialog;
+    assert.deepEqual(
+      dialog.buttons.map((button) => button.key),
+      ["details", "startOver", "remove"]
+    );
+    assert.ok(document.body.classList.contains("nuvio-modal-open"));
+    dialog.buttons[2].onAction();
+    await flush();
+    assert.deepEqual(removed, ["tt1"], "Remove drops all the title's progress");
+    assert.deepEqual(
+      second.rows[0].items.map((item) => item.contentId),
+      ["tt2"],
+      "the row shrinks"
+    );
+    assert.equal(second.focus.row, 0);
+    assert.equal(second.view.focusedNode()?.dataset.itemId, "tt2", "focus clamped in the row");
+    second.applyRows([cwRow, ...catalogRows]);
+    assert.deepEqual(
+      second.rows[0].items.map((item) => item.contentId),
+      ["tt2"],
+      "a later emit of the running load keeps it out"
+    );
+    await advance(now + 220);
+    assert.ok(!document.body.classList.contains("nuvio-modal-open"));
+
+    // cleanup() with an open menu releases the modal lock.
+    second.onKeyDown({ keyCode: 13 });
+    await advance(now + 650);
+    assert.ok(second.cwDialog && document.body.classList.contains("nuvio-modal-open"));
+    second.cleanup();
+    await advance(now + 220);
+    assert.ok(!document.body.classList.contains("nuvio-modal-open"), "cleanup closes the menu");
+    assert.equal(document.body.children.length, 0);
+  }
 } finally {
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;
   watchProgressRepository.getRecent = originalRecent;
   addonRepository.getInstalledAddons = originalAddons;
   catalogRepository.getCatalog = originalCatalog;
   Recommendations.refresh = originalRefresh;
+  Router.navigate = originalNavigate;
+  PosterOptionsDialogController.prototype.open = originalPosterOpen;
+  watchProgressRepository.removeProgress = originalRemoveProgress;
 }
 
 console.log("PASS: new TV Home screen with real rows and DOM renderer");

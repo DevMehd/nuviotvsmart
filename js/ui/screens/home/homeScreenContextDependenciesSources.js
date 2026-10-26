@@ -316,6 +316,7 @@ export {
   saveContinueWatchingEnrichment,
   readContinueWatchingDisplaySnapshot,
   writeContinueWatchingDisplaySnapshot,
+  clearContinueWatchingDisplaySnapshot,
   buildContinueWatchingSignature,
   buildSidebarProfileSignature,
   buildHeroIdentity,
@@ -344,6 +345,10 @@ export {
 
 export {
   continueWatchingStreamParams,
+  continueWatchingDetailParams,
+  continueWatchingDetailsMenuParams,
+  continueWatchingMenuOptions,
+  removeContinueWatchingProgress,
   renderLegacyCatalogRowsMarkup,
   createSeeAllCardMarkup,
   groupNodesByOffsetTop,

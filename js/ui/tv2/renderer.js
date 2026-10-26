@@ -289,7 +289,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     }
     focusedNode?.classList.add("focused");
     root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
-    container.querySelector(".home-sidebar")?.classList.toggle("expanded", sidebarIndex >= 0);
+    const sidebar = container.querySelector(".home-sidebar");
+    sidebar?.classList.toggle("expanded", sidebarIndex >= 0);
+    // Labels show only with content-expanded, as the current Home's setLegacySidebarExpanded.
+    sidebar?.classList.toggle("content-expanded", sidebarIndex >= 0);
   }
 
   function setHero(item) {

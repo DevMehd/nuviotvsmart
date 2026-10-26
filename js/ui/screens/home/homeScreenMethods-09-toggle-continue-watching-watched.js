@@ -4,17 +4,15 @@ export function createHomeScreenMethods09() {
   const {
     Router,
     watchProgressRepository,
-    CloudLibraryPlaybackProgressStore,
     watchedItemsRepository,
     watchedItemsShareIdentity,
     watchedSeriesReconciliationService,
     savedLibraryRepository,
-    ContinueWatchingPreferences,
     buildWatchedTitleIdSet,
     isTitleItemWatched,
     isSeriesTypeForContinueWatching,
     normalizeContinueWatchingItem,
-    isCloudContinueWatchingItem,
+    removeContinueWatchingProgress,
     TitleRatings
   } = internals;
 
@@ -81,21 +79,8 @@ export function createHomeScreenMethods09() {
       if (!normalized?.contentId) {
         return false;
       }
-      if (normalized.isNextUp) {
-        ContinueWatchingPreferences.addDismissedNextUpKey(normalized.contentId);
-        // Android dismisses the whole title from Continue Watching, including
-        // any other Next Up entry for the same content.
-        this.pruneContinueWatchingItem({ ...normalized, videoId: null });
-        return true;
-      }
-      if (isCloudContinueWatchingItem(normalized)) {
-        CloudLibraryPlaybackProgressStore.removeForContinueWatching(normalized.contentId);
-        this.pruneContinueWatchingItem({ ...normalized, videoId: null });
-        return true;
-      }
-      // Android removes all progress for an InProgress title, not only the
-      // currently displayed episode. Keep the in-memory projection in sync too.
-      await watchProgressRepository.removeProgress(normalized.contentId);
+      await removeContinueWatchingProgress(normalized);
+      // Keep the in-memory projection in sync too: the whole title leaves.
       this.pruneContinueWatchingItem({ ...normalized, videoId: null });
       return true;
     },

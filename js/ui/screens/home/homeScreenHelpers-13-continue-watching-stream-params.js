@@ -188,7 +188,7 @@ import {
   uniqueNonEmptyValues
 } from "./homeUtils.js";
 
-import { normalizeContinueWatchingItem } from "./homeScreenHelpers-09-normalize-continue-watching-item.js";
+import { isCloudContinueWatchingItem, normalizeContinueWatchingItem } from "./homeScreenHelpers-09-normalize-continue-watching-item.js";
 import { isSeriesTypeForContinueWatching } from "./homeScreenHelpers-06-resolve-trailer-source.js";
 import { buildCatalogLoadingItems } from "./homeScreenHelpers-08-partition-continue-watching-rows.js";
 import { shouldDeferHomeRowImages } from "./homeScreenHelpers-14-get-home-grid-column-count.js";
@@ -229,6 +229,91 @@ export function continueWatchingStreamParams(item, options = {}) {
     startFromBeginning: Boolean(options.startOver),
     manualSelection: Boolean(options.manualSelection)
   };
+}
+
+/** Detail route that resumes a normalized Continue Watching item (openContinueWatchingFromItem). */
+export function continueWatchingDetailParams(normalized, options = {}) {
+  const params = continueWatchingStreamParams(normalized, options);
+  if (!params) {
+    return null;
+  }
+  return {
+    itemId: normalized.contentId,
+    itemType: normalized.type || (isSeriesTypeForContinueWatching(normalized?.type) ? "series" : "movie"),
+    imdbId: normalized.imdbId || null,
+    tmdbId: normalized.tmdbId || null,
+    traktId: normalized.traktId || null,
+    fallbackTitle: normalized.title || normalized.contentId || "Untitled",
+    autoOpenContinueWatching: true,
+    returnHomeOnBack: true,
+    resumeProgressMs: Number(params.resumePositionMs || 0) || 0,
+    resumeProgressPercent: params.resumeProgressPercent ?? null,
+    resumeDurationMs: Number(params.resumeDurationMs || 0) || 0,
+    startFromBeginning: Boolean(params.startFromBeginning),
+    manualSelection: Boolean(params.manualSelection),
+    resumeVideoId: normalized.videoId || null,
+    resumeSeason: normalized.season ?? null,
+    resumeEpisode: normalized.episode ?? null,
+    resumeStreamIdentity: params.resumeStreamIdentity || null
+  };
+}
+
+/** Detail route of the Continue Watching menu's "Go to details" (openContinueWatchingDetails). */
+export function continueWatchingDetailsMenuParams(normalized) {
+  return {
+    itemId: normalized.contentId,
+    itemType: normalized.type || "movie",
+    imdbId: normalized.imdbId || null,
+    tmdbId: normalized.tmdbId || null,
+    traktId: normalized.traktId || null,
+    fallbackTitle: normalized.title || normalized.contentId || "Untitled",
+    fromContinueWatching: true,
+    returnHomeOnBack: true,
+    resumeVideoId: normalized.videoId || null,
+    resumeSeason: normalized.season ?? null,
+    resumeEpisode: normalized.episode ?? null,
+    resumeStreamIdentity: normalized.streamIdentity || null
+  };
+}
+
+/** Continue Watching long-press menu entries; "Play manually" only when `manualPlay` is set. */
+export function continueWatchingMenuOptions(item, { manualPlay = false } = {}) {
+  const isCloud = isCloudContinueWatchingItem(item);
+  const options = [];
+  if (!isCloud) {
+    options.push({
+      action: "details",
+      label: t("cw_action_go_to_details", {}, "Go to details")
+    });
+  }
+  if (!isCloud && manualPlay) {
+    options.push({ action: "playManually", label: t("play_manually", {}, "Play manually") });
+  }
+  if (!item.isNextUp) {
+    options.push({
+      action: "startOver",
+      label: t("cw_action_start_from_beginning", {}, "Start from beginning")
+    });
+  }
+  options.push({ action: "remove", label: t("cw_action_remove", {}, "Remove") });
+  return options;
+}
+
+/** Continue Watching "Remove" storage side; the caller prunes the whole title from its lists. */
+export async function removeContinueWatchingProgress(normalized) {
+  if (normalized.isNextUp) {
+    // Android dismisses the whole title from Continue Watching, including
+    // any other Next Up entry for the same content.
+    ContinueWatchingPreferences.addDismissedNextUpKey(normalized.contentId);
+    return;
+  }
+  if (isCloudContinueWatchingItem(normalized)) {
+    CloudLibraryPlaybackProgressStore.removeForContinueWatching(normalized.contentId);
+    return;
+  }
+  // Android removes all progress for an InProgress title, not only the
+  // currently displayed episode.
+  await watchProgressRepository.removeProgress(normalized.contentId);
 }
 
 export function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {

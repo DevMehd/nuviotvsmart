@@ -29,11 +29,23 @@ export function moveFocus(focus, rows, direction) {
   return rows[next] ? { ...focus, row: next } : focus;
 }
 
+/**
+ * Title identity of a card; Continue Watching entries of one title also differ by episode
+ * (current Home getHomeFocusIdentity). A plain title keeps its bare id.
+ */
+export function itemIdentity(item) {
+  if (!item?.id) return "";
+  return [item.id, item.videoId, item.season, item.episode]
+    .map((value) => String(value ?? ""))
+    .join("|")
+    .replace(/\|+$/, "");
+}
+
 export function focusSnapshot(focus, rows) {
   const row = rows[focus.row];
   if (!row) return null;
   const index = focusedIndex(focus, rows);
-  return { rowKey: row.key, index, identity: String(row.items[index]?.id || "") };
+  return { rowKey: row.key, index, identity: itemIdentity(row.items[index]) };
 }
 
 /** Focus back on the same title after a return, else the same row and column. */
@@ -44,7 +56,7 @@ export function restoreFocus(snapshot, rows) {
   if (rowIndex < 0) return focus;
   const items = rows[rowIndex].items;
   const byIdentity = snapshot.identity
-    ? items.findIndex((item) => String(item?.id || "") === snapshot.identity)
+    ? items.findIndex((item) => itemIdentity(item) === snapshot.identity)
     : -1;
   focus.row = rowIndex;
   focus.columns[snapshot.rowKey] = byIdentity >= 0 ? byIdentity : Number(snapshot.index || 0);

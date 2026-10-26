@@ -52,7 +52,7 @@ assert.ok(rowsOffset([400], 0) === 0);
 const rows = [
   { key: "a", items: [{ id: "a0" }, { id: "a1" }] },
   { key: "empty", items: [] },
-  { key: "b", items: [{ id: "b0" }, { id: "b1" }, { id: "b2" }] }
+  { key: "b", items: [{ id: "b0", type: "series", name: "B0" }, { id: "b1" }, { id: "b2" }] }
 ];
 let focus = createFocus();
 assert.equal(moveFocus(focus, rows, "left"), null);
@@ -149,15 +149,15 @@ assert.equal(setting.setNewHomeMode("off"), "off");
 assert.equal(store.has("tvNewHome"), false);
 setting.resetSessionNewHomeMode();
 
-// Keys on the new Home, with a fake view.
-const node = {
-  dataset: { itemId: "b0", itemType: "series", itemTitle: "B0", catalogType: "series" }
-};
+// Keys on the new Home, with a fake view (lot C7: OK on key-up, Back and sidebar rules).
 let navigated = null;
 let exited = 0;
 Router.navigate = (route, params) => (navigated = { route, params });
 Platform.exitApp = () => (exited += 1);
-Platform.isBackEvent = (event) => event.keyCode === 8;
+const sidebarItem = (action, selected = false) => ({
+  dataset: { action },
+  classList: { contains: (name) => selected && name === "selected" }
+});
 const screen = Object.create(NewHomeScreen);
 Object.assign(screen, {
   rows,
@@ -166,24 +166,53 @@ Object.assign(screen, {
   view: {
     update() {},
     setHero() {},
-    focusedNode: () => node,
-    sidebarItems: () => [{ dataset: { action: "gotoHome" } }]
+    focusedNode: () => null,
+    sidebarItems: () => [sidebarItem("gotoAccount"), sidebarItem("gotoHome", true)]
   }
 });
 screen.onKeyDown({ keyCode: 13 });
+assert.equal(navigated, null, "OK acts on key-up");
+screen.onKeyUp({ keyCode: 13, keyDownDurationMs: 80 });
 assert.equal(navigated.route, "detail");
 assert.equal(navigated.params.itemId, "b0");
 assert.equal(navigated.params.itemType, "series");
+assert.equal(navigated.params.fallbackTitle, "B0");
 assert.deepEqual(screen.lastSnapshot, { rowKey: "b", index: 0, identity: "b0" });
 screen.onKeyDown({ keyCode: 37 });
-assert.equal(screen.sidebarIndex, 0, "left edge opens the sidebar");
-screen.onKeyDown({ keyCode: 39 });
-assert.equal(screen.sidebarIndex, -1);
-screen.onKeyDown({ keyCode: 8 });
-assert.equal(screen.sidebarIndex, 0, "Back opens the sidebar first");
+assert.equal(screen.sidebarIndex, 1, "left edge opens the sidebar on the selected item");
+screen.consumeBackRequest();
+assert.equal(screen.sidebarIndex, -1, "Back closes a sidebar opened by Left");
 assert.equal(exited, 0);
-screen.onKeyDown({ keyCode: 8 });
-assert.equal(exited, 1, "second Back exits");
+screen.consumeBackRequest();
+assert.equal(screen.sidebarIndex, 1, "Back opens the sidebar on the selected item");
+screen.onKeyDown({ keyCode: 39 });
+assert.equal(screen.sidebarIndex, -1, "Right closes it");
+screen.consumeBackRequest();
+assert.equal(exited, 0);
+screen.consumeBackRequest();
+assert.equal(exited, 1, "Back from a sidebar opened by Back exits");
+screen.focus = { row: 2, columns: { a: 1, b: 2 } };
+screen.onSidebarReselect();
+assert.equal(screen.sidebarIndex, -1);
+assert.deepEqual(screen.focus, { row: 0, columns: {} }, "Home reselected: first card");
+// Continue Watching identity includes the episode (current Home getHomeFocusIdentity).
+const episodes = [
+  {
+    key: "continue_watching",
+    items: [
+      { id: "tt1", videoId: "tt1:1:1", season: 1, episode: 1 },
+      { id: "tt1", videoId: "tt1:1:2", season: 1, episode: 2 }
+    ]
+  }
+];
+const episodeSnapshot = focusSnapshot({ row: 0, columns: { continue_watching: 1 } }, episodes);
+assert.equal(episodeSnapshot.identity, "tt1|tt1:1:2|1|2");
+assert.equal(
+  restoreFocus(episodeSnapshot, [{ ...episodes[0], items: [...episodes[0].items].reverse() }])
+    .columns.continue_watching,
+  0,
+  "same episode after a return"
+);
 clearTimeout(screen.heroTimer);
 
 console.log("PASS: new TV Home engines, setting, route choice and keys");

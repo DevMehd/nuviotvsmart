@@ -9,10 +9,10 @@ export function createHomeScreenMethods08() {
     watchedItemsShareIdentity,
     CW_ENTER_DELAY_MS,
     CW_HOLD_DELAY_MS,
-    isSeriesTypeForContinueWatching,
     normalizeContinueWatchingItem,
     isCloudContinueWatchingItem,
-    continueWatchingStreamParams
+    continueWatchingDetailParams,
+    continueWatchingDetailsMenuParams
   } = internals;
 
   return {
@@ -182,30 +182,12 @@ export function createHomeScreenMethods08() {
         return true;
       }
 
-      const params = continueWatchingStreamParams(normalized, options);
+      const params = continueWatchingDetailParams(normalized, options);
       if (!params) {
         return false;
       }
 
-      Router.navigate("detail", {
-        itemId: normalized.contentId,
-        itemType: normalized.type || (isSeriesTypeForContinueWatching(normalized?.type) ? "series" : "movie"),
-        imdbId: normalized.imdbId || null,
-        tmdbId: normalized.tmdbId || null,
-        traktId: normalized.traktId || null,
-        fallbackTitle: normalized.title || normalized.contentId || "Untitled",
-        autoOpenContinueWatching: true,
-        returnHomeOnBack: true,
-        resumeProgressMs: Number(params.resumePositionMs || 0) || 0,
-        resumeProgressPercent: params.resumeProgressPercent ?? null,
-        resumeDurationMs: Number(params.resumeDurationMs || 0) || 0,
-        startFromBeginning: Boolean(params.startFromBeginning),
-        manualSelection: Boolean(params.manualSelection),
-        resumeVideoId: normalized.videoId || null,
-        resumeSeason: normalized.season ?? null,
-        resumeEpisode: normalized.episode ?? null,
-        resumeStreamIdentity: params.resumeStreamIdentity || null
-      });
+      Router.navigate("detail", params);
       return true;
     },
     async openCloudContinueWatchingFromItem(item, options = {}) {
@@ -274,21 +256,7 @@ export function createHomeScreenMethods08() {
       this.continueWatchingMenu = null;
       this.holdMenuScrollState = null;
       this.destroyHomeHoldDialog({
-        afterExit: () =>
-          Router.navigate("detail", {
-            itemId: normalized.contentId,
-            itemType: normalized.type || "movie",
-            imdbId: normalized.imdbId || null,
-            tmdbId: normalized.tmdbId || null,
-            traktId: normalized.traktId || null,
-            fallbackTitle: normalized.title || normalized.contentId || "Untitled",
-            fromContinueWatching: true,
-            returnHomeOnBack: true,
-            resumeVideoId: normalized.videoId || null,
-            resumeSeason: normalized.season ?? null,
-            resumeEpisode: normalized.episode ?? null,
-            resumeStreamIdentity: normalized.streamIdentity || null
-          })
+        afterExit: () => Router.navigate("detail", continueWatchingDetailsMenuParams(normalized))
       });
       return true;
     },

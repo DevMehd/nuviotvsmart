@@ -17,9 +17,7 @@ export function createHomeScreenMethods26() {
     TmdbService,
     TmdbMetadataService,
     TmdbSettingsStore,
-    LocalStore,
     shouldKeepNextUpForAiringSetting,
-    CW_DISPLAY_SNAPSHOT_KEY,
     CW_MAX_NEXT_UP_CONCURRENCY,
     CW_MAX_NEXT_UP_LOOKUPS,
     CW_NEXT_UP_META_TIMEOUT_MS,
@@ -33,7 +31,8 @@ export function createHomeScreenMethods26() {
     hasEpisodeAiredForContinueWatching,
     resolveNextUpReleaseState,
     getContinueWatchingNextUpSeedOptions,
-    writeContinueWatchingDisplaySnapshot
+    writeContinueWatchingDisplaySnapshot,
+    clearContinueWatchingDisplaySnapshot
   } = internals;
 
   return {
@@ -213,18 +212,9 @@ export function createHomeScreenMethods26() {
       writeContinueWatchingDisplaySnapshot(watchProgressRepository.getContinueWatchingSourceKey(), this.continueWatchingDisplay);
     },
     clearContinueWatchingSnapshot() {
-      const scopeKey = watchProgressRepository.getContinueWatchingSourceKey();
-      if (!scopeKey) {
-        return;
+      if (clearContinueWatchingDisplaySnapshot(watchProgressRepository.getContinueWatchingSourceKey())) {
+        this.continueWatchingHydratedFromSnapshot = false;
       }
-      const store = LocalStore.get(CW_DISPLAY_SNAPSHOT_KEY, {});
-      if (!store || typeof store !== "object" || !Object.prototype.hasOwnProperty.call(store, scopeKey)) {
-        return;
-      }
-      const next = { ...store };
-      delete next[scopeKey];
-      LocalStore.set(CW_DISPLAY_SNAPSHOT_KEY, next);
-      this.continueWatchingHydratedFromSnapshot = false;
     },
     async enrichContinueWatchingMetaWithTmdb(meta = {}, item = {}) {
       const settings = TmdbSettingsStore.get();
