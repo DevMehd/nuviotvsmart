@@ -1,0 +1,156 @@
+/* New TV Home (beta, nuv-091): fixed layout, transforms only, no scrolling containers. */
+.tv2-home {
+  --legacy-sidebar-rail-width: 144px;
+  --legacy-sidebar-open-width: 392px;
+  --legacy-sidebar-item-width: 96px;
+  --legacy-sidebar-item-expanded-width: 296px;
+  --legacy-sidebar-item-height: 104px;
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+.tv2-home::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tv2-home.tv2-sidebar-open::before {
+  opacity: 1;
+}
+
+.tv2-hero {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 620px;
+  overflow: hidden;
+}
+
+.tv2-hero-backdrop {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+
+.tv2-hero-backdrop:not([src]) {
+  visibility: hidden;
+}
+
+.tv2-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(var(--bg-color-rgb), 0) 40%, var(--bg-color) 100%),
+    linear-gradient(90deg, rgba(var(--bg-color-rgb), 0.9) 0%, rgba(var(--bg-color-rgb), 0) 60%);
+}
+
+.tv2-hero-text {
+  position: absolute;
+  z-index: 1;
+  left: 220px;
+  bottom: 120px;
+  width: 900px;
+}
+
+.tv2-hero-title {
+  margin: 0 0 16px;
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.tv2-hero-description {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tv2-home .tv2-main {
+  position: absolute;
+  top: 560px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 0 0 0 220px;
+  overflow: hidden;
+}
+
+.tv2-rows {
+  will-change: transform;
+}
+
+.tv2-row {
+  position: relative;
+}
+
+.tv2-row-title {
+  margin: 0;
+  height: 56px;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 56px;
+}
+
+.tv2-row-status {
+  position: absolute;
+  top: 70px;
+  margin: 0;
+  font-size: 24px;
+  color: var(--text-tertiary);
+}
+
+.tv2-track {
+  position: relative;
+  will-change: transform;
+}
+
+.tv2-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--card-bg);
+}
+
+.tv2-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tv2-card-image:not([src]) {
+  visibility: hidden;
+}
+
+.tv2-card-title {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  font-size: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.tv2-card.focused {
+  box-shadow: 0 0 0 4px var(--focus-color);
+}
