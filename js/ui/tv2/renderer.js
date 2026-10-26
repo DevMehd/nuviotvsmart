@@ -30,10 +30,13 @@ export function cardImage(row, item, size, settings) {
       blurNextUp: resolveContinueWatchingBlurNextUp(settings)
     });
     const url = sizedImageUrl(cw.image, size.width);
-    // Current Home order: custom poster original, nuvio-art original, then data-fallback-srcs.
-    const fallbacks = [cw.rawImage, getVidaaArtworkOriginal(cw.image), ...cw.fallbacks]
-      .filter(Boolean)
-      .map((source) => sizedImageUrl(source, size.width));
+    // Current Home order: custom poster original, nuvio-art original (unsized, sizing would
+    // re-optimize it), then data-fallback-srcs.
+    const fallbacks = [
+      sizedImageUrl(cw.rawImage, size.width),
+      getVidaaArtworkOriginal(url),
+      ...cw.fallbacks.map((source) => sizedImageUrl(source, size.width))
+    ].filter(Boolean);
     return { url, fallbacks: [...new Set(fallbacks)].filter((value) => value !== url), cw };
   }
   if (row.kind === "collection")

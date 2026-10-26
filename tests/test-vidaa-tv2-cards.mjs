@@ -407,6 +407,21 @@ try {
   const heatImage = cwRequests.find((r) => r.node === heatCard.querySelector(".tv2-card-image"));
   assert.equal(heatImage.url, tmdb("w500", "hb"), "backdrop at the card size");
   assert.deepEqual(heatImage.options.fallbacks, [tmdb("w500", "hp")]);
+  // Optimized nuvio-art artwork falls back to its original (old data-original-src), not re-optimized.
+  const art = "https://raw.githubusercontent.com/ImKaptain/nuvio-art/main/cw.jpg";
+  globalThis.__NUVIO_IMAGE_OPTIMIZATION__ = true;
+  try {
+    const artImage = cardImage(
+      { kind: "continue" },
+      { ...cwItems[0], backdrop: art },
+      geometry.continueCard,
+      {}
+    );
+    assert.ok(artImage.url.startsWith("/_vercel/image?"), artImage.url);
+    assert.equal(artImage.fallbacks[0], art, "nuvio-art original first");
+  } finally {
+    delete globalThis.__NUVIO_IMAGE_OPTIMIZATION__;
+  }
   // Release labels depend on time: every emit refills the visible continue cards.
   heatCard.querySelector(".tv2-cw-badge").textContent = "stale";
   cwView.update(cwRows, { row: 0, columns: {} });
