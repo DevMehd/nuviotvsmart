@@ -2,6 +2,7 @@
 import * as internals from "./settingsScreenContext.js";
 import { Platform } from "../../../platform/index.js";
 import { getTvPerformanceMode, setTvPerformanceMode } from "../../../platform/tvRuntimePerformance.js";
+import { getNewHomeMode, setNewHomeMode } from "../../tv2/newHomeSetting.js";
 
 export function registerLayoutActions(model) {
   const { HomeCatalogStore, LayoutPreferences, HOME_LAYOUT_OPTIONS, t } = internals;
@@ -24,19 +25,31 @@ export function registerLayoutActions(model) {
     this.toggleExpandedSection("layout", "cardAppearance");
   });
   if (Platform.isVidaa())
-    this.actionMap.set("layout:performanceMode", () => {
+    this.actionMap.set("layout:newHome", () => {
       this.openOptionDialog({
-        title: t("layout_animations_effects", {}, "Animations & effects"),
+        title: t("layout_new_home", {}, "New Home (beta)"),
         options: [
-          { id: "auto", labelKey: "layout_perf_auto" },
-          { id: "reduced", labelKey: "layout_perf_reduced" },
-          { id: "full", labelKey: "layout_perf_full" }
+          { id: "off", labelKey: "layout_new_home_off" },
+          { id: "dom", labelKey: "layout_new_home_dom" }
         ],
-        selectedId: getTvPerformanceMode(),
-        returnFocusKey: "layout:performanceMode",
-        onSelect: (option) => setTvPerformanceMode(option.id)
+        selectedId: getNewHomeMode(),
+        returnFocusKey: "layout:newHome",
+        onSelect: (option) => setNewHomeMode(option.id)
       });
     });
+  this.actionMap.set("layout:performanceMode", () => {
+    this.openOptionDialog({
+      title: t("layout_animations_effects", {}, "Animations & effects"),
+      options: [
+        { id: "auto", labelKey: "layout_perf_auto" },
+        { id: "reduced", labelKey: "layout_perf_reduced" },
+        { id: "full", labelKey: "layout_perf_full" }
+      ],
+      selectedId: getTvPerformanceMode(),
+      returnFocusKey: "layout:performanceMode",
+      onSelect: (option) => setTvPerformanceMode(option.id)
+    });
+  });
   HOME_LAYOUT_OPTIONS.forEach((option) => {
     this.actionMap.set(`layout:layout:${option.id}`, () => {
       LayoutPreferences.set({ homeLayout: option.id });

@@ -1,3 +1,4 @@
+import { sessionNewHomeMode } from "../../ui/tv2/newHomeSetting.js";
 import { VidaaFrameDiagnostics } from "./vidaaFrameDiagnostics.js";
 
 export const BENCHMARK_STEPS = Object.freeze([
@@ -153,6 +154,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     build,
     version: /^[\d.a-z-]{1,30}$/i.test(version) ? version : "unknown",
     performanceMode: ["auto", "full", "reduced"].includes(mode) ? mode : "auto",
+    homeVariant: sessionNewHomeMode(),
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
     screen: [finite(root.screen?.width), finite(root.screen?.height)],
     pixelRatio: finite(root.devicePixelRatio),

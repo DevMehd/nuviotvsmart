@@ -2857,4 +2857,8 @@
     <string name="party_invite_scan">Scannez avec un téléphone pour rejoindre</string>
     <string name="party_invite_share">Ou partagez le code. Vos amis peuvent le saisir dans Watch Party sur n\'importe quelle app Nuvio.</string>
     <string name="party_invite_qr">QR code d\'invitation à la Watch Party</string>
+    <string name="layout_new_home">Nouvel accueil (bêta)</string>
+    <string name="layout_new_home_sub">Accueil plus fluide en cours de refonte pour la télé ; effet au prochain démarrage</string>
+    <string name="layout_new_home_off">Désactivé</string>
+    <string name="layout_new_home_dom">Activé</string>
 </resources>

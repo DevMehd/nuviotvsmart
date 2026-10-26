@@ -1,4 +1,6 @@
 import { HomeScreen } from "../screens/home/homeScreen.js";
+import { NewHomeScreen } from "../tv2/newHomeScreen.js";
+import { sessionNewHomeMode } from "../tv2/newHomeSetting.js";
 import { PlayerScreen } from "../screens/player/playerScreen.js";
 import { AccountScreen } from "../screens/account/accountScreen.js";
 import { AuthQrSignInScreen } from "../screens/account/authQrSignInScreen.js";
@@ -167,7 +169,10 @@ Object.assign(Router, {
   pendingPostPlayNavigation: null,
   routes: {
     perso: PersoScreen,
-    home: HomeScreen,
+    // The "Nouvel accueil (bêta)" choice is read once per app run (nuv-091).
+    get home() {
+      return sessionNewHomeMode() === "off" ? HomeScreen : NewHomeScreen;
+    },
     player: PlayerScreen,
     account: AccountScreen,
     authQrSignIn: AuthQrSignInScreen,
