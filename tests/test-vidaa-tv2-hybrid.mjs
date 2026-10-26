@@ -321,6 +321,13 @@ const makeScreen = () => {
   screen.render();
   runFrames();
   assert.ok(requested.includes(cardQuads(rows, screen.focus, geometry)[0].url));
+
+  // Texture budget exceeded: DOM now and on every later mount of the run.
+  screen.glLayer.onEvent("budget");
+  assert.equal(setting.activeHomeEngine(), "dom:budget");
+  clearTimeout(screen.heroTimer);
+  screen.view = screen.createView();
+  assert.equal(setting.activeHomeEngine(), "dom:budget", "the next mount stays on DOM");
   screen.view.destroy();
 }
 {

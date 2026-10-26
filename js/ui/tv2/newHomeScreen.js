@@ -56,7 +56,11 @@ export const NewHomeScreen = {
   /** Renderer of the chosen mode when WebGL works, else the DOM one; the engine goes to Diagnostic. */
   createView(token) {
     const mode = sessionNewHomeMode();
-    const fallBack = (why) => token === this.token && this.fallBackToDom(why);
+    const fallBack = (why) => {
+      // Same textures on the next mount would hit the budget again: DOM for the run.
+      if (why === "budget") this.hybridFailure = why;
+      return token === this.token && this.fallBackToDom(why);
+    };
     if (mode === "webgl" && homeEngine() === "webgl") {
       noteHomeEngine("webgl");
       return createLightningHomeRenderer(this.container, {
@@ -68,7 +72,8 @@ export const NewHomeScreen = {
       // One canvas for the app run, so a return from the player reuses its textures.
       if (this.glLayer === undefined)
         this.glLayer = createGlLayer(document.createElement("canvas"));
-      const reason = !this.glLayer ? "no-webgl" : this.glLayer.isLost() ? "lost" : "";
+      const reason =
+        this.hybridFailure || (!this.glLayer ? "no-webgl" : this.glLayer.isLost() ? "lost" : "");
       if (!reason) {
         noteHomeEngine("hybrid");
         return createHybridHomeRenderer(this.container, {

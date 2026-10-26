@@ -492,6 +492,7 @@ export function createLightningHomeRenderer(
     .then((ready) => {
       if (closed || failed) return keeper.release(fail);
       engine = ready;
+      engine.renderer.targetFPS = 0;
       host.appendChild(engine.canvas);
       scene = buildScene(engine);
       setRows(last.rows);
@@ -516,6 +517,9 @@ export function createLightningHomeRenderer(
         engine.renderer.stage.cleanup(true);
       }
       scene = null;
+      // The kept engine's idle loop would wake 60 times a second while away (e.g. in the player);
+      // 4 fps keeps the return to Home under 250 ms. stopLoop() cannot be undone safely.
+      if (engine) engine.renderer.targetFPS = 4;
       engine?.canvas.remove();
       keeper.release(fail);
       views.clear();
