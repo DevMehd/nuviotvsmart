@@ -1,6 +1,9 @@
 import { addonRepository } from "../../data/repository/addonRepository.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
+import { CollectionsStore } from "../../data/local/collectionsStore.js";
+import { Recommendations } from "../../core/perso/personalRecommendations.js";
+import { personalContext, isCurrentContext } from "../../core/perso/personalContext.js";
 import { Platform } from "../../platform/index.js";
 import { isVidaaNavigationBusy } from "../navigation/vidaaNavigationActivity.js";
 import { normalizeContinueWatchingItem } from "../screens/home/homeScreenHelpers-09-normalize-continue-watching-item.js";
@@ -57,6 +60,7 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
 
   const progress = await watchProgressRepository.getAllForContinueWatching().catch(() => []);
   const continueRow = continueWatchingRow(progress);
+  // Personal rows always come last, as in the current Home.
   if (!emit([continueRow, ...personalRows()])) return rows;
 
   const host = createHomeDataHost({ layoutPrefs: LayoutPreferences.get() });
@@ -68,20 +72,28 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
     })
     .catch(() => []);
   if (!isCurrent()) return rows;
+  host.collections = CollectionsStore.get();
   const { visibleCatalogDescriptors } = buildVisibleHomeCatalogDescriptors(addons);
   const showTypeSuffix = host.layoutPrefs.catalogTypeSuffixEnabled !== false;
   const fetched = new Map();
+  // Current Home order: pinned collections, then catalogs and collections in store order.
+  const emitOrdered = () => {
+    const ordered = host
+      .sortAndFilterRows([...fetched.values()], host.collections)
+      .map((row) =>
+        row.rowKind === "collection" ? collectionRow(row) : catalogRow(row, showTypeSuffix)
+      )
+      .filter((row) => row.status !== "success" || row.items.length);
+    return emit([continueRow, ...ordered, ...personalRows()]);
+  };
+  if (!emitOrdered()) return rows;
   // Same batches as the current Home: visible first in parallel, then deferred batches.
   const options = {
     allowLoading: true,
     shouldContinue: isCurrent,
     onRow: (row) => {
       fetched.set(row.homeCatalogKey, row);
-      const ordered = host.sortAndFilterRows([...fetched.values()], host.collections);
-      const catalogRows = ordered
-        .map((catalog) => catalogRow(catalog, showTypeSuffix))
-        .filter((catalog) => catalog.status !== "success" || catalog.items.length);
-      emit([continueRow, ...personalRows(), ...catalogRows]);
+      emitOrdered();
     }
   };
   const initialCount = host.getInitialCatalogLoadCount();
@@ -92,7 +104,36 @@ export async function loadHomeRows({ onRows, isCurrent = () => true } = {}) {
     isBusy: () => Platform.isVidaa() && isVidaaNavigationBusy(),
     batchYieldMs: Platform.isVidaa() ? 120 : 0
   });
+  // Like refreshPersonalHome: refresh recommendations once, re-emit only when they changed.
+  const ctx = personalContext();
+  const personalItems = (list) =>
+    JSON.stringify(list.filter((row) => row.key.startsWith("perso:")).map((row) => row.items));
+  void Recommendations.refresh({ ctx })
+    .then(() => {
+      if (isCurrentContext(ctx) && personalItems(personalRows()) !== personalItems(rows))
+        emitOrdered();
+    })
+    .catch(() => {});
   return rows;
+}
+
+const collectionItems = new WeakMap();
+
+/** Current Home collection row (buildCollectionHomeRow) as a new Home row; items kept per collection. */
+function collectionRow(row) {
+  if (!collectionItems.has(row.collection))
+    collectionItems.set(row.collection, row.result.data.items);
+  const items = collectionItems.get(row.collection);
+  return {
+    key: row.homeCatalogKey,
+    kind: "collection",
+    title: String(row.collectionTitle || row.collection?.title || "Collection"),
+    items,
+    status: "success",
+    entry: row,
+    // shortcut: one tile shape per row (the first folder's), upgrade railWindow to per-item pitch if rows mix shapes.
+    tileShape: items[0]?.tileShape
+  };
 }
 
 const catalogItems = new WeakMap();

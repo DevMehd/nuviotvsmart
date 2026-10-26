@@ -67,6 +67,7 @@ const { formatCatalogRowTitle } = await import("../js/ui/screens/home/homeUtils.
 const { t } =
   await import("../js/ui/screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js");
 const { loadHomeRows } = await import("../js/ui/tv2/homeModel.js");
+const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
 
 const originals = [];
 function replace(object, key, value) {
@@ -138,6 +139,8 @@ const never = () => new Promise(() => {});
 replace(watchedItemsRepository, "getAll", never);
 replace(watchProgressRepository, "getRecent", never);
 replace(watchProgressRepository, "getAllForContinueWatching", async () => []);
+// The post-load recommendation refresh (lot C2) fetches catalogs of its own: not counted here.
+replace(Recommendations, "refresh", async () => {});
 
 try {
   HomeCatalogStore.set({ ...catalogPrefs }, { silentSync: true });

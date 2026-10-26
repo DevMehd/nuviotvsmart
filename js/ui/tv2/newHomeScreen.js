@@ -175,6 +175,14 @@ export const NewHomeScreen = {
     const item = this.currentItem();
     if (!node || !item?.id) return;
     this.lastSnapshot = focusSnapshot(this.focus, this.rows);
+    if (item.type === "collection_folder") {
+      Router.navigate("folderDetail", {
+        collectionId: item.collectionId,
+        folderId: item.folderId,
+        collectionTitle: item.collectionTitle || ""
+      });
+      return;
+    }
     const data = node.dataset;
     Router.navigate("detail", {
       itemId: data.itemId,
