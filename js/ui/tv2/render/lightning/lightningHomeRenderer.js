@@ -9,7 +9,7 @@ import {
 } from "../../railEngine.js";
 import { focusedIndex } from "../../focusModel.js";
 import { sizedImageUrl } from "../../imagePipeline.js";
-import { fillCard } from "../../renderer.js";
+import { fillCard, navRowOf, setNavPosition } from "../../renderer.js";
 import { markWebglFailed } from "../../newHomeSetting.js";
 import { buildSdfAtlas } from "./sdfAtlas.js";
 
@@ -397,7 +397,10 @@ export function createLightningHomeRenderer(
     const index = focusedIndex(focus, rows);
     const item = sidebarIndex < 0 ? row?.items[index] : null;
     proxyFocused = Boolean(item);
-    if (item) fillCard(proxy, item, index, row);
+    if (item) {
+      fillCard(proxy, item, index, row);
+      setNavPosition(proxy, navRowOf(rows, focus.row), index);
+    }
     proxy.className = `${row?.kind === "continue" ? "home-continue-card" : "home-poster-card"} tv2-card focusable${proxyFocused ? " focused" : ""}`;
     sidebarFocused?.classList.remove("focused");
     sidebarFocused = sidebarIndex >= 0 ? sidebarItems()[sidebarIndex] || null : null;

@@ -203,6 +203,36 @@ try {
     assert.equal(calls.setHero[1].id, "m10");
     screen.cleanup();
   }
+
+  // Diagnostics hooks read by the benchmark driver.
+  {
+    now = 0;
+    timers.clear();
+    const { screen } = mountScreen();
+    await flush();
+    const position = () => {
+      const node = screen.getCurrentFocusedNode();
+      return [node.dataset.navRow, node.dataset.navCol];
+    };
+    const node = screen.getCurrentFocusedNode();
+    // Driver POSTER_SELECTOR: '.home-poster-card.focusable[data-action="openDetail"]'.
+    assert.ok(node.classList.contains("home-poster-card") && node.classList.contains("focusable"));
+    assert.equal(node.dataset.action, "openDetail");
+    assert.deepEqual(position(), ["0", "0"], "the empty Continue Watching row is not counted");
+    screen.onKeyDown({ keyCode: 39 });
+    assert.deepEqual(position(), ["0", "1"]);
+    const continueRow = { ...screen.rows[0], items: [{ id: "cw1", type: "movie", name: "CW" }] };
+    screen.applyRows([continueRow, ...screen.rows.slice(1)]);
+    assert.deepEqual(position(), ["1", "1"], "a filled Continue Watching row shifts navRow");
+    screen.cleanup();
+    assert.equal(screen.getCurrentFocusedNode(), null);
+
+    const { renderLegacySidebar } =
+      await import("../js/ui/components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js");
+    const buttons = renderLegacySidebar({ selectedRoute: "home" }).match(/<button[^>]*>/g) || [];
+    assert.ok(buttons.length > 0);
+    for (const button of buttons) assert.match(button, /data-nav-zone="sidebar"/);
+  }
 } finally {
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;
   addonRepository.getInstalledAddons = originalAddons;

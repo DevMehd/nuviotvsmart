@@ -12,6 +12,14 @@ import {
   renderExportView
 } from "../js/ui/screens/debug/vidaaBenchmarkPanel.js";
 
+// App storage read by the environment (home layout preference).
+const appStore = new Map();
+globalThis.localStorage = {
+  getItem: (key) => (appStore.has(key) ? appStore.get(key) : null),
+  setItem: (key, value) => appStore.set(key, String(value)),
+  removeItem: (key) => appStore.delete(key)
+};
+
 function surface() {
   const listeners = new Map();
   return {
@@ -279,6 +287,9 @@ function harness({ stored = new Map(), observer = true } = {}) {
   assert.equal(env.detectedModel, null);
   assert.equal(env.chromium, null);
   assert.equal(env.version, "unknown");
+  assert.equal(env.homeVariant, "off");
+  assert.equal(env.homeEngine, "off");
+  assert.equal(env.homeLayout, "modern");
   const h = harness();
   h.enable();
   h.service.start("idle");

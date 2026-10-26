@@ -1,5 +1,6 @@
 import { sessionNewHomeMode, homeEngine, homeEngineFallback } from "../../ui/tv2/newHomeSetting.js";
 import { VidaaFrameDiagnostics } from "./vidaaFrameDiagnostics.js";
+import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
 
 export const BENCHMARK_STEPS = Object.freeze([
   {
@@ -145,6 +146,10 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     const match = String(scripts[i].src || "").match(/app\.bundle\.([a-f0-9]{16})\.js/);
     if (match) build = match[1];
   }
+  let layout = null;
+  try {
+    layout = String(LayoutPreferences.get().homeLayout || "");
+  } catch (_) {}
   return {
     declaredModel: "55U6NQ",
     declaredFirmware: "V0000.09.60A.Q0707",
@@ -157,6 +162,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     homeVariant: sessionNewHomeMode(),
     homeEngine: homeEngine(),
     homeEngineFallback: homeEngineFallback(),
+    homeLayout: ["modern", "classic", "grid"].includes(layout) ? layout : null,
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
     screen: [finite(root.screen?.width), finite(root.screen?.height)],
     pixelRatio: finite(root.devicePixelRatio),

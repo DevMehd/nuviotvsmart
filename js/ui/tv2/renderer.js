@@ -40,6 +40,16 @@ export function fillCard(node, item, index, row) {
   node.querySelector(".tv2-card-title").textContent = node.dataset.itemTitle;
 }
 
+/** Row index as the driver counts it: empty rows are not navigable, so they are skipped. */
+export const navRowOf = (rows, rowIndex) =>
+  rows.slice(0, rowIndex).filter((row) => row.items.length).length;
+
+/** Navigation position read by the benchmark driver; rewritten on every draw, outside the memo. */
+export function setNavPosition(node, navRow, col) {
+  node.dataset.navRow = String(navRow);
+  node.dataset.navCol = String(col);
+}
+
 export function createDomHomeRenderer(container, { geometry, imageQueue, layout = {} }) {
   container.innerHTML = `
     <div class="tv2-home">
@@ -111,10 +121,12 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       const view = views.get(row.key);
       if (!view) return;
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
+      const navRow = navRowOf(rows, rowIndex);
       view.slots.forEach((node) => (node.style.visibility = "hidden"));
       for (let i = win.start; i < win.end; i += 1) {
         const node = slotNode(view, slotFor(i, win.poolSize));
         fillCard(node, row.items[i], i, row);
+        setNavPosition(node, navRow, i);
         node.style.visibility = "";
         node.style.transform = `translate3d(${i * pitch}px,0,0)`;
         const image = node.querySelector(".tv2-card-image");

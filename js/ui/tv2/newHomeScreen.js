@@ -105,6 +105,11 @@ export const NewHomeScreen = {
     this.view?.update(this.rows, this.focus, { sidebarIndex: this.sidebarIndex });
   },
 
+  /** Focused card or sidebar item, read by the benchmark driver. */
+  getCurrentFocusedNode() {
+    return this.view?.focusedNode() || null;
+  },
+
   currentItem() {
     const row = this.rows[this.focus.row];
     return row?.items[focusedIndex(this.focus, this.rows)] || null;
