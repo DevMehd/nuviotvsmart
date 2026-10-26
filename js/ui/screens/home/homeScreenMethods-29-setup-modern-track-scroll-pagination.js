@@ -4,6 +4,7 @@ import { isVidaaNavigationBusy, VIDAA_NAVIGATION_SETTLE_MS } from "../../navigat
 import { registerHomeDomNodes } from "./homeDomUpdate.js";
 import { invalidateVidaaHomeTrackGeometry } from "./vidaaHomeNavigationGeometry.js";
 import { captureVidaaHomeTrackAppendInset } from "./vidaaHomeTrackCamera.js";
+import { catalogPageSkip, mergeCatalogPage } from "./homeCatalogPage.js";
 
 export function createHomeScreenMethods29() {
   const { Router, catalogRepository, buildModernRowKey, MODERN_HOME_CONSTANTS, HOME_MAX_ITEMS_PER_ROW_DEFAULT, createPosterCardMarkup } =
@@ -174,9 +175,7 @@ export function createHomeScreenMethods29() {
           if (!supportsSkip || !rowPayload?.hasMore) {
             return;
           }
-          const storedNextSkip = Number(rowPayload.nextSkip);
-          const skip =
-            Number.isFinite(storedNextSkip) && storedNextSkip > currentItems.length ? Math.trunc(storedNextSkip) : currentItems.length;
+          const skip = catalogPageSkip(rowPayload);
           this._trackPaginationInFlight = this._trackPaginationInFlight || new Set();
           this._trackPaginationInFlight.add(rowKey);
           const token = this.homeLoadToken;
@@ -200,39 +199,16 @@ export function createHomeScreenMethods29() {
               const liveRowData = (this.rows || []).find((candidate) => buildModernRowKey(candidate) === rowKey) || rowData;
               const liveRowPayload = liveRowData?.result?.data || rowPayload;
               const latestItems = Array.isArray(liveRowPayload?.items) ? liveRowPayload.items : currentItems;
-              const incomingItems = Array.isArray(result.data?.items) ? result.data.items : [];
-              const seenIds = new Set(latestItems.map((item) => String(item?.id || "").trim()).filter(Boolean));
-              const newItems = incomingItems.filter((item) => {
-                const itemId = String(item?.id || "").trim();
-                if (!itemId) {
-                  return true;
-                }
-                if (seenIds.has(itemId)) {
-                  return false;
-                }
-                seenIds.add(itemId);
-                return true;
-              });
-              if (!incomingItems.length) {
-                // Mark hasMore=false so we stop trying
-                if (liveRowPayload) {
-                  liveRowPayload.hasMore = false;
-                }
+              const { patch, newItems } = mergeCatalogPage(liveRowPayload, result, skip, latestItems);
+              // Update in-memory row data; an empty page only sets hasMore=false so we stop trying.
+              if (liveRowPayload) {
+                Object.assign(liveRowPayload, patch);
+              }
+              if (!patch.items) {
                 duplicatePageRetryCount = 0;
                 return;
               }
-              const reportedNextSkip = Number(result.data?.nextSkip);
-              const nextSkip =
-                Number.isFinite(reportedNextSkip) && reportedNextSkip > skip ? Math.trunc(reportedNextSkip) : skip + incomingItems.length;
               const startIndex = latestItems.length;
-              // Update in-memory row data
-              if (liveRowPayload) {
-                liveRowPayload.items = [...latestItems, ...newItems];
-                liveRowPayload.supportsSkip = result.data?.supportsSkip !== false;
-                liveRowPayload.hasMore = liveRowPayload.supportsSkip && (result.data?.hasMore ?? newItems.length > 0);
-                liveRowPayload.currentPage = result.data?.currentPage ?? liveRowPayload.currentPage;
-                liveRowPayload.nextSkip = nextSkip;
-              }
               const didAppend = appendItemsToTrack(newItems.slice(0, chunkSize), startIndex);
               if (didAppend) {
                 duplicatePageRetryCount = 0;

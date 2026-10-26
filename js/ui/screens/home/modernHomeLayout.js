@@ -1,3 +1,5 @@
+import { buildCatalogSeeAllPayload } from "./homeCatalogPage.js";
+
 export const MODERN_HOME_CONSTANTS = {
   heroFocusDelayMs: 450,
   heroRapidNavThresholdMs: 130,
@@ -82,20 +84,7 @@ export function renderModernHomeLayout({
     const rowKey = String(rowData?.homeCatalogKey || buildModernRowKey(rowData));
     const seeAllId = `${rowData.addonId || "addon"}_${rowData.catalogId || "catalog"}_${rowData.type || "movie"}`;
     if (!isLoading && !isCollectionRow) {
-      const catalogResultData = rowData?.result?.data || {};
-      catalogSeeAllMap.set(seeAllId, {
-        addonBaseUrl: rowData.addonBaseUrl || "",
-        addonId: rowData.addonId || "",
-        addonName: rowData.addonName || "",
-        catalogId: rowData.catalogId || "",
-        catalogName: rowData.catalogName || "",
-        type: rowData.type || "movie",
-        initialItems: items,
-        initialNextSkip: Number(catalogResultData.nextSkip || 0),
-        initialHasMore: Boolean(catalogResultData.hasMore),
-        supportsSkip: rowData.supportsSkip !== false && catalogResultData.supportsSkip !== false,
-        skipStep: Number(rowData.skipStep || catalogResultData.skipStep || 100)
-      });
+      catalogSeeAllMap.set(seeAllId, buildCatalogSeeAllPayload(rowData));
     }
 
     const maxItems = Math.max(1, Number(rowItemLimit || 15));

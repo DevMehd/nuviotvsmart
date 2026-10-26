@@ -109,6 +109,9 @@ const { NewHomeScreen } = await import("../js/ui/tv2/newHomeScreen.js");
 const { Router } = await import("../js/ui/navigation/routerState.js");
 Router.getCurrent = () => "home";
 const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
+const { focusedIndex } = await import("../js/ui/tv2/focusModel.js");
+const { noteVidaaNavigationKeyDown, noteVidaaNavigationKeyUp } =
+  await import("../js/ui/navigation/vidaaNavigationActivity.js");
 
 const catalogPage = {
   status: "success",
@@ -285,6 +288,80 @@ try {
     );
     assert.equal(screen.view.focusedNode()?.dataset.itemId, "f0", "focus kept its row");
     screen.cleanup();
+  }
+
+  // Modern pagination (C6): near the end of a catalog row, its next page is requested once
+  // and appended in place; focus, column and the rendered rows stay.
+  {
+    now = 0;
+    timers.clear();
+    addonRepository.getInstalledAddons = async () => [
+      {
+        baseUrl: "https://addon.example",
+        id: "addon",
+        name: "Addon",
+        catalogs: [{ id: "top", apiType: "movie", name: "Top", extra: [{ name: "skip" }] }]
+      }
+    ];
+    const page = (from, count) =>
+      Array.from({ length: count }, (_, i) => ({ id: `p${from + i}`, type: "movie" }));
+    const requests = [];
+    let nextPage = null;
+    catalogRepository.getCatalog = (params) => {
+      if (!params.skip)
+        return Promise.resolve({
+          status: "success",
+          data: { items: page(0, 20), hasMore: true, supportsSkip: true }
+        });
+      requests.push(params);
+      nextPage = deferred();
+      return nextPage.promise;
+    };
+    const { screen, calls } = mountScreen();
+    await flush();
+    const row = () => screen.rows[screen.focus.row];
+    assert.equal(row().items.length, 20);
+    for (let step = 0; step < 15; step += 1) screen.onKeyDown({ keyCode: 39 });
+    assert.equal(requests.length, 0, "no page before the last 4 cards");
+    await advance(now + 1000);
+    screen.onKeyDown({ keyCode: 39 });
+    assert.equal(requests.length, 1, "one page at index 16 of 20");
+    assert.equal(requests[0].skip, 20);
+    assert.equal(requests[0].catalogId, "top");
+    assert.equal(requests[0].supportsSkip, true);
+    screen.onKeyDown({ keyCode: 39 });
+    assert.equal(requests.length, 1, "no second request while the page is in flight");
+    const setRowsBefore = calls.setRows;
+    nextPage.resolve({
+      status: "success",
+      data: { items: [...page(18, 2), ...page(20, 10)], hasMore: true }
+    });
+    await flush();
+    assert.equal(row().items.length, 30, "duplicates dropped, 10 cards appended");
+    assert.equal(row().items[29].id, "p29");
+    assert.equal(row().nextSkip, 32);
+    assert.equal(focusedIndex(screen.focus, screen.rows), 17, "same column");
+    assert.equal(screen.view.focusedNode()?.dataset.itemId, "p17", "same focused card");
+    assert.equal(calls.setRows, setRowsBefore, "appended without rebuilding the rows");
+
+    // VIDAA: a page is not requested while keys are moving; it follows once navigation settles.
+    for (let step = 0; step < 8; step += 1) screen.onKeyDown({ keyCode: 39 });
+    assert.equal(requests.length, 1);
+    noteVidaaNavigationKeyDown(39);
+    screen.onKeyDown({ keyCode: 39 });
+    assert.equal(focusedIndex(screen.focus, screen.rows), 26);
+    assert.equal(requests.length, 1, "deferred while navigation is busy");
+    noteVidaaNavigationKeyUp(39);
+    await advance(now + 1000);
+    assert.equal(requests.length, 2, "requested once navigation settled");
+    assert.equal(requests[1].skip, 32);
+    // A late page after cleanup changes nothing.
+    const lastRow = row();
+    screen.cleanup();
+    nextPage.resolve({ status: "success", data: { items: page(30, 5) } });
+    await flush();
+    assert.equal(lastRow.items.length, 30, "late page ignored");
+    assert.equal(lastRow.entry.result.data.items.length, 30, "shared page data untouched");
   }
 } finally {
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;

@@ -1,4 +1,5 @@
 import { addonRepository } from "../../data/repository/addonRepository.js";
+import { catalogRepository } from "../../data/repository/catalogRepository.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
 import { CollectionsStore } from "../../data/local/collectionsStore.js";
@@ -23,6 +24,7 @@ import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto
 import { buildVisibleHomeCatalogDescriptors } from "../screens/home/homeCatalogDescriptors.js";
 import { HOME_ADDON_MANIFEST_TIMEOUT_MS } from "../screens/home/homeConstants.js";
 import { formatCatalogRowTitle } from "../screens/home/homeUtils.js";
+import { catalogPageSkip, mergeCatalogPage } from "../screens/home/homeCatalogPage.js";
 import { personalHomeRows } from "../screens/perso/personalUi.js";
 import { watchedTitleStateRepository } from "../../data/repository/watchedTitleStateRepository.js";
 import { buildWatchedTitleIdSet } from "../components/watchedTitleBadge.js";
@@ -337,32 +339,67 @@ function collectionRow(row) {
 
 const catalogItems = new WeakMap();
 
-/** Current Home catalog row ({...descriptor, result}) as a new Home row; items mapped once per page. */
-function catalogRow(row, showTypeSuffix) {
+/** Catalog items as cards: they carry their addon and catalog type for Detail. */
+const catalogCards = (row, items) =>
+  items.map((item) => ({
+    ...item,
+    addonBaseUrl: row.addonBaseUrl,
+    addonId: row.addonId,
+    addonName: row.addonName,
+    catalogType: row.type
+  }));
+
+/** Cards and pagination state of a catalog row's current page data; cards mapped once per page. */
+function catalogPage(row) {
   const data = row.result?.data || {};
-  if (!catalogItems.has(row.result)) {
-    catalogItems.set(
-      row.result,
-      (data.items || []).map((item) => ({
-        ...item,
-        addonBaseUrl: row.addonBaseUrl,
-        addonId: row.addonId,
-        addonName: row.addonName,
-        catalogType: row.type
-      }))
-    );
-  }
+  if (!catalogItems.has(row.result))
+    catalogItems.set(row.result, catalogCards(row, data.items || []));
+  return {
+    items: catalogItems.get(row.result),
+    hasMore: Boolean(data.hasMore),
+    nextSkip: Number(data.nextSkip || 0),
+    supportsSkip: row.supportsSkip !== false && data.supportsSkip !== false
+  };
+}
+
+/** Current Home catalog row ({...descriptor, result}) as a new Home row. */
+function catalogRow(row, showTypeSuffix) {
   return {
     key: row.homeCatalogKey,
     kind: "poster",
     title: formatCatalogRowTitle(row.catalogName, row.type, showTypeSuffix),
-    items: catalogItems.get(row.result),
     // A failed or timed-out page stays "loading" (D1), never an error.
     status: row.result?.status === "success" ? "success" : "loading",
     entry: row,
-    hasMore: Boolean(data.hasMore),
-    nextSkip: Number(data.nextSkip || 0),
-    supportsSkip: row.supportsSkip !== false && data.supportsSkip !== false,
-    skipStep: Number(row.skipStep || data.skipStep || 100)
+    ...catalogPage(row),
+    skipStep: Number(row.skipStep || row.result?.data?.skipStep || 100)
   };
+}
+
+/**
+ * Next page of a catalog row (current Home modern pagination, methods-29), merged into its shared
+ * page data like the current Home, so later emits keep it. Returns the row's new cards and
+ * pagination state plus `added`, or null for a stale load or a failed page.
+ */
+export async function loadNextCatalogPage(entry, { isCurrent = () => true } = {}) {
+  const result = entry.result;
+  const payload = result.data;
+  const skip = catalogPageSkip(payload);
+  const page = await catalogRepository.getCatalog({
+    addonBaseUrl: entry.addonBaseUrl || "",
+    addonId: entry.addonId || "",
+    addonName: entry.addonName || "",
+    catalogId: entry.catalogId || "",
+    catalogName: entry.catalogName || "",
+    type: entry.type || "movie",
+    skip,
+    skipStep: entry.skipStep,
+    supportsSkip: entry.supportsSkip !== false
+  });
+  if (!isCurrent() || page?.status !== "success") return null;
+  const cards = catalogItems.get(result);
+  const { patch, newItems } = mergeCatalogPage(payload, page, skip);
+  Object.assign(payload, patch);
+  if (cards) catalogItems.set(result, [...cards, ...catalogCards(entry, newItems)]);
+  return { ...catalogPage(entry), added: newItems.length };
 }

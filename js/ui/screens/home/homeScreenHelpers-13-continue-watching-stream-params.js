@@ -78,6 +78,7 @@ import { localizedGenreLabel } from "../../../i18n/genreLabels.js";
 import { buildWatchedTitleIdSet, isTitleItemWatched, renderTitleWatchedBadge } from "../../components/watchedTitleBadge.js";
 
 import { buildModernRowKey, MODERN_HOME_CONSTANTS, renderModernHomeLayout } from "./modernHomeLayout.js";
+import { buildCatalogSeeAllPayload } from "./homeCatalogPage.js";
 
 import { formatHomeRuntimeText, shouldPreserveHomeRuntimeText } from "./homeRuntime.js";
 
@@ -262,20 +263,7 @@ export function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
 
     const seeAllId = `${rowData.addonId || "addon"}_${rowData.catalogId || "catalog"}_${rowData.type || "movie"}`;
     if (!isLoading && !isCollectionRow) {
-      const catalogResultData = rowData?.result?.data || {};
-      catalogSeeAllMap.set(seeAllId, {
-        addonBaseUrl: rowData.addonBaseUrl || "",
-        addonId: rowData.addonId || "",
-        addonName: rowData.addonName || "",
-        catalogId: rowData.catalogId || "",
-        catalogName: rowData.catalogName || "",
-        type: rowData.type || "movie",
-        initialItems: items,
-        initialNextSkip: Number(catalogResultData.nextSkip || 0),
-        initialHasMore: Boolean(catalogResultData.hasMore),
-        supportsSkip: rowData.supportsSkip !== false && catalogResultData.supportsSkip !== false,
-        skipStep: Number(rowData.skipStep || catalogResultData.skipStep || 100)
-      });
+      catalogSeeAllMap.set(seeAllId, buildCatalogSeeAllPayload(rowData));
     }
 
     const rowTitle = isCollectionRow
