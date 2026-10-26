@@ -234,6 +234,39 @@ try {
     assert.ok(buttons.length > 0);
     for (const button of buttons) assert.match(button, /data-nav-zone="sidebar"/);
   }
+
+  // A slower catalog answering above the focused row: focus stays on the same row.
+  {
+    now = 0;
+    timers.clear();
+    const slow = deferred();
+    addonRepository.getInstalledAddons = async () => [
+      {
+        baseUrl: "https://addon.example",
+        id: "addon",
+        name: "Addon",
+        catalogs: [
+          { id: "slow", apiType: "movie", name: "Slow" },
+          { id: "fast", apiType: "movie", name: "Fast" }
+        ]
+      }
+    ];
+    catalogRepository.getCatalog = ({ catalogId }) =>
+      catalogId === "slow"
+        ? slow.promise
+        : Promise.resolve({ status: "success", data: { items: [{ id: "f0", type: "movie" }] } });
+    const { screen } = mountScreen();
+    await flush();
+    assert.equal(screen.view.focusedNode()?.dataset.itemId, "f0");
+    slow.resolve({ status: "success", data: { items: [{ id: "s0", type: "movie" }] } });
+    await flush();
+    assert.ok(
+      screen.rows.some((row) => row.items[0]?.id === "s0"),
+      "the slow row arrived"
+    );
+    assert.equal(screen.view.focusedNode()?.dataset.itemId, "f0", "focus kept its row");
+    screen.cleanup();
+  }
 } finally {
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;
   addonRepository.getInstalledAddons = originalAddons;

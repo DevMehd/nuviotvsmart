@@ -83,6 +83,10 @@ export const NewHomeScreen = {
   },
 
   applyRows(rows) {
+    // Catalog rows arrive out of order: keep focus on the same row key, not the same index.
+    const focusedKey = this.rows?.[this.focus.row]?.key;
+    const keptRow = rows.findIndex((row) => row.key === focusedKey);
+    if (keptRow >= 0) this.focus = { ...this.focus, row: keptRow };
     this.rows = rows;
     if (
       this.pendingSnapshot &&
