@@ -6,10 +6,11 @@ import { resolveThemeName } from "./themeAccess.js";
 import { ThemeColors } from "./themeColors.js";
 import { resolveCustomThemeColors } from "../../core/util/customThemeColors.js";
 
+// These fonts are not embedded: the bundled JetBrains Sans (the mobile font) comes before system fonts.
 const FONT_STACKS = {
-  INTER: '"Inter", "Segoe UI", Arial, sans-serif',
-  DM_SANS: '"DM Sans", "Segoe UI", Arial, sans-serif',
-  OPEN_SANS: '"Open Sans", "Segoe UI", Arial, sans-serif'
+  INTER: '"Inter", "JetBrains Sans", "Segoe UI", Arial, sans-serif',
+  DM_SANS: '"DM Sans", "JetBrains Sans", "Segoe UI", Arial, sans-serif',
+  OPEN_SANS: '"Open Sans", "JetBrains Sans", "Segoe UI", Arial, sans-serif'
 };
 
 // Cached once at module load so the theme can retain its capability fallback.
