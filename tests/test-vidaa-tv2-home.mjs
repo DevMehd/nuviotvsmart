@@ -114,11 +114,17 @@ const addons = [
     baseUrl: "https://addon.example",
     id: "addon",
     name: "Addon",
-    catalogs: Array.from({ length: 14 }, (_, i) => ({ id: `c${i}`, type: "movie", name: `C${i}` }))
+    catalogs: Array.from({ length: 14 }, (_, i) => ({
+      id: `c${i}`,
+      apiType: "movie",
+      name: `C${i}`
+    }))
   }
 ];
 const entries = homeCatalogEntries(addons, { order: [], disabled: [], customTitles: {} });
 assert.equal(entries.length, 10);
+assert.equal(entries[0].key, "addon_movie_c0");
+assert.equal(entries[0].type, "movie");
 const continueRow = continueWatchingRow([
   { contentId: "old", contentType: "movie", updatedAt: 1, positionMs: 10, durationMs: 100 },
   { contentId: "new", contentType: "movie", updatedAt: 2, positionMs: 10, durationMs: 100 }
