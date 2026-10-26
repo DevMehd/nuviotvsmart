@@ -1,9 +1,15 @@
 import { renderLegacySidebar } from "../../../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { loadScript } from "../../../../runtime/loadStreamingLibs.js";
-import { railWindow, slotFor, rowsOffset } from "../../railEngine.js";
+import {
+  railWindow,
+  slotFor,
+  rowsOffset,
+  ROW_TITLE_HEIGHT,
+  RAIL_VIEWPORT
+} from "../../railEngine.js";
 import { focusedIndex } from "../../focusModel.js";
 import { sizedImageUrl } from "../../imagePipeline.js";
-import { fillCard, ROW_TITLE_HEIGHT, VIEWPORT_WIDTH } from "../../renderer.js";
+import { fillCard } from "../../renderer.js";
 import { markWebglFailed } from "../../newHomeSetting.js";
 import { buildSdfAtlas } from "./sdfAtlas.js";
 
@@ -323,14 +329,14 @@ export function createLightningHomeRenderer(
             x: RAIL_LEFT,
             y: 10,
             fontSize: 32,
-            maxWidth: VIEWPORT_WIDTH
+            maxWidth: RAIL_VIEWPORT
           }),
           status: scene.text({
             parent: rowNode,
             x: RAIL_LEFT,
             y: 70,
             fontSize: 24,
-            maxWidth: VIEWPORT_WIDTH,
+            maxWidth: RAIL_VIEWPORT,
             color: scene.colors.tertiary
           }),
           track: scene.group({ parent: rowNode, y: ROW_TITLE_HEIGHT }),
@@ -422,7 +428,7 @@ export function createLightningHomeRenderer(
         count: row.items.length,
         focusIndex: column,
         pitch,
-        viewport: VIEWPORT_WIDTH
+        viewport: RAIL_VIEWPORT
       });
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
       view.slots.forEach((card) => (card.node.alpha = 0));

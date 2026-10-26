@@ -1,4 +1,4 @@
-import { sessionNewHomeMode, homeEngine, webglFailureReason } from "../../ui/tv2/newHomeSetting.js";
+import { sessionNewHomeMode, homeEngine, homeEngineFallback } from "../../ui/tv2/newHomeSetting.js";
 import { VidaaFrameDiagnostics } from "./vidaaFrameDiagnostics.js";
 
 export const BENCHMARK_STEPS = Object.freeze([
@@ -156,7 +156,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     performanceMode: ["auto", "full", "reduced"].includes(mode) ? mode : "auto",
     homeVariant: sessionNewHomeMode(),
     homeEngine: homeEngine(),
-    homeEngineFallback: webglFailureReason(),
+    homeEngineFallback: homeEngineFallback(),
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
     screen: [finite(root.screen?.width), finite(root.screen?.height)],
     pixelRatio: finite(root.devicePixelRatio),

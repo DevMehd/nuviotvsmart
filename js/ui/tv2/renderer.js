@@ -1,15 +1,22 @@
 import { renderLegacySidebar } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
-import { railWindow, slotFor, rowsOffset } from "./railEngine.js";
+import { slotFor, homeLayout, ROW_TITLE_HEIGHT } from "./railEngine.js";
 import { focusedIndex } from "./focusModel.js";
 import { sizedImageUrl } from "./imagePipeline.js";
 
 // Renderers of the new TV Home (nuv-091) share one interface:
 //   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item), setProfile(state),
 //   sidebarItems(), destroy().
-// This is the DOM one, the universal fallback; render/lightning/ is the WebGL one (lot B2).
+// This is the DOM one, the universal fallback; render/hybrid/ draws its images in WebGL under it,
+// render/lightning/ draws the whole Home in WebGL (lot B2).
 
-export const ROW_TITLE_HEIGHT = 56;
-export const VIEWPORT_WIDTH = 1920 - 220;
+/** Card image at its displayed size; the WebGL layer asks for the very same URL. */
+export const cardImageUrl = (row, item, size) =>
+  sizedImageUrl(
+    row.kind === "continue" ? item.landscapePoster || item.backdrop : item.poster,
+    size.width
+  );
+export const heroImageUrl = (item) =>
+  sizedImageUrl(item?.background || item?.backdrop || item?.poster, 1280);
 
 const esc = (value) =>
   String(value ?? "").replace(
@@ -100,20 +107,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   }
 
   function update(rows, focus, { sidebarIndex = -1 } = {}) {
-    const heights = [];
-    rows.forEach((row, rowIndex) => {
+    const layout = homeLayout(rows, focus, geometry);
+    layout.rows.forEach(({ row, size, pitch, win }, rowIndex) => {
       const view = views.get(row.key);
-      const size = sizeFor(row.kind);
-      heights.push(size.height + ROW_TITLE_HEIGHT + geometry.gap);
       if (!view) return;
-      const pitch = size.width + geometry.gap;
-      const column = Number(focus.columns[row.key] || 0);
-      const win = railWindow({
-        count: row.items.length,
-        focusIndex: column,
-        pitch,
-        viewport: VIEWPORT_WIDTH
-      });
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
       view.slots.forEach((node) => (node.style.visibility = "hidden"));
       for (let i = win.start; i < win.end; i += 1) {
@@ -122,15 +119,11 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         node.style.visibility = "";
         node.style.transform = `translate3d(${i * pitch}px,0,0)`;
         const image = node.querySelector(".tv2-card-image");
-        const source =
-          row.kind === "continue"
-            ? row.items[i].landscapePoster || row.items[i].backdrop
-            : row.items[i].poster;
-        imageQueue.request(image, loadImages ? sizedImageUrl(source, size.width) : "");
+        imageQueue.request(image, loadImages ? cardImageUrl(row, row.items[i], size) : "");
       }
       view.track.style.transform = `translate3d(${win.offset}px,0,0)`;
     });
-    rowsHost.style.transform = `translate3d(0,${rowsOffset(heights, focus.row)}px,0)`;
+    rowsHost.style.transform = `translate3d(0,${layout.offsetY}px,0)`;
 
     focusedNode?.classList.remove("focused");
     focusedNode = null;
@@ -153,10 +146,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   function setHero(item) {
     heroTitle.textContent = item?.name || item?.title || "";
     heroDescription.textContent = item?.description || "";
-    imageQueue.request(
-      heroBackdrop,
-      sizedImageUrl(item?.background || item?.backdrop || item?.poster, 1280)
-    );
+    imageQueue.request(heroBackdrop, heroImageUrl(item));
   }
 
   function setProfile(profile) {

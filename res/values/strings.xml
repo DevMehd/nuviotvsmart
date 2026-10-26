@@ -3351,6 +3351,7 @@
     <string name="layout_new_home">New Home (beta)</string>
     <string name="layout_new_home_sub">Faster Home being rebuilt for TVs; applies at next launch</string>
     <string name="layout_new_home_off">Off</string>
-    <string name="layout_new_home_dom">On</string>
+    <string name="layout_new_home_dom">On, DOM</string>
+    <string name="layout_new_home_hybrid">On, hybrid WebGL (prototype)</string>
     <string name="layout_new_home_webgl">On, WebGL (prototype)</string>
 </resources>

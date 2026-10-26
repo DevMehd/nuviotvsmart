@@ -39,3 +39,28 @@ export function rowsOffset(rowHeights = [], focusRow = 0) {
   for (let i = 0; i < Math.min(focusRow, rowHeights.length); i += 1) top += rowHeights[i];
   return -top;
 }
+
+export const ROW_TITLE_HEIGHT = 56;
+export const RAIL_VIEWPORT = 1920 - 220;
+
+/** Window and position of every rail, shared by the DOM and WebGL layers so they move together. */
+export function homeLayout(rows, focus, geometry) {
+  const heights = [];
+  let top = 0;
+  const placed = rows.map((row) => {
+    const size = row.kind === "continue" ? geometry.landscape : geometry.poster;
+    const pitch = size.width + geometry.gap;
+    const win = railWindow({
+      count: row.items.length,
+      focusIndex: Number(focus.columns[row.key] || 0),
+      pitch,
+      viewport: RAIL_VIEWPORT
+    });
+    const height = size.height + ROW_TITLE_HEIGHT + geometry.gap;
+    heights.push(height);
+    const entry = { row, size, pitch, win, top, height };
+    top += height;
+    return entry;
+  });
+  return { rows: placed, offsetY: rowsOffset(heights, focus.row) };
+}

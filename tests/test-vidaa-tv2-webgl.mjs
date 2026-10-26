@@ -29,7 +29,7 @@ assert.equal(setting.homeEngine(), "webgl");
 setting.markWebglFailed("context-lost");
 setting.markWebglFailed("texture-budget");
 assert.equal(setting.homeEngine(), "dom");
-assert.equal(setting.webglFailureReason(), "context-lost", "the first cause is kept");
+assert.equal(setting.homeEngineFallback(), "context-lost", "the first cause is kept");
 setting.resetSessionNewHomeMode();
 assert.equal(setting.homeEngine(), "webgl", "a new run tries WebGL again");
 setting.setNewHomeMode("dom");
@@ -61,8 +61,9 @@ Object.assign(screen, {
     };
   }
 });
-screen.fallbackToDom();
+screen.fallBackToDom("context-lost");
 assert.equal(webglDestroyed, 1);
+assert.equal(setting.activeHomeEngine(), "dom:context-lost");
 assert.deepEqual(calls, [
   "queue-cleared",
   "dom",

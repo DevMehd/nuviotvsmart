@@ -2,9 +2,7 @@ import { LocalStore } from "../../core/storage/localStore.js";
 
 // Device-local beta switch for the new TV Home (nuv-091), like tvPerfMode.
 const NEW_HOME_KEY = "tvNewHome";
-export const NEW_HOME_MODES = Object.freeze(["off", "dom", "webgl"]);
-// Reserved for the lot B2 hybrid prototype; not selectable until it exists.
-export const FUTURE_NEW_HOME_MODES = Object.freeze(["hybrid"]);
+export const NEW_HOME_MODES = Object.freeze(["off", "dom", "hybrid", "webgl"]);
 
 export function getNewHomeMode() {
   try {
@@ -33,6 +31,17 @@ export function sessionNewHomeMode() {
 export function resetSessionNewHomeMode() {
   sessionMode = null;
   webglFailure = null;
+  mountedEngine = "";
+}
+
+let mountedEngine = "";
+/** Engine of the last new Home mount, with the fallback reason: "dom", "hybrid", "dom:lost"… */
+export function noteHomeEngine(engine) {
+  mountedEngine = engine;
+}
+
+export function activeHomeEngine() {
+  return mountedEngine;
 }
 
 let webglFailure = null;
@@ -41,13 +50,15 @@ export function markWebglFailed(reason) {
   webglFailure = webglFailure || String(reason || "unknown");
 }
 
-export function webglFailureReason() {
-  return webglFailure;
-}
-
-/** Renderer actually drawing the new Home: "webgl", "dom", or "off" for the current Home. */
+/** Renderer actually drawing the new Home: "webgl", "hybrid", "dom", or "off" for the current Home. */
 export function homeEngine() {
   const mode = sessionNewHomeMode();
   if (mode === "off") return "off";
-  return mode === "webgl" && !webglFailure ? "webgl" : "dom";
+  if (mode === "webgl") return webglFailure ? "dom" : "webgl";
+  return mountedEngine.split(":")[0] || mode;
+}
+
+/** Why the chosen WebGL engine fell back to DOM ("no-webgl", "lost", "context-lost"…), or null. */
+export function homeEngineFallback() {
+  return webglFailure || mountedEngine.split(":")[1] || null;
 }

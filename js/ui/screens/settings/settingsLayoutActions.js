@@ -31,6 +31,7 @@ export function registerLayoutActions(model) {
         options: [
           { id: "off", labelKey: "layout_new_home_off" },
           { id: "dom", labelKey: "layout_new_home_dom" },
+          { id: "hybrid", labelKey: "layout_new_home_hybrid" },
           { id: "webgl", labelKey: "layout_new_home_webgl" }
         ],
         selectedId: getNewHomeMode(),
