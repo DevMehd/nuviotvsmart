@@ -13,8 +13,11 @@ import { cardGeometry } from "./railEngine.js";
 import { createFocus, focusedIndex, moveFocus, focusSnapshot, restoreFocus } from "./focusModel.js";
 import { createImageQueue } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
+import { createGlLayer } from "./render/hybrid/glLayer.js";
+import { createHybridHomeRenderer } from "./render/hybrid/hybridRenderer.js";
+import { sessionNewHomeMode, noteHomeEngine } from "./newHomeSetting.js";
 
-// New TV Home (nuv-091), DOM renderer. Enabled by the "Nouvel accueil (bêta)" setting.
+// New TV Home (nuv-091), DOM or hybrid renderer. Enabled by the "Nouvel accueil (bêta)" setting.
 
 const DIRECTIONS = { 37: "left", 38: "up", 39: "right", 40: "down" };
 const HERO_CALM_MS = 450;
@@ -27,23 +30,58 @@ export const NewHomeScreen = {
     ScreenUtils.show(this.container);
     const layout = LayoutPreferences.get();
     this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
-    this.view = createDomHomeRenderer(this.container, {
-      geometry: cardGeometry(layout),
-      imageQueue: this.imageQueue,
-      layout
-    });
+    this.viewOptions = { geometry: cardGeometry(layout), imageQueue: this.imageQueue, layout };
+    this.profile = null;
+    this.view = this.createView();
     this.rows = [];
     this.focus = createFocus();
     this.sidebarIndex = -1;
     this.pendingSnapshot =
       (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     void getSidebarProfileState({ cacheOnly: true })
-      .then((profile) => token === this.token && this.view?.setProfile(profile))
+      .then((profile) => {
+        if (token !== this.token) return;
+        this.profile = profile;
+        this.view?.setProfile(profile);
+      })
       .catch(() => {});
     void loadHomeRows({
       isCurrent: () => token === this.token,
       onRows: (rows) => this.applyRows(rows)
     });
+  },
+
+  /** Hybrid renderer when chosen and WebGL works, else the DOM one; the engine goes to Diagnostic. */
+  createView() {
+    if (sessionNewHomeMode() === "hybrid") {
+      // One canvas for the app run, so a return from the player reuses its textures.
+      if (this.glLayer === undefined)
+        this.glLayer = createGlLayer(document.createElement("canvas"));
+      const reason = !this.glLayer ? "no-webgl" : this.glLayer.isLost() ? "lost" : "";
+      if (!reason) {
+        noteHomeEngine("hybrid");
+        return createHybridHomeRenderer(this.container, {
+          ...this.viewOptions,
+          glLayer: this.glLayer,
+          onFallback: (why) => this.fallBackToDom(why)
+        });
+      }
+      noteHomeEngine(`dom:${reason}`);
+    } else {
+      noteHomeEngine("dom");
+    }
+    return createDomHomeRenderer(this.container, this.viewOptions);
+  },
+
+  /** WebGL failed under a mounted Home: same rows, focus and hero, drawn by the DOM renderer. */
+  fallBackToDom(reason) {
+    noteHomeEngine(`dom:${reason}`);
+    this.view?.destroy();
+    this.view = createDomHomeRenderer(this.container, this.viewOptions);
+    if (this.profile) this.view.setProfile(this.profile);
+    this.view.setRows(this.rows);
+    this.render();
+    this.view.setHero(this.currentItem());
   },
 
   applyRows(rows) {

@@ -2,9 +2,19 @@ import { LocalStore } from "../../core/storage/localStore.js";
 
 // Device-local beta switch for the new TV Home (nuv-091), like tvPerfMode.
 const NEW_HOME_KEY = "tvNewHome";
-export const NEW_HOME_MODES = Object.freeze(["off", "dom"]);
-// Reserved for the lot B2 prototypes; not selectable until they exist.
-export const FUTURE_NEW_HOME_MODES = Object.freeze(["hybrid", "webgl"]);
+export const NEW_HOME_MODES = Object.freeze(["off", "dom", "hybrid"]);
+// Reserved for the lot B2 full WebGL prototype; not selectable until it exists.
+export const FUTURE_NEW_HOME_MODES = Object.freeze(["webgl"]);
+
+let homeEngine = "";
+/** Renderer the new Home really uses, with the fallback reason: "dom", "hybrid", "dom:lost"… */
+export function noteHomeEngine(engine) {
+  homeEngine = engine;
+}
+
+export function activeHomeEngine() {
+  return homeEngine;
+}
 
 export function getNewHomeMode() {
   try {

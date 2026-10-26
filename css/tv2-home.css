@@ -154,3 +154,15 @@
 .tv2-card.focused {
   box-shadow: 0 0 0 4px var(--focus-color);
 }
+
+/* Hybrid renderer (lot B2): the WebGL canvas under the DOM layer paints the images and card fill. */
+.tv2-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tv2-hybrid .tv2-card {
+  background: transparent;
+}

@@ -30,7 +30,8 @@ export function registerLayoutActions(model) {
         title: t("layout_new_home", {}, "New Home (beta)"),
         options: [
           { id: "off", labelKey: "layout_new_home_off" },
-          { id: "dom", labelKey: "layout_new_home_dom" }
+          { id: "dom", labelKey: "layout_new_home_dom" },
+          { id: "hybrid", labelKey: "layout_new_home_hybrid" }
         ],
         selectedId: getNewHomeMode(),
         returnFocusKey: "layout:newHome",
