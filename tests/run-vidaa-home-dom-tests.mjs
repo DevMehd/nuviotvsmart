@@ -18,7 +18,8 @@ const defaultFixtures = [
   "test-vidaa-stream-unicode.html",
   "test-vidaa-account-dom.html",
   "test-vidaa-tracking-dom.html",
-  "test-vidaa-trailer-dom.html"
+  "test-vidaa-trailer-dom.html",
+  "test-vidaa-tv2-layouts.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(

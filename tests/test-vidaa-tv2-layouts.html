@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv vidaa-balanced-motion">
+  <meta charset="utf-8" />
+  <title>VIDAA new Home layouts (real CSS)</title>
+  <!-- App asset paths (sidebar and IMDb icons) resolve from the root, as in the app. -->
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <style>
+    #result {
+      position: fixed;
+      left: 0;
+      bottom: 0;
+      z-index: -1;
+      margin: 0;
+      white-space: pre-wrap;
+      opacity: 0;
+    }
+  </style>
+  <body class="vidaa-tv">
+    <div id="home" style="display: block"></div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Mounts the new Home DOM renderer (nuv-091) with stub rows in modern, classic and grid and
+      // checks the real CSS layout against railEngine geometry. Desktop Chrome, not a TV measure.
+      // Headless Chrome's page is 1920x993: the checks run in a 1920x1080 frame (the TV viewport)
+      // of this same page, which writes the result the runner reads on the top page.
+      const result = (window === top ? document : parent.document).getElementById("result");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      if (window === top) {
+        const frame = document.createElement("iframe");
+        frame.src = `${location.pathname}?frame`;
+        frame.style.cssText = "position:absolute;top:0;left:0;width:1920px;height:1080px;border:0";
+        document.body.prepend(frame);
+      } else
+        try {
+          globalThis.__NUVIO_PLATFORM__ = "vidaa";
+          const { Platform } = await import("/js/platform/index.js");
+          Platform.current = null;
+          // The app router is wired at boot; card models only ask for the current route.
+          const { Router } = await import("/js/ui/navigation/routerState.js");
+          Router.getCurrent = () => "home";
+          const { createDomHomeRenderer } = await import("/js/ui/tv2/renderer.js");
+          const { createImageQueue } = await import("/js/ui/tv2/imagePipeline.js");
+          const { buildLayoutRows, cardGeometry, rowCardSize, rowLabelHeight, trackCamera } =
+            await import("/js/ui/tv2/railEngine.js");
+          const { moveFocus } = await import("/js/ui/tv2/focusModel.js");
+          await document.fonts?.ready;
+
+          const container = document.getElementById("home");
+          const art = (w, h, fill) =>
+            "data:image/svg+xml," +
+            encodeURIComponent(
+              `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="${fill}"/></svg>`
+            );
+          const poster = (n) => art(200, 300, n % 2 ? "teal" : "olive");
+          const backdrop = art(1280, 720, "#335");
+          const posters = (prefix, count) =>
+            Array.from({ length: count }, (_, n) => ({
+              id: `${prefix}${n}`,
+              type: "movie",
+              name: `A rather long ${prefix} title number ${n} that never fits`,
+              poster: poster(n),
+              background: backdrop,
+              releaseInfo: "2024"
+            }));
+          const catalog = (key, title, items) => ({
+            key,
+            kind: "poster",
+            title,
+            items,
+            status: "success",
+            entry: {
+              type: "movie",
+              addonName: "Fixture addon",
+              result: { status: "success", data: { items, hasMore: true } }
+            }
+          });
+          const continueItems = Array.from({ length: 8 }, (_, n) => ({
+            id: `tt-cw-${n}`,
+            contentId: `tt-cw-${n}`,
+            type: "series",
+            name: `Continue title ${n} with a long name`,
+            title: `Continue title ${n} with a long name`,
+            season: 1,
+            episode: n + 1,
+            episodeTitle: `Episode ${n + 1} with a long episode title`,
+            progress: { position: 600, duration: 1800 },
+            backdrop
+          }));
+          const folders = Array.from({ length: 6 }, (_, n) => ({
+            id: `folder-${n}`,
+            name: `Folder ${n} with a long name`,
+            coverImageUrl: n === 2 ? "" : poster(n),
+            coverEmoji: "🎬",
+            tileShape: "POSTER"
+          }));
+          const modelRows = () => [
+            {
+              key: "continue_watching",
+              kind: "continue",
+              title: "Continue Watching",
+              items: continueItems,
+              status: "success"
+            },
+            {
+              key: "loading_row",
+              kind: "poster",
+              title: "Loading row",
+              items: [],
+              status: "loading",
+              loadingCount: 6
+            },
+            catalog("movies", "Popular movies", posters("m", 30)),
+            {
+              key: "folders",
+              kind: "collection",
+              title: "My folders",
+              items: folders,
+              status: "success",
+              tileShape: "POSTER"
+            },
+            catalog("series", "Popular series", posters("s", 30))
+          ];
+          const heroItem = {
+            id: "tt-hero",
+            type: "movie",
+            name: "Hero title",
+            description:
+              "A long hero description that wraps on several lines so the clamp and the copy bounds are exercised by the real fonts. ".repeat(
+                3
+              ),
+            background: backdrop,
+            poster: poster(1),
+            releaseInfo: "2024",
+            genres: ["Drama", "Thriller"],
+            imdbRating: "7.5",
+            runtime: "120 min"
+          };
+
+          const finishMotion = () =>
+            document
+              .getAnimations()
+              .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+              .forEach((animation) => animation.finish());
+          const frames = async (count = 2) => {
+            for (let n = 0; n < count; n += 1) await new Promise(requestAnimationFrame);
+            finishMotion();
+          };
+          const near = (a, b) => Math.abs(a - b) <= 1;
+          const visibleCards = (root) =>
+            [...root.querySelectorAll(".tv2-card:not(.tv2-card-skeleton)")].filter(
+              (node) => node.style.visibility !== "hidden"
+            );
+          const checks = [];
+
+          for (const mode of ["modern", "classic", "grid"]) {
+            const legacy = mode !== "modern";
+            const layout = {
+              homeLayout: mode,
+              posterCardWidthDp: 126,
+              posterCardCornerRadiusDp: 12,
+              posterLabelsEnabled: true,
+              heroSectionEnabled: true,
+              catalogAddonNameEnabled: true,
+              continueWatchingCardStyle: "card",
+              // Grid also covers the modern sidebar pill; modern and classic the default sidebar.
+              modernSidebar: mode === "grid"
+            };
+            const geometry = cardGeometry(layout, mode);
+            const rows = buildLayoutRows(modelRows(), {
+              geometry,
+              heroEnabled: true,
+              itemLimit: 24,
+              gridMaxItems: 16,
+              gridRowCount: 2
+            });
+            const view = createDomHomeRenderer(container, {
+              geometry,
+              imageQueue: createImageQueue(),
+              layout
+            });
+            const at = (label) => `${mode}: ${label}`;
+            // The visible frame (artwork, See All or skeleton) keeps the card radius.
+            const assertFrame = (card) => {
+              const frame = card.classList.contains("is-seeall")
+                ? card.querySelector(".tv2-seeall")
+                : card.classList.contains("has-label")
+                  ? card.querySelector(".tv2-card-image")
+                  : card;
+              const radius = getComputedStyle(frame).borderTopLeftRadius;
+              assert(
+                radius === `${geometry.radius}px`,
+                at(`${card.dataset.rowKey || "skeleton"} frame radius ${radius}`)
+              );
+            };
+            view.setRows(rows);
+            let focus = { row: 0, columns: {} };
+            if (legacy) focus = trackCamera(focus, rows, geometry);
+            view.update(rows, focus);
+            view.setHero(heroItem, { candidates: [heroItem] });
+            await frames(4);
+
+            // Card sizes: layout box (transforms excluded) against railEngine geometry.
+            const sections = [...container.querySelectorAll(".tv2-rows > section.tv2-row")];
+            const dataRows = rows.filter((row) => row.kind !== "hero");
+            assert(sections.length === dataRows.length, at(`${sections.length} row sections`));
+            dataRows.forEach((row, index) => {
+              const size = rowCardSize(row, geometry);
+              const label = rowLabelHeight(row, geometry);
+              const section = sections[index];
+              const cards = [...section.querySelectorAll(".tv2-card")].filter(
+                (node) => node.style.visibility !== "hidden"
+              );
+              for (const card of cards) {
+                const skeleton = card.classList.contains("tv2-card-skeleton");
+                const height = size.height + (skeleton ? 0 : label);
+                assert(
+                  card.offsetWidth === size.width && card.offsetHeight === height,
+                  at(
+                    `${row.key} card ${card.offsetWidth}x${card.offsetHeight}, expected ${size.width}x${height}`
+                  )
+                );
+                assertFrame(card);
+                if (label && !skeleton && !card.classList.contains("is-seeall")) {
+                  const image = card.querySelector(".tv2-card-image").getBoundingClientRect();
+                  assert(
+                    near(image.height, size.height),
+                    at(`${row.key} artwork ${image.height} != ${size.height}`)
+                  );
+                }
+              }
+              // Row content stays inside its fixed height (no overlap with the next row).
+              const box = section.getBoundingClientRect();
+              assert(near(box.height, section.offsetHeight), at(`${row.key} section transformed`));
+              for (const card of cards) {
+                const rect = card.getBoundingClientRect();
+                assert(
+                  rect.bottom <=
+                    box.bottom - geometry.rowGap + (card.classList.contains("focused") ? 4 : 1),
+                  at(
+                    `${row.key} card bottom ${rect.bottom} past the row gap (row bottom ${box.bottom})`
+                  )
+                );
+              }
+              const title = section.querySelector(".tv2-row-title");
+              if (row.title) {
+                assert(title.scrollHeight <= title.clientHeight, at(`${row.key} title clipped`));
+                const track = section.querySelector(".tv2-track").getBoundingClientRect();
+                assert(
+                  title.getBoundingClientRect().bottom <= track.top + 1,
+                  at(`${row.key} title over cards`)
+                );
+              }
+            });
+            checks.push(`${mode} sizes`);
+
+            // Skeletons: the loading row's cards are drawn, painted and on screen.
+            const skeletons = [...container.querySelectorAll(".tv2-card-skeleton")];
+            assert(skeletons.length === 6, at(`${skeletons.length} skeletons`));
+            {
+              const skeleton = skeletons[0];
+              const style = getComputedStyle(skeleton);
+              assert(
+                style.visibility === "visible" && style.display !== "none",
+                at("skeleton hidden")
+              );
+              assert(style.backgroundImage !== "none", at("skeleton unpainted"));
+              const rect = skeleton.getBoundingClientRect();
+              const top = Math.max(rect.top, 0);
+              const bottom = Math.min(rect.bottom, innerHeight);
+              assert(
+                bottom - top >= 40 && rect.left >= 0 && rect.right <= innerWidth,
+                at(`skeleton off screen ${JSON.stringify(rect)}`)
+              );
+              // Skeletons ignore pointers: let the hit test see it, then restore.
+              skeleton.style.pointerEvents = "auto";
+              const hit = document.elementFromPoint(rect.left + rect.width / 2, (top + bottom) / 2);
+              skeleton.style.pointerEvents = "";
+              assert(hit === skeleton, at(`skeleton covered by ${hit?.className}`));
+            }
+            checks.push(`${mode} skeletons`);
+
+            // Hero copy above the first rail (modern hero, or the classic/grid hero card).
+            {
+              const firstRow = sections[0].getBoundingClientRect();
+              const heroBox = legacy
+                ? container
+                    .querySelector(".tv2-hero-legacy .home-hero-card")
+                    .getBoundingClientRect()
+                : container.querySelector(".home-modern-hero-copy").getBoundingClientRect();
+              const parts = [
+                ...container.querySelectorAll(
+                  ".tv2-hero-shell .home-hero-brand, .tv2-hero-shell .home-hero-description, .tv2-hero-shell .home-modern-hero-meta-line, .tv2-hero-shell .home-modern-hero-secondary, .tv2-hero-shell .home-hero-meta-primary, .tv2-hero-shell .home-hero-chip-row"
+                )
+              ]
+                .map((node) => node.getBoundingClientRect())
+                .filter((rect) => rect.height > 0);
+              assert(parts.length >= 2, at("hero copy not drawn"));
+              for (const rect of [heroBox, ...parts])
+                assert(
+                  rect.bottom <= firstRow.top + 1,
+                  at(`hero copy bottom ${rect.bottom} over first rail top ${firstRow.top}`)
+                );
+            }
+            checks.push(`${mode} hero`);
+
+            // Labels inside their reserved block (classic/grid titles, CW copy, folder titles).
+            const labels = () => {
+              for (const card of visibleCards(container)) {
+                const rect = card.getBoundingClientRect();
+                const scale = rect.width / card.offsetWidth;
+                for (const selector of [
+                  ".tv2-card-label",
+                  ".tv2-cw-copy",
+                  ".tv2-card-folder-title"
+                ]) {
+                  const node = card.querySelector(selector);
+                  if (!node || getComputedStyle(node).display === "none") continue;
+                  const box = node.getBoundingClientRect();
+                  assert(
+                    box.top >= rect.top - 1 && box.bottom <= rect.bottom + scale,
+                    at(
+                      `${selector} of ${card.dataset.rowKey} ${box.top}-${box.bottom} outside card ${rect.top}-${rect.bottom}`
+                    )
+                  );
+                }
+                for (const text of card.querySelectorAll(
+                  ".tv2-card-label-title, .tv2-card-label-subtitle, .tv2-cw-kicker, .tv2-cw-copy .tv2-card-title, .tv2-cw-subtitle, .tv2-card-folder-title"
+                )) {
+                  if (!text.textContent || getComputedStyle(text).display === "none") continue;
+                  assert(
+                    text.scrollHeight <= text.clientHeight + 1,
+                    at(
+                      `${text.className} of ${card.dataset.rowKey} clipped vertically ${text.scrollHeight}>${text.clientHeight}`
+                    )
+                  );
+                }
+              }
+            };
+            labels();
+            checks.push(`${mode} labels`);
+
+            // Sidebar: the collapsed rail keeps its icons inside its items and on screen.
+            {
+              const sidebar = container
+                .querySelector(".home-sidebar, .modern-sidebar-pill")
+                .getBoundingClientRect();
+              // The legacy rail sits left of the rails; the modern pill floats over them (current Home).
+              assert(
+                sidebar.width > 0 &&
+                  sidebar.right <= (layout.modernSidebar ? innerWidth : geometry.contentStart),
+                at(`sidebar ${JSON.stringify(sidebar)}`)
+              );
+              const icons = [
+                ...container.querySelectorAll(".home-nav-item, .modern-sidebar-pill")
+              ].map((item) => [
+                item.getBoundingClientRect(),
+                item
+                  .querySelector(".home-nav-icon-wrap, .modern-sidebar-pill-icon")
+                  ?.getBoundingClientRect()
+              ]);
+              assert(icons.length && icons.every(([, icon]) => icon), at("sidebar icons missing"));
+              for (const [item, icon] of icons)
+                assert(
+                  icon.width > 0 &&
+                    icon.left >= item.left - 1 &&
+                    icon.right <= item.right + 1 &&
+                    icon.top >= item.top - 1 &&
+                    icon.bottom <= item.bottom + 1 &&
+                    item.bottom <= innerHeight,
+                  at(
+                    `sidebar icon ${JSON.stringify(icon)} outside its item ${JSON.stringify(item)}`
+                  )
+                );
+            }
+            checks.push(`${mode} sidebar`);
+
+            // Navigation: the focused card stays fully on screen, right of the sidebar rail.
+            const main = container.querySelector(".tv2-main").getBoundingClientRect();
+            const keys = [
+              "down",
+              ...Array(7).fill("right"),
+              "down",
+              ...Array(9).fill("right"),
+              "down",
+              "right",
+              "right",
+              "down",
+              ...Array(12).fill("right"),
+              "down",
+              "down",
+              "left"
+            ];
+            for (const [step, key] of keys.entries()) {
+              focus = moveFocus(focus, rows, key) || focus;
+              if (legacy) focus = trackCamera(focus, rows, geometry);
+              view.update(rows, focus);
+              await frames();
+              const node = view.focusedNode();
+              assert(node, at(`no focused node after ${key} #${step}`));
+              const rect = node.getBoundingClientRect();
+              assert(
+                rect.left >= main.left + geometry.contentStart - 4 &&
+                  rect.right <= innerWidth &&
+                  rect.top >= main.top &&
+                  rect.bottom <= innerHeight,
+                at(
+                  `focus ${node.dataset.rowKey}#${node.dataset.index} off screen after ${key} #${step}: ${JSON.stringify(rect)} in ${innerWidth}x${innerHeight} main ${main.top}`
+                )
+              );
+              const hit = document.elementFromPoint(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2
+              );
+              if (node.classList.contains("tv2-card")) assertFrame(node);
+              assert(
+                node.contains(hit),
+                at(`focus ${node.dataset.rowKey} covered by ${hit?.className}`)
+              );
+            }
+            labels();
+            checks.push(`${mode} navigation`);
+            view.destroy();
+            container.innerHTML = "";
+          }
+          result.dataset.status = "passed";
+          result.textContent = `PASS: ${checks.join(", ")}`;
+        } catch (error) {
+          result.dataset.status = "failed";
+          result.textContent = `FAIL: ${error?.stack || error}`;
+        }
+    </script>
+  </body>
+</html>

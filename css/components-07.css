@@ -493,10 +493,9 @@
   height: 96px;
 }
 
-.home-shell {
-  display: flex;
-  width: 100vw;
-  height: 100vh;
+/* The new TV Home (nuv-091, .tv2-home) renders the same root sidebar without .home-shell. */
+.home-shell,
+.tv2-home {
   /* ATV sidebar tokens use dp; web TV canvas doubles them for 1920px. */
   /* ATV legacyCollapsedWidth 72dp -> 144px */
   --legacy-sidebar-rail-width: 144px;
@@ -553,6 +552,12 @@
   --modern-sidebar-pill-chip-start: 10px;
   --modern-sidebar-pill-chip-end: 24px;
   --modern-sidebar-pill-chip-gap: 18px;
+}
+
+.home-shell {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
   background: var(--bg-color);
   color: var(--text-color);
   overflow: hidden;

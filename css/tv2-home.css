@@ -1,10 +1,6 @@
 /* New TV Home (beta, nuv-091): fixed layout, transforms only, no scrolling containers. */
+/* Root sidebar tokens: shared with .home-shell (components-07.css). */
 .tv2-home {
-  --legacy-sidebar-rail-width: 144px;
-  --legacy-sidebar-open-width: 392px;
-  --legacy-sidebar-item-width: 96px;
-  --legacy-sidebar-item-expanded-width: 296px;
-  --legacy-sidebar-item-height: 104px;
   position: relative;
   width: 100vw;
   height: 100vh;
@@ -554,6 +550,8 @@ html[data-card-depth="true"][data-card-depth-posters="true"]
 .tv2-card.is-seeall .tv2-seeall {
   display: flex;
   height: var(--tv2-frame-height, 100%);
+  /* Current Home inherits the card radius; the labelled tv2 card itself has none. */
+  border-radius: var(--tv2-card-radius, 24px);
 }
 
 .tv2-card.is-seeall .tv2-card-image {
