@@ -18,7 +18,9 @@ import {
   buildCompleteContinueWatchingDisplay,
   getContinueWatchingNextUpSeedOptions,
   readContinueWatchingDisplaySnapshot,
-  shouldProtectContinueWatchingDisplay
+  shouldProtectContinueWatchingDisplay,
+  buildCatalogOrderKey,
+  buildCatalogDisableKey
 } from "../screens/home/homeScreenContext.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import { buildVisibleHomeCatalogDescriptors } from "../screens/home/homeCatalogDescriptors.js";
@@ -120,15 +122,22 @@ export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true }
     .catch(() => []);
   if (!isCurrent()) return rows;
   host.collections = CollectionsStore.get();
-  const { visibleCatalogDescriptors } = buildVisibleHomeCatalogDescriptors(addons);
+  const { uniqueCatalogDescriptors, visibleCatalogDescriptors } =
+    buildVisibleHomeCatalogDescriptors(addons);
   const showTypeSuffix = host.layoutPrefs.catalogTypeSuffixEnabled !== false;
+  // Fetched rows by key; `saved` holds the VIDAA page-one snapshots shown until a page succeeds.
   const fetched = new Map();
+  const saved = savedCatalogRows(host, uniqueCatalogDescriptors);
   const refreshWatched = watchedTitleRefresher({ fetched, isCurrent, onWatched });
   void refreshWatched();
   // Current Home order: pinned collections, then catalogs and collections in store order.
   const emitOrdered = () => {
+    const shown = new Map([...saved, ...fetched]);
+    shown.forEach((row, key) => {
+      if (row.result?.status !== "success" && saved.has(key)) shown.set(key, saved.get(key));
+    });
     catalogRows = host
-      .sortAndFilterRows([...fetched.values()], host.collections)
+      .sortAndFilterRows([...shown.values()], host.collections)
       .map((row) =>
         row.rowKind === "collection" ? collectionRow(row) : catalogRow(row, showTypeSuffix)
       )
@@ -154,6 +163,8 @@ export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true }
     isBusy: () => Platform.isVidaa() && isVidaaNavigationBusy(),
     batchYieldMs: Platform.isVidaa() ? 120 : 0
   });
+  if (!isCurrent()) return rows;
+  retryPendingCatalogRows(host, { fetched, isCurrent, onRetried: options.onRow });
   // Like refreshPersonalHome: refresh recommendations once, re-emit only when they changed.
   // A Home left during the load (Detail, player) starts no refresh, as in the current Home.
   if (!isCurrent()) return rows;
@@ -197,6 +208,50 @@ function watchedTitleRefresher({ fetched, isCurrent, onWatched }) {
     published = key;
     onWatched?.(ids);
   };
+}
+
+/**
+ * Current Home cold VIDAA load (load-data): the last saved page one of each catalog, release
+ * filtered, keyed like fetched rows. getSavedCatalog answers null off VIDAA.
+ */
+function savedCatalogRows(host, descriptors) {
+  const saved = new Map();
+  descriptors.forEach((catalog) => {
+    const data = catalogRepository.getSavedCatalog(catalog);
+    if (!data) return;
+    const homeCatalogKey = buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId);
+    saved.set(homeCatalogKey, {
+      ...catalog,
+      result: host.filterUnreleasedResult({ status: "success", data }),
+      homeCatalogKey,
+      homeCatalogDisableKey: buildCatalogDisableKey(
+        catalog.addonBaseUrl,
+        catalog.type,
+        catalog.catalogId,
+        catalog.catalogName
+      )
+    });
+  });
+  return saved;
+}
+
+/**
+ * Current Home silent retry (retryPendingCatalogRows, 12 s per page, deferred batches) of every
+ * row still loading, including a saved row whose page failed. Only pages that succeed come back.
+ */
+function retryPendingCatalogRows(host, { fetched, isCurrent, onRetried }) {
+  host.rows = [...fetched.values()];
+  // The tv2 screen picks its own hero; the retry's token check ends with this load.
+  host.pickInitialHero = () => null;
+  Object.defineProperty(host, "homeLoadToken", { get: () => isCurrent(), configurable: true });
+  host.requestBackgroundRender = () =>
+    host.rows.forEach((row) => {
+      const previous = fetched.get(row.homeCatalogKey);
+      if (row.result?.status === "success" && previous && previous.result?.status !== "success")
+        // The retry's rows carry custom titles (sortAndFilterRows): keep the raw catalog name.
+        onRetried({ ...row, catalogName: previous.catalogName });
+    });
+  host.retryPendingCatalogRows();
 }
 
 const continueWatchingFailed = (publish) => (error) => {
@@ -370,6 +425,8 @@ function catalogRow(row, showTypeSuffix) {
     title: formatCatalogRowTitle(row.catalogName, row.type, showTypeSuffix),
     // A failed or timed-out page stays "loading" (D1), never an error.
     status: row.result?.status === "success" ? "success" : "loading",
+    // Skeleton cards drawn while loading (current Home buildCatalogLoadingItems count).
+    loadingCount: row.loadingItems?.length || 0,
     entry: row,
     ...catalogPage(row),
     skipStep: Number(row.skipStep || row.result?.data?.skipStep || 100)

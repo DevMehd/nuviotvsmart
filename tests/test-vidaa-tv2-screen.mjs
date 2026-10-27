@@ -1126,6 +1126,88 @@ try {
       catalogRepository.getCatalog = () => catalogResult();
     }
   }
+
+  // C12, every layout: a timed-out catalog draws skeleton cards (not focusable, no image), is
+  // retried silently after the deferred pass, fills in place, and focus does not move.
+  for (const mode of ["modern", "classic", "grid"]) {
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    LayoutPreferences.set({ homeLayout: mode });
+    const addons = addonRepository.getInstalledAddons;
+    addonRepository.getInstalledAddons = async () => [
+      {
+        baseUrl: "https://addon.example",
+        id: "addon",
+        name: "Addon",
+        catalogs: [
+          { id: "top", apiType: "movie", name: "Top" },
+          { id: "slow", apiType: "movie", name: "Slow" }
+        ]
+      }
+    ];
+    const slowCalls = [];
+    catalogRepository.getCatalog = (params) => {
+      if (params.catalogId !== "slow") return Promise.resolve(catalogPage);
+      const call = deferred();
+      slowCalls.push(call);
+      return call.promise;
+    };
+    try {
+      const { screen } = mountScreen();
+      await flush();
+      if (screen.rows[screen.focus.row]?.kind === "hero") screen.onKeyDown({ keyCode: 40 });
+      screen.onKeyDown({ keyCode: 39 });
+      await advance(now + 1000);
+      const focusedKey = screen.rows[screen.focus.row].key;
+      const focusedId = screen.view.focusedNode()?.dataset.itemId;
+      assert.equal(focusedId, "m1", `${mode}: focus on the second card`);
+
+      await advance(now + 3500);
+      const slowModel = screen.modelRows.find((row) => row.key.includes("slow"));
+      assert.equal(slowModel?.status, "loading", `${mode}: timed-out row stays loading`);
+      // Grid turns the filled row into line rows (`slow#0`): the loading section goes away.
+      const section = () =>
+        container
+          .querySelector(".tv2-rows")
+          .children.find((node) =>
+            node.querySelector(".tv2-row-title").textContent.includes("Slow")
+          );
+      const skeletons = () =>
+        section()
+          .querySelector(".tv2-track")
+          .children.filter((node) => node.classList.contains("tv2-card-skeleton"));
+      assert.equal(skeletons().length, slowModel.loadingCount, `${mode}: skeleton cards`);
+      assert.ok(slowModel.loadingCount > 0);
+      assert.ok(
+        skeletons().every((node) => !node.classList.contains("focusable") && !node.dataset.itemId),
+        `${mode}: skeletons are not focusable and carry no item`
+      );
+      assert.equal(section().querySelector(".tv2-row-status").textContent, "");
+      assert.equal(screen.rows[screen.focus.row].key, focusedKey, `${mode}: focus kept`);
+
+      assert.equal(slowCalls.length, 2, `${mode}: one silent retry after the deferred pass`);
+      slowCalls[1].resolve({
+        status: "success",
+        data: { items: [{ id: "s0", type: "movie", name: "S0" }] }
+      });
+      await flush();
+      assert.equal(
+        screen.modelRows.find((row) => row.key.includes("slow")).status,
+        "success",
+        `${mode}: the retry fills the row`
+      );
+      assert.equal(skeletons().length, 0, `${mode}: skeletons removed`);
+      assert.equal(screen.rows[screen.focus.row].key, focusedKey, `${mode}: focus did not jump`);
+      assert.equal(screen.view.focusedNode()?.dataset.itemId, focusedId);
+      screen.cleanup();
+    } finally {
+      LayoutPreferences.set({ homeLayout: "modern" });
+      addonRepository.getInstalledAddons = addons;
+      catalogRepository.getCatalog = () => catalogResult();
+    }
+  }
 } finally {
   metaRepository.getMetaFromAllAddons = originalMeta;
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;

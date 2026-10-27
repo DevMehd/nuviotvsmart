@@ -280,12 +280,29 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       if (row.kind === "hero") return;
       view.section.querySelector(".tv2-row-title").textContent = row.title || "";
       view.section.querySelector(".tv2-row-subtitle").textContent = row.subtitle || "";
-      const status = row.items.length
-        ? ""
-        : row.status === "loading"
-          ? "Chargement…"
-          : "Indisponible pour le moment";
-      view.section.querySelector(".tv2-row-status").textContent = status;
+      // A loading row shows skeleton cards, or the loading text without a count (D1: no error text).
+      const skeletons = row.items.length || row.status !== "loading" ? 0 : row.loadingCount || 0;
+      setSkeletons(view, skeletons);
+      view.section.querySelector(".tv2-row-status").textContent =
+        row.items.length || skeletons || row.status !== "loading"
+          ? ""
+          : t("common.loading", {}, "Loading");
+    });
+  }
+
+  /** Current Home loading cards: plain boxes, never focusable, no image or dataset. */
+  function setSkeletons(view, count) {
+    view.skeletons ||= [];
+    if (view.skeletons.length === count) return;
+    view.skeletons.forEach((node) => node.remove());
+    const { width, height } = view.size;
+    view.skeletons = Array.from({ length: count }, (_, index) => {
+      const node = document.createElement("div");
+      node.className = "tv2-card tv2-card-skeleton";
+      node.style.width = `${width}px`;
+      node.style.height = `${height}px`;
+      node.style.transform = `translate3d(${index * (width + geometry.gap)}px,0,0)`;
+      return view.track.appendChild(node);
     });
   }
 

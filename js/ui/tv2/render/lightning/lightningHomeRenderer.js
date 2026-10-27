@@ -7,6 +7,7 @@ import {
   ROW_TITLE_HEIGHT,
   RAIL_VIEWPORT
 } from "../../railEngine.js";
+import { t } from "../../../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import { focusedIndex } from "../../focusModel.js";
 import { sizedImageUrl } from "../../imagePipeline.js";
 import { cardImageUrl, fillCard, navRowOf, setNavPosition } from "../../renderer.js";
@@ -346,11 +347,9 @@ export function createLightningHomeRenderer(
         views.set(row.key, view);
       }
       view.title.text = row.title || "";
-      view.status.text = row.items.length
-        ? ""
-        : row.status === "loading"
-          ? "Chargement…"
-          : "Indisponible pour le moment";
+      // Loading rows stay empty, without skeleton cards (lot C12); no error text (D1).
+      view.status.text =
+        row.items.length || row.status !== "loading" ? "" : t("common.loading", {}, "Loading");
     });
   }
 

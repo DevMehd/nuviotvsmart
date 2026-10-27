@@ -200,7 +200,8 @@ try {
   assert.deepEqual([s0Request.supportsSkip, s0Request.skipStep], [true, 50]);
   const c0Request = requests.find((args) => args.catalogId === "c0");
   assert.deepEqual([c0Request.supportsSkip, c0Request.skipStep], [false, 100]);
-  assert.equal(requests.length, 14, "one request per visible catalog");
+  assert.equal(requests.length, 15, "one request per visible catalog, plus the retry (C12)");
+  assert.equal(requests.at(-1).catalogId, "c3", "only the timed-out catalog is retried");
 
   // Current Home on the same fixture: same keys in the same order, same items.
   requests.length = 0;
