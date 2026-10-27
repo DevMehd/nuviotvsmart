@@ -970,6 +970,105 @@ try {
       catalogResult = async () => catalogPage;
     }
   }
+
+  // Layouts (lot C11): classic/grid hero row, capped catalogs ending with See All, no pagination;
+  // key 76 cycles modern -> grid -> classic, saves it and gives each layout its focus back.
+  {
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    const { HOME_MAX_ITEMS_PER_ROW_CONSTRAINED } =
+      await import("../js/ui/screens/home/homeConstants.js");
+    const navigations = [];
+    Router.navigate = (route, params) => navigations.push({ route, params });
+    LayoutPreferences.set({ homeLayout: "classic" });
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    try {
+      const { screen, calls } = mountScreen();
+      await flush();
+      assert.equal(screen.layoutMode, "classic");
+      assert.equal(screen.rows[0].kind, "hero", "classic starts with its hero row");
+      assert.equal(screen.focus.row, 0, "focus starts on the hero card");
+      assert.equal(screen.view.focusedNode()?.classList.contains("focused"), true);
+      assert.equal(screen.heroItem.id, "m0", "the first candidate, not the focused card");
+      // A late Continue Watching row does not take the focus from the classic hero.
+      const cw = { id: "tt9", type: "movie", name: "Late", progressPercent: 40 };
+      screen.applyRows([
+        { key: "continue_watching", kind: "continue", title: "CW", items: [cw], status: "success" },
+        ...screen.modelRows
+      ]);
+      assert.equal(screen.rows[screen.focus.row].kind, "hero");
+      const catalogIndex = screen.rows.findIndex((row) => row.entry && row.kind === "poster");
+      const catalog = screen.rows[catalogIndex];
+      assert.equal(
+        catalog.items.length,
+        HOME_MAX_ITEMS_PER_ROW_CONSTRAINED + 1,
+        "VIDAA keeps 10 cards (D4), then See All"
+      );
+      assert.equal(catalog.items.at(-1).seeAll, true);
+      // Left/Right on the hero rotate it, never open the sidebar.
+      screen.onKeyDown({ keyCode: 39 });
+      await advance(now + 2000);
+      assert.equal(screen.sidebarIndex, -1);
+      assert.equal(screen.heroItem.id, "m1", "Right shows the next candidate");
+      const heroes = calls.setHero.filter(Boolean).length;
+      // Moving in the rows never changes a classic hero, nor asks for a next page (D3).
+      const requested = [];
+      catalogRepository.getCatalog = (params) => (requested.push(params), catalogResult());
+      screen.onKeyDown({ keyCode: 40 });
+      while (screen.focus.row !== catalogIndex) screen.onKeyDown({ keyCode: 40 });
+      for (let step = 0; step < 12; step += 1) screen.onKeyDown({ keyCode: 39 });
+      await advance(now + 2000);
+      assert.equal(calls.setHero.filter(Boolean).length, heroes, "the hero does not follow focus");
+      assert.equal(requested.length, 0, "no pagination outside modern");
+      assert.equal(screen.currentItem().seeAll, true, "focus stops on See All");
+      const left = homeLayout(screen.rows, screen.focus, screen.viewOptions.geometry).rows[
+        catalogIndex
+      ];
+      assert.ok(left.win.offset + 10 * left.pitch >= 0, "See All is inside the rail");
+      screen.onKeyDown({ keyCode: 13 });
+      assert.equal(navigations.at(-1).route, "catalogSeeAll", "See All opens on key-down");
+      assert.equal(navigations.at(-1).params.catalogId, "top");
+      assert.equal(navigations.at(-1).params.initialItems.length, 40);
+      catalogRepository.getCatalog = () => catalogResult();
+
+      // Key 76 (modern -> grid -> classic): each layout its own view, saved and focus restored.
+      const viewsBefore = calls.setRows;
+      screen.onKeyDown({ keyCode: 76 });
+      assert.equal(screen.layoutMode, "modern");
+      assert.equal(LayoutPreferences.get().homeLayout, "modern", "the layout is saved");
+      assert.ok(calls.setRows > viewsBefore, "the rows are replayed into the new view");
+      assert.ok(!screen.rows.some((row) => row.kind === "hero"), "modern has no hero row");
+      assert.ok(!screen.rows.some((row) => row.items.some((item) => item.seeAll)));
+      assert.equal(screen.heroItem.id, screen.currentItem().id, "modern shows the focused title");
+      screen.onKeyDown({ keyCode: 76 });
+      assert.equal(screen.layoutMode, "grid");
+      const lines = screen.rows.filter((row) => row.key.startsWith(`${catalog.key}#`));
+      assert.ok(lines.length >= 2, "a grid catalog splits into line rows");
+      assert.ok(lines.at(-1).items.at(-1).seeAll, "See All closes the section");
+      assert.equal(screen.heroItem.id, "m0", "the grid hero is re-picked");
+      while (screen.rows[screen.focus.row].key !== lines[0].key) screen.onKeyDown({ keyCode: 40 });
+      screen.onKeyDown({ keyCode: 39 });
+      screen.onKeyDown({ keyCode: 39 });
+      screen.onKeyDown({ keyCode: 40 });
+      assert.equal(screen.rows[screen.focus.row].key, lines[1].key);
+      assert.equal(focusedIndex(screen.focus, screen.rows), 2, "Down keeps the grid column");
+      screen.onKeyDown({ keyCode: 76 });
+      assert.equal(screen.layoutMode, "classic");
+      assert.equal(screen.rows[screen.focus.row].key, catalog.key);
+      assert.equal(screen.currentItem().seeAll, true, "classic focus restored");
+      screen.onKeyDown({ keyCode: 76 });
+      screen.onKeyDown({ keyCode: 76 });
+      assert.equal(screen.layoutMode, "grid");
+      assert.equal(screen.rows[screen.focus.row].key, lines[1].key, "grid focus restored");
+      assert.equal(focusedIndex(screen.focus, screen.rows), 2);
+      screen.cleanup();
+    } finally {
+      LayoutPreferences.set({ homeLayout: "modern" });
+      Router.navigate = originalNavigate;
+      catalogRepository.getCatalog = () => catalogResult();
+    }
+  }
 } finally {
   metaRepository.getMetaFromAllAddons = originalMeta;
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;

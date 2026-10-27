@@ -78,7 +78,7 @@ import { localizedGenreLabel } from "../../../i18n/genreLabels.js";
 import { buildWatchedTitleIdSet, isTitleItemWatched, renderTitleWatchedBadge } from "../../components/watchedTitleBadge.js";
 
 import { buildModernRowKey, MODERN_HOME_CONSTANTS, renderModernHomeLayout } from "./modernHomeLayout.js";
-import { buildCatalogSeeAllPayload } from "./homeCatalogPage.js";
+import { buildCatalogSeeAllPayload, legacyRowPlan } from "./homeCatalogPage.js";
 
 import { formatHomeRuntimeText, shouldPreserveHomeRuntimeText } from "./homeRuntime.js";
 
@@ -354,16 +354,14 @@ export function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
     const rowTitle = isCollectionRow
       ? String(rowData.collectionTitle || rowData.collection?.title || "Collection")
       : formatCatalogRowTitle(rowData.catalogName, rowData.type, showCatalogTypeSuffix);
-    const rowSubtitle = layoutMode === "classic" && showCatalogAddonName && rowData.addonName ? `from ${rowData.addonName}` : "";
-    const maxItems = Math.max(1, Number(layoutMode === "grid" ? gridMaxDisplayItems : rowItemLimit || HOME_MAX_ITEMS_PER_ROW_DEFAULT));
-    const hasSeeAll =
-      !isCollectionRow &&
-      !isLoading &&
-      (layoutMode === "grid"
-        ? Boolean(rowData?.result?.data?.hasMore) || items.length > maxItems
-        : Boolean(rowData?.result?.data?.hasMore) || items.length >= 15);
-    const gridLimit = Math.max(1, hasSeeAll ? maxItems - 1 : maxItems);
-    const visibleItems = isCollectionRow ? rowItems : layoutMode === "grid" ? rowItems.slice(0, gridLimit) : rowItems.slice(0, maxItems);
+    const {
+      subtitle: rowSubtitle,
+      maxItems,
+      hasSeeAll,
+      gridLimit,
+      visibleCount
+    } = legacyRowPlan(rowData, { layoutMode, rowItemLimit, gridMaxDisplayItems, showCatalogAddonName });
+    const visibleItems = rowItems.slice(0, visibleCount);
     const deferRowImages = shouldDeferHomeRowImages(rowIndex, rowKey, focusedRowKey);
     const expandedItemIndex = expandFocusedPoster && focusedRowKey === rowKey ? focusedItemIndex : -1;
     const renderRowMarkup = () => {

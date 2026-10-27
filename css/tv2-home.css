@@ -50,8 +50,34 @@
   right: 0;
   bottom: 0;
   margin: 0;
-  padding: 0 0 0 220px;
+  /* Layout content start (railEngine cardGeometry): modern 220, classic 192, grid 168. */
+  padding: 0 0 0 var(--tv2-content-start, 220px);
   overflow: hidden;
+}
+
+/* Classic and grid (lot C11): the hero card and the rows scroll together from the screen top. */
+.tv2-home.tv2-layout-classic .tv2-main,
+.tv2-home.tv2-layout-grid .tv2-main {
+  top: 0;
+}
+
+.tv2-home.tv2-layout-classic {
+  background: #000;
+}
+
+/* Classic/grid hero: the current Home's hero CSS (components-12/13/15) on its own shell, as
+   the "__hero__" row (400 px card, railEngine HERO_ROW_HEIGHT with its margin). */
+.tv2-home .home-screen-shell.tv2-hero-shell.tv2-hero-legacy {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  margin-right: 48px;
+  --home-content-start: 48px;
+}
+
+.tv2-hero-legacy .home-hero-card {
+  height: 400px;
+  box-sizing: border-box;
 }
 
 .tv2-rows {
@@ -68,6 +94,24 @@
   font-size: 32px;
   font-weight: 600;
   line-height: 56px;
+}
+
+/* Grid lines after the first and untitled rows have no header (railEngine rowHeight). */
+.tv2-row-title:empty,
+.tv2-row-subtitle:empty {
+  display: none;
+}
+
+/* Classic "from {addon}" (components-15.css .home-row-subtitle), 20 px under the title. */
+.tv2-row-subtitle {
+  margin: 0;
+  height: 20px;
+  font-size: 13px;
+  line-height: 20px;
+  color: rgba(255, 255, 255, 0.52);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv2-row-status {
@@ -304,6 +348,81 @@
 
 .tv2-card.focused {
   box-shadow: 0 0 0 4px var(--focus-color);
+}
+
+/* Classic/grid titles under the artwork (components-15.css .home-poster-copy): a fixed block,
+   so the row height stays computable; the focus ring goes around the artwork only. */
+.tv2-card.has-label {
+  overflow: visible;
+  background: transparent;
+  border-radius: 0;
+}
+
+.tv2-card.has-label .tv2-card-image {
+  display: block;
+  height: var(--tv2-frame-height);
+  border-radius: var(--tv2-card-radius, 24px);
+  background: var(--card-bg);
+}
+
+.tv2-card.has-label.focused {
+  box-shadow: none;
+}
+
+.tv2-card.has-label.focused .tv2-card-image {
+  box-shadow: 0 0 0 4px var(--focus-color);
+}
+
+.tv2-card-label {
+  padding-top: 10px;
+  overflow: hidden;
+}
+
+.tv2-card-label-title {
+  height: 20px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv2-card-label-subtitle {
+  height: 15px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 15px;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv2-card-label-subtitle:empty {
+  display: none;
+}
+
+/* See All card (components-13.css .home-seeall-card): its frame instead of the artwork. */
+.tv2-seeall {
+  display: none;
+}
+
+.tv2-card.is-seeall .tv2-seeall {
+  display: flex;
+  height: var(--tv2-frame-height, 100%);
+}
+
+.tv2-card.is-seeall .tv2-card-image {
+  display: none;
+}
+
+.tv2-card.is-seeall.focused .tv2-seeall {
+  box-shadow: 0 0 0 4px var(--focus-color);
+}
+
+.tv2-seeall .home-seeall-arrow.is-rtl {
+  transform: scaleX(-1);
 }
 
 /* WebGL prototype (lot B2): the canvas draws hero and rails under the DOM sidebar. */

@@ -26,7 +26,14 @@ export function moveFocus(focus, rows, direction) {
   const step = direction === "down" ? 1 : -1;
   let next = focus.row + step;
   while (rows[next] && !rows[next].items.length) next += step;
-  return rows[next] ? { ...focus, row: next } : focus;
+  if (!rows[next]) return focus;
+  // Grid lines of one layout share their columns: Up/Down keeps the column (current Home grid
+  // D-pad picks the card above or below).
+  if (row.gridLine !== undefined && rows[next].gridLine !== undefined) {
+    const column = Math.min(index, rows[next].items.length - 1);
+    return { ...focus, row: next, columns: { ...focus.columns, [rows[next].key]: column } };
+  }
+  return { ...focus, row: next };
 }
 
 /**

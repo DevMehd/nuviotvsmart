@@ -189,6 +189,7 @@ import {
 } from "./homeUtils.js";
 
 import { groupNodesByOffsetTop } from "./homeScreenHelpers-13-continue-watching-stream-params.js";
+import { gridVisibleCount } from "./homeCatalogPage.js";
 
 export function getHomeGridColumnCount(track, cards = []) {
   if (!track || !cards.length) {
@@ -237,21 +238,16 @@ export function normalizeHomeGridCatalogSections(
     }
 
     const seeAllCard = cards.find((card) => card.classList.contains("home-seeall-card")) || null;
-    const maxDisplaySlots = Math.min(safeMaxDisplayItems, columnCount * safeRowCount);
-    const maxContentCards = seeAllCard ? Math.max(0, maxDisplaySlots - 1) : maxDisplaySlots;
-    let visibleContentCards = contentCards.slice(0, maxContentCards);
-
-    // Android removes one content card when See All would otherwise be the
-    // only item on the last row. This keeps D-pad row geometry identical to
-    // GridHomeContent while retaining the full row in the route state.
-    if (
-      seeAllCard &&
-      columnCount > 1 &&
-      visibleContentCards.length >= columnCount &&
-      (visibleContentCards.length + 1) % columnCount === 1
-    ) {
-      visibleContentCards = visibleContentCards.slice(0, -1);
-    }
+    const visibleContentCards = contentCards.slice(
+      0,
+      gridVisibleCount({
+        contentCount: contentCards.length,
+        hasSeeAll: Boolean(seeAllCard),
+        columnCount,
+        rowCount: safeRowCount,
+        maxDisplayItems: safeMaxDisplayItems
+      })
+    );
 
     const visibleSet = new Set(visibleContentCards);
     contentCards.forEach((card) => {

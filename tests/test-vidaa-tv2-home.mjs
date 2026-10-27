@@ -163,6 +163,7 @@ Object.assign(screen, {
   rows,
   focus: { row: 2, columns: {} },
   sidebarIndex: -1,
+  viewOptions: { geometry },
   view: {
     update() {},
     setHero() {},

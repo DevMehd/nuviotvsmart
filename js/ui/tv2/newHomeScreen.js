@@ -4,6 +4,7 @@ import { allowDpadRepeat } from "../navigation/dpadRepeatThrottle.js";
 import { isVidaaNavigationBusy } from "../navigation/vidaaNavigationActivity.js";
 import { Platform } from "../../platform/index.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
+import { CollectionsStore } from "../../data/local/collectionsStore.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
 import {
   watchedItemIdentityValues,
@@ -15,7 +16,14 @@ import {
   activateLegacySidebarAction,
   getSidebarProfileState
 } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
-import { CW_HOLD_DELAY_MS } from "../screens/home/homeConstants.js";
+import {
+  CW_HOLD_DELAY_MS,
+  HERO_ROTATE_FIRST_DELAY_MS,
+  HERO_ROTATE_INTERVAL_MS,
+  HOME_GRID_SAFE_MAX_COLUMNS,
+  HOME_LAYOUT_SEQUENCE,
+  HOME_MAX_ITEMS_PER_ROW_CLASSIC
+} from "../screens/home/homeConstants.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import {
   isCloudContinueWatchingItem,
@@ -29,8 +37,10 @@ import {
   continueWatchingDetailParams,
   continueWatchingDetailsMenuParams,
   continueWatchingMenuOptions,
+  getHomeGridRowCount,
   removeContinueWatchingProgress
 } from "../screens/home/homeScreenHelpers-13-continue-watching-stream-params.js";
+import { buildCatalogSeeAllPayload } from "../screens/home/homeCatalogPage.js";
 import { createHomeScreenMethods03 } from "../screens/home/homeScreenMethods-03-is-scroll-animation-active.js";
 import { createHomeScreenMethods08 } from "../screens/home/homeScreenMethods-08-open-hold-menu-for-node.js";
 import { createHomeScreenMethods11 } from "../screens/home/homeScreenMethods-11-enrich-current-hero-async.js";
@@ -52,7 +62,14 @@ import {
   getVidaaHeroPreloadDelay
 } from "../screens/home/vidaaHomePreviewPolicy.js";
 import { loadHomeRows, loadNextCatalogPage } from "./homeModel.js";
-import { cardGeometry, rowCardSize, RAIL_VIEWPORT } from "./railEngine.js";
+import {
+  buildLayoutRows,
+  cardGeometry,
+  homeLayoutMode,
+  isLegacyLayout,
+  rowCardSize,
+  trackCamera
+} from "./railEngine.js";
 import {
   createFocus,
   focusedIndex,
@@ -84,7 +101,8 @@ const { pickHeroItem, collectHeroCandidates } = createHomeScreenMethods27();
 // Hero enrichment of the current Home (addon meta, TMDB, IMDb), run on heroHost().
 const { enrichCurrentHeroAsync } = createHomeScreenMethods11();
 // Current Home trailer policy (prefs, legacy-runtime suppression, constrained-TV delay, deferred
-// teardown) and trailer lookup (inline, TMDB, addon meta); none of them reads screen state.
+// teardown), runtime row limits and trailer lookup (inline, TMDB, addon meta); none of them reads
+// screen state (getRowItemLimit reads the `collections` it is called with).
 const trailerPolicy = {
   ...createHomeScreenMethods03(),
   getFocusedPosterFlowConfig: createHomeScreenMethods12().getFocusedPosterFlowConfig
@@ -99,7 +117,7 @@ const modalOpen = () => Boolean(globalThis.document?.body?.classList?.contains("
 
 /** Hero source of a card, as the current Home's getNodeHeroSource (personal rows have no entry). */
 function heroSource(row, item) {
-  if (!row || !item) return null;
+  if (!row || !item || item.seeAll) return null;
   if (row.kind === "continue") return normalizeContinueWatchingItem(item);
   return normalizeHomeRowItem(row.entry || { type: item.type }, item);
 }
@@ -123,12 +141,15 @@ export const NewHomeScreen = {
     const token = this.token;
     this.container = document.getElementById("home");
     ScreenUtils.show(this.container);
-    const layout = LayoutPreferences.get();
     this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
-    this.viewOptions = { geometry: cardGeometry(layout), imageQueue: this.imageQueue, layout };
+    this.setLayout(LayoutPreferences.get());
+    this.layoutFocus = {};
+    // Current Home getRowItemLimit counts the collections loaded with the rows.
+    this.collections = CollectionsStore.get();
     this.profile = null;
     this.watchedTitleIds = null;
     this.view = this.createView(token);
+    this.modelRows = [];
     this.rows = [];
     this.focus = createFocus();
     this.sidebarIndex = -1;
@@ -159,11 +180,24 @@ export const NewHomeScreen = {
     });
   },
 
-  /** Renderer of the chosen mode when WebGL works, else the DOM one; the engine goes to Diagnostic. */
+  /** Layout of the preferences (modern, grid, classic) and its card geometry. */
+  setLayout(layout) {
+    this.layoutMode = homeLayoutMode(layout);
+    this.viewOptions = {
+      geometry: cardGeometry(layout, this.layoutMode),
+      imageQueue: this.imageQueue,
+      layout
+    };
+  },
+
+  /**
+   * Renderer of the chosen mode when WebGL works, else the DOM one; the engine goes to Diagnostic.
+   * Classic and grid always draw in DOM (D9): the WebGL renderer stays modern-only.
+   */
   createView(token) {
     const mode = sessionNewHomeMode();
     const fallBack = (why) => token === this.token && this.fallBackToDom(why);
-    if (mode === "webgl" && homeEngine() === "webgl") {
+    if (mode === "webgl" && homeEngine() === "webgl" && !isLegacyLayout(this.layoutMode)) {
       noteHomeEngine("webgl");
       return createLightningHomeRenderer(this.container, {
         ...this.viewOptions,
@@ -188,11 +222,42 @@ export const NewHomeScreen = {
     if (this.watchedTitleIds) this.view.setWatched(this.watchedTitleIds);
     this.view.setRows(this.rows);
     this.render();
-    this.view.setHero(this.heroItem, { loading: this.heroLoading });
+    this.view.setHero(this.heroItem, {
+      loading: this.heroLoading,
+      candidates: this.heroCandidates
+    });
+  },
+
+  /** Model rows as the layout draws them (railEngine buildLayoutRows) with the current Home caps. */
+  layoutRows(modelRows) {
+    const { geometry, layout } = this.viewOptions;
+    // Current Home render (methods-23): 24 per classic row and 8 columns per grid line only on
+    // unconstrained runtimes, else getRowItemLimit (10 on VIDAA, D4).
+    const roomy = !trailerPolicy.isPerformanceConstrained() && !trailerPolicy.isLegacyTvRuntime();
+    const itemLimit = trailerPolicy.getRowItemLimit.call({
+      ...trailerPolicy,
+      collections: this.collections
+    });
+    const gridRowCount = getHomeGridRowCount(layout);
+    return buildLayoutRows(modelRows, {
+      geometry,
+      heroEnabled:
+        Boolean(layout.heroSectionEnabled) && Boolean(this.heroItem || this.heroCandidates.length),
+      itemLimit: roomy ? HOME_MAX_ITEMS_PER_ROW_CLASSIC : itemLimit,
+      gridMaxItems: roomy ? HOME_GRID_SAFE_MAX_COLUMNS * gridRowCount : itemLimit,
+      gridRowCount,
+      showAddonName: layout.catalogAddonNameEnabled !== false
+    });
   },
 
   applyRows(nextRows) {
-    const rows = this.withoutRemoved(nextRows);
+    this.modelRows = this.withoutRemoved(nextRows);
+    const entries = this.modelRows.map((row) => row.entry).filter(Boolean);
+    this.heroCandidates = collectHeroCandidates.call(
+      { layoutPrefs: this.viewOptions.layout },
+      entries
+    );
+    const rows = this.layoutRows(this.modelRows);
     // Catalog rows arrive out of order: keep focus on the same row key, not the same index.
     const focusedKey = this.rows?.[this.focus.row]?.key;
     const keptRow = rows.findIndex((row) => row.key === focusedKey);
@@ -211,16 +276,18 @@ export const NewHomeScreen = {
         this.focus = { ...this.focus, row: firstFilled };
     }
     // Current Home late focus (shouldApplyLateContinueWatchingFocus): Continue Watching filled
-    // before any key takes focus, except on a return.
+    // before any key takes focus, except on a return. Classic/grid start on their hero card.
     const continueRow = rows.findIndex(
       (row) => row.key === "continue_watching" && row.items.length
     );
-    if (continueRow >= 0 && !this.interacted && !this.restoring)
-      this.focus = { ...this.focus, row: continueRow };
+    const anchor = rows[0]?.kind === "hero" ? 0 : continueRow;
+    if (anchor >= 0 && !this.interacted && !this.restoring)
+      this.focus = { ...this.focus, row: anchor };
     this.view.setRows(rows);
     this.render();
-    this.applyInitialHero(rows);
+    this.applyInitialHero(this.modelRows, entries);
     this.scheduleHero();
+    this.startHeroRotation();
   },
 
   /**
@@ -228,25 +295,14 @@ export const NewHomeScreen = {
    * row's first title, else the first hero candidate; a skeleton while Continue Watching loads.
    * A return shows the restored card's title.
    */
-  applyInitialHero(rows) {
-    const layoutPrefs = this.viewOptions.layout;
-    const entries = rows.map((row) => row.entry).filter(Boolean);
-    this.heroCandidates = collectHeroCandidates.call({ layoutPrefs }, entries);
+  applyInitialHero(rows, entries) {
     if (this.interacted) return;
     const continueRow = rows.find((row) => row.key === "continue_watching");
     if (this.heroItem && !continueRow?.items.length) return;
     let hero = null;
-    if (this.restoring) hero = this.pendingSnapshot ? null : this.focusedHeroSource();
-    else
-      hero = pickInitialHero.call({
-        layoutMode: "modern",
-        layoutPrefs,
-        continueWatchingLoading: continueRow?.status === "loading",
-        continueWatchingDisplay: continueRow?.items || [],
-        heroCandidates: this.heroCandidates,
-        rows: entries,
-        pickHeroItem
-      });
+    if (this.restoring && !isLegacyLayout(this.layoutMode))
+      hero = this.pendingSnapshot ? null : this.focusedHeroSource();
+    else hero = this.initialHero(rows, entries);
     if (hero) {
       this.showHero(hero);
       this.enrichHero();
@@ -258,12 +314,26 @@ export const NewHomeScreen = {
     this.view.setHero(null, { loading });
   },
 
+  /** Current Home pickInitialHero: modern prefers Continue Watching, classic/grid the candidates. */
+  initialHero(rows, entries) {
+    const continueRow = rows.find((row) => row.key === "continue_watching");
+    return pickInitialHero.call({
+      layoutMode: this.layoutMode,
+      layoutPrefs: this.viewOptions.layout,
+      continueWatchingLoading: continueRow?.status === "loading",
+      continueWatchingDisplay: continueRow?.items || [],
+      heroCandidates: this.heroCandidates,
+      rows: entries,
+      pickHeroItem
+    });
+  },
+
   /** One hero write per title: the same identity is never written again. */
   showHero(hero) {
     this.heroLoading = false;
     if (!hero || buildHeroIdentity(hero) === buildHeroIdentity(this.heroItem)) return;
     this.heroItem = hero;
-    this.view?.setHero(hero);
+    this.view?.setHero(hero, { candidates: this.heroCandidates });
   },
 
   /**
@@ -276,7 +346,9 @@ export const NewHomeScreen = {
     const screen = this;
     const token = this.token;
     return {
-      layoutMode: "modern",
+      get layoutMode() {
+        return screen.layoutMode;
+      },
       heroCandidates: [],
       get heroItem() {
         return screen.heroItem;
@@ -304,7 +376,7 @@ export const NewHomeScreen = {
         const identity = buildHeroIdentity(merged);
         const matches = (item) =>
           String(item?.id || "") === itemId && buildHeroIdentity(item) === identity;
-        screen.rows.forEach((row) => {
+        new Set([...screen.rows, ...screen.modelRows]).forEach((row) => {
           if (row.kind !== "continue" && row.items.some(matches))
             row.items = row.items.map((item) => (matches(item) ? { ...item, ...merged } : item));
         });
@@ -315,18 +387,25 @@ export const NewHomeScreen = {
     };
   },
 
-  /** Current Home: the shown hero is enriched once it is committed, and gets its MDBList ratings. */
+  /**
+   * Current Home: the shown hero is enriched once it is committed, and gets its MDBList ratings.
+   * Classic/grid commit it as shown (no focus check), like their applyHeroToDom path.
+   */
   enrichHero() {
     const host = this.heroHost;
-    if (shouldEnrichModernHero(this.heroItem))
-      void enrichCurrentHeroAsync.call(host, this.heroItem, host.heroFocusToken, {
-        deferCommit: true
-      });
+    if (shouldEnrichModernHero(this.heroItem, this.layoutMode))
+      void enrichCurrentHeroAsync.call(
+        host,
+        this.heroItem,
+        host.heroFocusToken,
+        isLegacyLayout(this.layoutMode) ? {} : { deferCommit: true }
+      );
     void ensureHeroMdbListRatings.call(host);
   },
 
   focusedHeroSource() {
-    return heroSource(this.rows[this.focus.row], this.currentItem());
+    const row = this.rows[this.focus.row];
+    return row?.kind === "hero" ? this.heroItem : heroSource(row, this.currentItem());
   },
 
   /** Removed Continue Watching titles stay out of the running load's later emits. */
@@ -350,6 +429,7 @@ export const NewHomeScreen = {
   },
 
   render() {
+    this.focus = trackCamera(this.focus, this.rows, this.viewOptions.geometry);
     this.view?.update(this.rows, this.focus, { sidebarIndex: this.sidebarIndex });
   },
 
@@ -369,6 +449,8 @@ export const NewHomeScreen = {
    * just before; both wait while VIDAA navigation is busy. The current hero is not rescheduled.
    */
   scheduleHero({ moved = false } = {}) {
+    // Classic/grid heroes do not follow focus: they rotate (startHeroRotation, Left/Right on them).
+    if (isLegacyLayout(this.layoutMode)) return;
     const hero = this.focusedHeroSource();
     const identity = buildHeroIdentity(hero);
     // A rows refresh keeps the pending hero of the same title: only moves reschedule it.
@@ -506,6 +588,89 @@ export const NewHomeScreen = {
     this.stopFocusMedia();
   },
 
+  /**
+   * Current Home startHeroRotation: classic/grid only, never on constrained runtimes (VIDAA in
+   * auto mode); 20 s, then every 10 s, skipped while the hero card is focused.
+   */
+  startHeroRotation() {
+    if (
+      this.rotateTimer ||
+      !isLegacyLayout(this.layoutMode) ||
+      this.heroCandidates.length <= 1 ||
+      trailerPolicy.isPerformanceConstrained()
+    )
+      return;
+    const tick = (delay) => {
+      this.rotateTimer = setTimeout(() => {
+        if (this.rows[this.focus.row]?.kind !== "hero") this.rotateHero(1);
+        tick(HERO_ROTATE_INTERVAL_MS);
+      }, delay);
+    };
+    tick(HERO_ROTATE_FIRST_DELAY_MS);
+  },
+
+  stopHeroRotation() {
+    clearTimeout(this.rotateTimer);
+    this.rotateTimer = null;
+  },
+
+  /**
+   * Current Home rotateHero: next candidate, committed once its artwork is warm and VIDAA
+   * navigation is calm; held keys coalesce (only the latest slide commits).
+   */
+  rotateHero(step) {
+    const total = this.heroCandidates.length;
+    if (total <= 1) return;
+    this.heroIndex = (Number(this.heroIndex || 0) + step + total) % total;
+    const hero = this.heroCandidates[this.heroIndex];
+    this.cancelHero();
+    const token = this.heroToken;
+    const current = () => token === this.heroToken;
+    const host = this.heroHost;
+    void (async () => {
+      if (!(await host.waitForVidaaHomeLoadingIdle(current))) return;
+      await preloadHeroAssets(hero, this.layoutMode).catch(() => {});
+      if (!(await host.waitForVidaaHomeLoadingIdle(current))) return;
+      this.showHero(hero);
+      this.enrichHero();
+    })();
+  },
+
+  /**
+   * Key 76 (current Home): next layout of modern, grid, classic, saved in the preferences. Each
+   * layout gets its own focus back; the view is rebuilt (DOM outside modern) with the same rows.
+   */
+  switchLayout() {
+    this.layoutFocus[this.layoutMode] = focusSnapshot(this.focus, this.rows);
+    const next = (HOME_LAYOUT_SEQUENCE.indexOf(this.layoutMode) + 1) % HOME_LAYOUT_SEQUENCE.length;
+    LayoutPreferences.set({ homeLayout: HOME_LAYOUT_SEQUENCE[next] });
+    this.cancelHero();
+    this.stopHeroRotation();
+    this.cancelPendingContinueWatchingHold();
+    this.imageQueue?.clear();
+    this.view?.destroy();
+    this.setLayout(LayoutPreferences.get());
+    this.view = this.createView(this.token);
+    if (this.profile) this.view.setProfile(this.profile);
+    if (this.watchedTitleIds) this.view.setWatched?.(this.watchedTitleIds);
+    this.interacted = true;
+    this.heroItem = null;
+    this.heroIndex = 0;
+    this.rows = [];
+    this.focus = createFocus();
+    this.pendingSnapshot = this.layoutFocus[this.layoutMode] || null;
+    this.applyRows(this.modelRows);
+    this.pendingSnapshot = null;
+    // Modern shows the focused title at once; classic/grid re-pick their first candidate.
+    const hero = isLegacyLayout(this.layoutMode)
+      ? this.initialHero(this.modelRows, this.modelRows.map((row) => row.entry).filter(Boolean))
+      : this.focusedHeroSource();
+    this.cancelHero();
+    this.showHero(hero);
+    this.enrichHero();
+    this.scheduleHero();
+  },
+
   /** Drops the pending hero and aborts its enrichment (move, sidebar, leaving Home). */
   cancelHero() {
     this.stopFocusMedia();
@@ -518,6 +683,11 @@ export const NewHomeScreen = {
 
   onKeyDown(event) {
     const code = Number(event?.keyCode || 0);
+    if (code === 76) {
+      event.preventDefault?.();
+      this.switchLayout();
+      return;
+    }
     const direction = DIRECTIONS[code];
     if (direction || code === 13) {
       // Current Home: the first key cancels a late focus restore or Continue Watching jump.
@@ -543,8 +713,9 @@ export const NewHomeScreen = {
     const row = this.rows[this.focus.row];
     const item = this.currentItem();
     if (!item) return;
-    // Folders are no hold target: they open on key-down, like the current Home.
-    if (row.kind === "collection") this.openItem(row, item);
+    // Folders, the classic/grid hero and See All are no hold target: they open on key-down,
+    // like the current Home.
+    if (row.kind === "collection" || row.kind === "hero" || item.seeAll) this.openItem(row, item);
     else if (!event.repeat && !this.pendingHold) this.armHold(row, item);
   },
 
@@ -594,6 +765,15 @@ export const NewHomeScreen = {
   openItem(row, item) {
     if (!row || !item) return;
     this.lastSnapshot = focusSnapshot(this.focus, this.rows);
+    if (row.kind === "hero") {
+      if (this.heroItem?.id) Router.navigate("detail", detailParams(this.heroItem));
+      return;
+    }
+    // Current Home openCatalogSeeAllFromNode: the catalog screen goes on from the loaded page.
+    if (item.seeAll) {
+      Router.navigate("catalogSeeAll", buildCatalogSeeAllPayload(row.entry));
+      return;
+    }
     if (row.kind === "continue") {
       this.resumeContinueWatching(item);
       return;
@@ -698,10 +878,18 @@ export const NewHomeScreen = {
     // Current Home pruneContinueWatchingItem: the whole title leaves, its snapshot is dropped.
     this.removedContinue.push({ ...normalized, videoId: null });
     clearContinueWatchingDisplaySnapshot(watchProgressRepository.getContinueWatchingSourceKey());
-    this.applyRows(this.rows);
+    this.applyRows(this.modelRows);
   },
 
   moveInRails(direction) {
+    // Current Home: Left/Right on the classic/grid hero card rotate it, never leave it.
+    if (
+      this.rows[this.focus.row]?.kind === "hero" &&
+      (direction === "left" || direction === "right")
+    ) {
+      this.rotateHero(direction === "right" ? 1 : -1);
+      return;
+    }
     const next = moveFocus(this.focus, this.rows, direction);
     if (next === null) {
       this.openSidebar(false);
@@ -720,11 +908,15 @@ export const NewHomeScreen = {
    */
   requestNextPage() {
     clearTimeout(this.pageTimer);
+    // D3: classic and grid end their catalogs with See All instead.
+    if (isLegacyLayout(this.layoutMode)) return;
     const row = this.rows[this.focus.row];
     if (row?.kind !== "poster" || !row.entry || !row.hasMore || !row.supportsSkip) return;
     // Visible cards from the rail tables, as the current Home's ceil(track width / stride).
     const { geometry } = this.viewOptions;
-    const visible = Math.ceil(RAIL_VIEWPORT / (rowCardSize(row, geometry).width + geometry.gap));
+    const visible = Math.ceil(
+      geometry.viewport / (rowCardSize(row, geometry).width + geometry.gap)
+    );
     const lastVisible = focusedIndex(this.focus, this.rows) + visible - 1;
     if (lastVisible < row.items.length - PAGE_AHEAD_ITEMS) return;
     const inFlight = this.pagesInFlight;
@@ -763,7 +955,8 @@ export const NewHomeScreen = {
       .findIndex((node) => node.classList.contains("selected"));
     this.sidebarIndex = Math.max(0, selected);
     this.sidebarOpenedByBack = openedByBack;
-    this.cancelHero();
+    // Modern drops its pending hero; a classic/grid hero stays committed and keeps its enrichment.
+    if (!isLegacyLayout(this.layoutMode)) this.cancelHero();
     this.render();
   },
 
@@ -803,6 +996,7 @@ export const NewHomeScreen = {
     this.lastSnapshot = focusSnapshot(this.focus, this.rows) || this.lastSnapshot;
     this.token = (this.token || 0) + 1;
     this.cancelHero();
+    this.stopHeroRotation();
     // Current Home cleanup drops its trailer lookups (profile switch, failed lookup).
     trailerSources.clear();
     clearTimeout(this.pageTimer);

@@ -3,13 +3,20 @@ import { getTvHeroTransitionMode } from "../../platform/tvRuntimePerformance.js"
 import { renderLegacySidebar } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { posterCardModel } from "../screens/home/homeScreenHelpers-15-create-poster-card-markup.js";
 import {
+  buildHeroIndicators,
+  buildPosterSubtitle,
   continueCardModel,
   resolveContinueWatchingBlurNextUp
 } from "../screens/home/homeScreenHelpers-12-build-hero-indicators.js";
 import { firstNonEmpty } from "../screens/home/homeUtils.js";
-import { HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS } from "../screens/home/homeConstants.js";
 import {
+  HOME_LEGACY_HERO_BACKDROP_CROSSFADE_MS,
+  HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS
+} from "../screens/home/homeConstants.js";
+import {
+  buildHeroDisplayModel,
   buildModernHeroPresentation,
+  renderMetaTokens,
   renderModernHeroPrimary,
   renderModernHeroSecondary
 } from "../screens/home/homeScreenHelpers-11-build-hero-display-model.js";
@@ -28,15 +35,19 @@ import {
 } from "../screens/home/homeTrailerLayer.js";
 import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimization.js";
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
-import { slotFor, homeLayout, rowCardSize, ROW_TITLE_HEIGHT } from "./railEngine.js";
+import { I18n } from "../../i18n/index.js";
+import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
+import { slotFor, homeLayout, rowCardSize, rowHeight, rowLabelHeight } from "./railEngine.js";
 import { focusedIndex } from "./focusModel.js";
 import { sizedImageUrl } from "./imagePipeline.js";
 
 // Renderers of the new TV Home (nuv-091) share one interface:
-//   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item, { loading }), setProfile(state),
+//   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item, { loading, candidates }),
+//   setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
 //   stopHeroTrailer({ deferred }) and setFocusGif(url) (DOM only, Lightning stays poster-only).
-// This is the DOM one, the universal fallback; render/lightning/ draws the whole Home in WebGL.
+// This is the DOM one, the universal fallback and the only one drawing classic and grid (D9);
+// render/lightning/ draws the modern Home in WebGL.
 
 /**
  * Card image at its displayed size with the current Home's source order (posterCardModel for
@@ -148,6 +159,28 @@ const HERO_MARKUP = `
     </section>
   </div>`;
 
+/**
+ * Current Home classic/grid hero (renderHeroMarkup): a focusable card, first row of the layout,
+ * scrolled with the rows. Filled by setHero.
+ */
+const legacyHeroMarkup = (mode) => `
+  <section class="home-hero home-hero-${mode}">
+    <article class="home-hero-card focusable" data-action="openDetail">
+      <div class="home-hero-backdrop-wrap">
+        <img class="home-hero-backdrop placeholder" alt="" decoding="async" fetchpriority="high" onerror="${buildImageFallbackErrorHandler()}" />
+      </div>
+      <div class="home-hero-copy">
+        <div class="home-hero-brand"><h1 class="home-hero-title-text"></h1></div>
+        <div class="home-hero-meta-primary is-empty"></div>
+        <div class="home-hero-chip-row is-empty"></div>
+        <div class="home-hero-meta-secondary is-empty"></div>
+        <div class="home-hero-mdb-ratings is-empty"></div>
+        <p class="home-hero-description"></p>
+      </div>
+      <div class="home-hero-indicators"></div>
+    </article>
+  </section>`;
+
 /** Row index as the driver counts it: empty rows are not navigable, so they are skipped. */
 export const navRowOf = (rows, rowIndex) =>
   rows.slice(0, rowIndex).filter((row) => row.items.length).length;
@@ -159,23 +192,40 @@ export function setNavPosition(node, navRow, col) {
 }
 
 export function createDomHomeRenderer(container, { geometry, imageQueue, layout = {} }) {
+  const mode = geometry.layoutMode || "modern";
+  const legacy = mode !== "modern";
   container.innerHTML = `
-    <div class="tv2-home">
+    <div class="tv2-home tv2-layout-${mode}">
       ${renderLegacySidebar({ selectedRoute: "home", layout })}
-      ${HERO_MARKUP}
+      ${legacy ? "" : HERO_MARKUP}
       <div class="home-main tv2-main"><div class="tv2-rows"></div></div>
     </div>`;
   const root = container.querySelector(".tv2-home");
   const rowsHost = container.querySelector(".tv2-rows");
+  // Classic/grid: the hero is the "__hero__" row's section, inside the rows.
+  const legacyHero = legacy ? document.createElement("div") : null;
+  if (legacyHero) {
+    legacyHero.className = `home-screen-shell home-layout-${mode} tv2-hero-shell tv2-hero-legacy`;
+    legacyHero.innerHTML = legacyHeroMarkup(mode);
+  }
+  const heroNode = (selector) =>
+    legacyHero
+      ? legacyHero.querySelector(selector)
+      : container.querySelector(`.tv2-hero-shell ${selector}`);
   const hero = {
-    media: container.querySelector(".tv2-hero-shell .home-modern-hero-media"),
-    backdrop: container.querySelector(".tv2-hero-shell .home-hero-backdrop"),
-    brand: container.querySelector(".tv2-hero-shell .home-hero-brand"),
-    title: container.querySelector(".tv2-hero-shell .home-hero-title-text"),
-    primary: container.querySelector(".tv2-hero-shell .home-modern-hero-meta-line"),
-    secondary: container.querySelector(".tv2-hero-shell .home-modern-hero-secondary"),
-    description: container.querySelector(".tv2-hero-shell .home-hero-description"),
-    trailerLayer: container.querySelector(".tv2-hero-shell .home-hero-trailer-layer"),
+    media: legacy ? null : heroNode(".home-modern-hero-media"),
+    card: legacy ? heroNode(".home-hero-card") : null,
+    backdrop: heroNode(".home-hero-backdrop"),
+    brand: heroNode(".home-hero-brand"),
+    title: heroNode(".home-hero-title-text"),
+    primary: heroNode(legacy ? ".home-hero-meta-primary" : ".home-modern-hero-meta-line"),
+    secondary: heroNode(legacy ? ".home-hero-meta-secondary" : ".home-modern-hero-secondary"),
+    chips: legacy ? heroNode(".home-hero-chip-row") : null,
+    ratings: legacy ? heroNode(".home-hero-mdb-ratings") : null,
+    indicators: legacy ? heroNode(".home-hero-indicators") : null,
+    description: heroNode(".home-hero-description"),
+    trailerLayer: legacy ? null : heroNode(".home-hero-trailer-layer"),
+    candidates: [],
     logo: null,
     identity: ""
   };
@@ -192,6 +242,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   let stopTrailer = null;
   let gifNode = null;
   root.style.setProperty("--tv2-card-radius", `${geometry.radius ?? 24}px`);
+  root.style.setProperty("--tv2-content-start", `${geometry.contentStart ?? 220}px`);
 
   function setRows(rows) {
     rowsVersion += 1;
@@ -204,29 +255,37 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     }
     rows.forEach((row) => {
       let view = views.get(row.key);
+      if (!view && row.kind === "hero") {
+        view = { section: legacyHero, slots: [], kind: "hero" };
+        views.set(row.key, view);
+      }
       if (!view) {
         const section = document.createElement("section");
         section.className = "tv2-row";
-        section.innerHTML = `<h2 class="tv2-row-title"></h2><p class="tv2-row-status"></p><div class="tv2-track"></div>`;
+        section.innerHTML = `<h2 class="tv2-row-title"></h2><p class="tv2-row-subtitle"></p><p class="tv2-row-status"></p><div class="tv2-track"></div>`;
         view = {
           section,
           track: section.querySelector(".tv2-track"),
           slots: [],
           kind: row.kind,
-          size: rowCardSize(row, geometry)
+          size: rowCardSize(row, geometry),
+          labelHeight: rowLabelHeight(row, geometry),
+          // Classic/grid catalogs end with their See All card.
+          seeAll: legacy && Boolean(row.entry) && row.kind === "poster"
         };
         views.set(row.key, view);
       }
       rowsHost.appendChild(view.section);
+      view.section.style.height = `${rowHeight(row, geometry)}px`;
+      if (row.kind === "hero") return;
       view.section.querySelector(".tv2-row-title").textContent = row.title || "";
+      view.section.querySelector(".tv2-row-subtitle").textContent = row.subtitle || "";
       const status = row.items.length
         ? ""
         : row.status === "loading"
           ? "Chargement…"
           : "Indisponible pour le moment";
       view.section.querySelector(".tv2-row-status").textContent = status;
-      const { height } = view.size;
-      view.section.style.height = `${height + ROW_TITLE_HEIGHT + geometry.gap}px`;
     });
   }
 
@@ -237,7 +296,14 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       node.className = `${view.kind === "continue" ? "home-continue-card" : "home-poster-card"} tv2-card focusable`;
       node.dataset.action = "openDetail";
       const title = `<div class="tv2-card-title" dir="auto"></div>`;
-      node.innerHTML = `<img class="tv2-card-image" alt="" decoding="async" />${watchedBadge}
+      const seeAll = view.seeAll
+        ? `<div class="home-seeall-card-inner tv2-seeall"><span class="home-seeall-arrow${I18n.isRtl() ? " is-rtl" : ""}">→</span>
+          <span class="home-seeall-label">${esc(t("action_see_all", {}, "See All"))}</span></div>`
+        : "";
+      const label = view.labelHeight
+        ? `<div class="tv2-card-label"><div class="tv2-card-label-title" dir="auto"></div><div class="tv2-card-label-subtitle"></div></div>`
+        : "";
+      node.innerHTML = `<img class="tv2-card-image" alt="" decoding="async" />${watchedBadge}${seeAll}${label}
         <div class="tv2-card-overlay"><img class="tv2-card-logo" alt="" decoding="async" />
           <div class="tv2-card-overlay-title"></div><div class="tv2-card-overlay-subtitle"></div></div>
         ${view.kind === "collection" ? `<img class="tv2-card-gif" alt="" decoding="async" />` : ""}
@@ -249,7 +315,12 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         }`;
       const { width, height } = view.size;
       node.style.width = `${width}px`;
-      node.style.height = `${height}px`;
+      node.style.height = `${height + view.labelHeight}px`;
+      if (view.labelHeight) {
+        // Classic/grid: the artwork frame, then the title block under it (fixed height).
+        node.classList.add("has-label");
+        node.style.setProperty("--tv2-frame-height", `${height}px`);
+      }
       cards.set(node, {
         image: node.querySelector(".tv2-card-image"),
         logo: node.querySelector(".tv2-card-logo"),
@@ -261,6 +332,8 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         subtitle: node.querySelector(".tv2-cw-subtitle"),
         progress: node.querySelector(".tv2-cw-progress span"),
         gif: node.querySelector(".tv2-card-gif"),
+        labelTitle: node.querySelector(".tv2-card-label-title"),
+        labelSubtitle: node.querySelector(".tv2-card-label-subtitle"),
         source: null
       });
       view.track.appendChild(node);
@@ -275,6 +348,20 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
    */
   function fillContent(node, row, item, size) {
     const card = cards.get(node);
+    const seeAll = Boolean(item.seeAll);
+    node.classList.toggle("is-seeall", seeAll);
+    node.dataset.action = seeAll ? "openCatalogSeeAll" : "openDetail";
+    if (card.labelTitle) {
+      card.labelTitle.textContent = seeAll ? "" : item.name || item.title || "";
+      card.labelSubtitle.textContent =
+        seeAll || mode !== "classic" ? "" : buildPosterSubtitle(item, mode);
+    }
+    if (seeAll) {
+      node.classList.remove("is-watched", "is-landscape", "tv2-card-emoji");
+      card.title.textContent = "";
+      card.source = { url: "", fallbacks: [], logo: "" };
+      return;
+    }
     const source = cardImage(row, item, size, layout);
     const { model, cw } = source;
     const landscape = Boolean(model) && size.width > size.height;
@@ -307,6 +394,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     placed.rows.forEach(({ row, pitch, win }, rowIndex) => {
       const view = views.get(row.key);
       if (!view) return;
+      if (row.kind === "hero") {
+        setNavPosition(hero.card, navRowOf(rows, rowIndex), 0);
+        return;
+      }
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
       const navRow = navRowOf(rows, rowIndex);
       view.slots.forEach((node) => (node.style.visibility = "hidden"));
@@ -340,9 +431,12 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       const row = rows[focus.row];
       const view = row && views.get(row.key);
       focusedNode =
-        view?.slots.find(
-          (node) => node?.dataset.index === String(focusIndex) && node.style.visibility !== "hidden"
-        ) || null;
+        row?.kind === "hero"
+          ? hero.card
+          : view?.slots.find(
+              (node) =>
+                node?.dataset.index === String(focusIndex) && node.style.visibility !== "hidden"
+            ) || null;
     }
     focusedNode?.classList.add("focused");
     root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
@@ -357,13 +451,22 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
    * fallbacks, logo once loaded (title until then or on failure), meta lines and description.
    * The hero image stays out of the card image queue. `loading` shows the skeleton (no item yet).
    */
-  function setHero(item, { loading = false } = {}) {
-    hero.media.classList.toggle("home-modern-hero-media-loading", !item && loading);
-    const display = item ? buildModernHeroPresentation(item) : null;
+  function setHero(item, { loading = false, candidates } = {}) {
+    hero.media?.classList.toggle("home-modern-hero-media-loading", !item && loading);
+    if (candidates) hero.candidates = candidates;
+    const display = !item
+      ? null
+      : legacy
+        ? buildHeroDisplayModel(item, mode)
+        : buildModernHeroPresentation(item);
     if (!display) return;
     const identity = buildHeroIdentity(item);
     hero.identity = identity;
-    const crossfadeMs = Platform.isVidaa() ? 200 : HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS;
+    const crossfadeMs = Platform.isVidaa()
+      ? 200
+      : legacy
+        ? HOME_LEGACY_HERO_BACKDROP_CROSSFADE_MS
+        : HOME_MODERN_HERO_BACKDROP_CROSSFADE_MS;
     const transitionMode = getTvHeroTransitionMode();
     hero.backdrop.dataset.fallbackSrcs = encodeHeroBackdropFallbacks(
       display.backdropFallbacks || []
@@ -393,6 +496,12 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         onReady: (ready) => isCurrent() && hero.title.classList.toggle("is-hidden", ready)
       });
     } else if (hero.logo) animateHeroLogoSwap(hero.logo, "");
+    hero.description.textContent = display.description || " ";
+    hero.description.classList.toggle("is-empty", !display.description);
+    if (legacy) {
+      setLegacyHeroCopy(item, display);
+      return;
+    }
     setHomeHtmlIfChanged(hero.primary, renderModernHeroPrimary(display));
     hero.primary.classList.toggle(
       "is-empty",
@@ -407,8 +516,25 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         !display.languageText &&
         !display.mdbListMarkup
     );
-    hero.description.textContent = display.description || " ";
-    hero.description.classList.toggle("is-empty", !display.description);
+  }
+
+  /** Current Home applyHeroToDom for classic/grid: IMDb and year, genre chips, ratings, dots. */
+  function setLegacyHeroCopy(item, display) {
+    hero.card.dataset.itemId = String(item.id || "");
+    hero.card.dataset.itemType = String(item.type || "movie");
+    hero.card.dataset.itemTitle = String(item.name || "Untitled");
+    setHomeHtmlIfChanged(hero.primary, renderMetaTokens(display.metaPrimary));
+    hero.primary.classList.toggle("is-empty", !display.metaPrimary.length);
+    setHomeHtmlIfChanged(hero.secondary, renderMetaTokens(display.metaSecondary));
+    hero.secondary.classList.toggle("is-empty", !display.metaSecondary.length);
+    setHomeHtmlIfChanged(
+      hero.chips,
+      display.chips.map((chip) => `<span class="home-hero-chip">${esc(chip)}</span>`).join("")
+    );
+    hero.chips.classList.toggle("is-empty", !display.chips.length);
+    setHomeHtmlIfChanged(hero.ratings, display.mdbListMarkup || "");
+    hero.ratings.classList.toggle("is-empty", !display.mdbListMarkup);
+    setHomeHtmlIfChanged(hero.indicators, buildHeroIndicators(hero.candidates, item));
   }
 
   /** Current Home hero_media trailer (or folder hero video): the backdrop fades out once it shows. */
@@ -426,7 +552,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
 
   /** `deferred`: paused now, unloaded once idle (constrained TVs, as the current Home). */
   function stopHeroTrailer({ deferred = false } = {}) {
-    hero.media.classList.remove("trailer-active");
+    hero.media?.classList.remove("trailer-active");
     stopTrailer?.({ deferred });
     stopTrailer = null;
   }
@@ -474,8 +600,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     focusedNode: () => focusedNode,
     destroy() {
       stopHeroTrailer();
-      pauseTrailerMedia(hero.trailerLayer);
-      releaseTrailerMedia(hero.trailerLayer);
+      if (hero.trailerLayer) {
+        pauseTrailerMedia(hero.trailerLayer);
+        releaseTrailerMedia(hero.trailerLayer);
+      }
       setFocusGif("");
       views.clear();
       focusedNode = null;
