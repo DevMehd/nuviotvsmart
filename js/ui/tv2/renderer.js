@@ -38,6 +38,7 @@ import {
   releaseTrailerMedia
 } from "../screens/home/homeTrailerLayer.js";
 import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimization.js";
+import { useVidaaHeroTransition } from "../screens/home/vidaaHeroTransition.js";
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
 import { I18n } from "../../i18n/index.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
@@ -53,7 +54,7 @@ import { focusedIndex } from "./focusModel.js";
 import { sizedImageUrl } from "./imagePipeline.js";
 
 // Renderers of the new TV Home (nuv-091) share one interface:
-//   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item, { loading, candidates }),
+//   setRows(rows), update(rows, focus, { sidebarIndex, hideFocus }), setHero(item, { loading, candidates }),
 //   setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
 //   stopHeroTrailer({ deferred }), setFocusGif(url) and setSidebarPill(iconOnly) (DOM only:
@@ -256,6 +257,12 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   // Stop of the hero trailer or folder video, and the card showing its focus GIF.
   let stopTrailer = null;
   let gifNode = null;
+  // Current Home modernHeroFullScreenBackdropEnabled: its hero CSS (components-16/17) applies.
+  if (!legacy && layout.modernHeroFullScreenBackdropEnabled)
+    container.querySelector(".tv2-hero-shell").classList.add("home-modern-fullscreen-backdrop");
+  // Current Home VIDAA balanced motion (components-60-vidaa.css), same gate as its hero swaps:
+  // the focused card scales to 1.015 in 160 ms, never under reduced motion.
+  const motion = useVidaaHeroTransition(root);
   root.style.setProperty("--tv2-card-radius", `${geometry.radius ?? 24}px`);
   root.style.setProperty("--tv2-content-start", `${geometry.contentStart ?? 220}px`);
 
@@ -434,9 +441,31 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     card.source = { url: source.url, fallbacks: source.fallbacks, logo };
   }
 
-  function update(rows, focus, { sidebarIndex = -1 } = {}) {
+  /**
+   * Card position and focus scale. Only a card staying in place tweens its scale (Web Animations,
+   * transform only): a placed or recycled card jumps instead of sliding across the rail.
+   */
+  function placeCard(node, x, scaled) {
+    const card = cards.get(node);
+    if (card.x === x && card.scaled === scaled) return;
+    const transform = `translate3d(${x}px,0,0)${scaled ? " scale(1.015)" : ""}`;
+    card.tween?.cancel();
+    card.tween =
+      card.x === x
+        ? node.animate([{ transform: node.style.transform }, { transform }], {
+            duration: 160,
+            easing: "cubic-bezier(0.2, 0, 0, 1)"
+          })
+        : null;
+    card.x = x;
+    card.scaled = scaled;
+    node.style.transform = transform;
+  }
+
+  function update(rows, focus, { sidebarIndex = -1, hideFocus = false } = {}) {
     const placed = homeLayout(rows, focus, geometry);
     const focusIndex = focusedIndex(focus, rows);
+    const focusShown = sidebarIndex < 0 && !hideFocus;
     const logos = [];
     placed.rows.forEach(({ row, pitch, win }, rowIndex) => {
       const view = views.get(row.key);
@@ -456,7 +485,11 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
           fillContent(node, row, row.items[i], view.size);
         setNavPosition(node, navRow, i);
         node.style.visibility = "";
-        node.style.transform = `translate3d(${i * pitch}px,0,0)`;
+        placeCard(
+          node,
+          i * pitch,
+          motion && focusShown && rowIndex === focus.row && i === focusIndex
+        );
         const { image, logo, source } = cards.get(node);
         imageQueue.request(image, loadImages ? source.url : "", {
           fallbacks: source.fallbacks,
@@ -492,6 +525,8 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
                 node?.dataset.index === String(focusIndex) && node.style.visibility !== "hidden"
             ) || null;
     }
+    // A hold menu is open (current Home lockHomeHoldFocus): no focused card.
+    if (hideFocus) focusedNode = null;
     focusedNode?.classList.add("focused");
     root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
     sidebarOpen = sidebarIndex >= 0;
@@ -610,7 +645,11 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     stopTrailer = mountTrailerMedia(
       hero.trailerLayer,
       source,
-      () => hero.media.classList.add("trailer-active"),
+      () => {
+        hero.media.classList.add("trailer-active");
+        // Fullscreen backdrop: the rails fade while the trailer shows (components-17.css).
+        root.classList.add("tv2-hero-trailer-active");
+      },
       () => stopHeroTrailer()
     );
   }
@@ -618,6 +657,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   /** `deferred`: paused now, unloaded once idle (constrained TVs, as the current Home). */
   function stopHeroTrailer({ deferred = false } = {}) {
     hero.media?.classList.remove("trailer-active");
+    root.classList.remove("tv2-hero-trailer-active");
     stopTrailer?.({ deferred });
     stopTrailer = null;
   }

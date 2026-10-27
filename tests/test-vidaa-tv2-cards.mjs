@@ -517,6 +517,121 @@ try {
     watchedSets.length,
     "an unchanged set is not published twice"
   );
+
+  // G2: VIDAA balanced motion (current Home components-60-vidaa.css): the focused card grows to
+  // 1.015 over 160 ms through Web Animations (transform only); a placed or recycled card jumps.
+  {
+    const animations = [];
+    El.prototype.animate = function (keyframes, options) {
+      const animation = {
+        node: this,
+        keyframes,
+        options,
+        cancel() {
+          this.cancelled = true;
+        }
+      };
+      animations.push(animation);
+      return animation;
+    };
+    document.documentElement.classList.add("vidaa-balanced-motion");
+    try {
+      const geometry = cardGeometry({});
+      const pitch = geometry.poster.width + geometry.gap;
+      const rows = [
+        {
+          key: "r",
+          kind: "poster",
+          title: "R",
+          status: "success",
+          items: Array.from({ length: 30 }, (_, i) => ({ id: `p${i}`, type: "movie" }))
+        }
+      ];
+      const host = new El();
+      const view = createDomHomeRenderer(host, {
+        geometry,
+        imageQueue: { request() {} },
+        layout: {}
+      });
+      view.setRows(rows);
+      view.update(rows, { row: 0, columns: {} });
+      const track = host.querySelector(".tv2-rows").children[0].querySelector(".tv2-track");
+      const card = (index) =>
+        track.children.find(
+          (node) => node.dataset.index === String(index) && node.style.visibility !== "hidden"
+        );
+      assert.equal(card(0).style.transform, "translate3d(0px,0,0) scale(1.015)");
+      assert.equal(card(1).style.transform, `translate3d(${pitch}px,0,0)`);
+      assert.equal(animations.length, 0, "first placement: no tween");
+      view.update(rows, { row: 0, columns: { r: 1 } });
+      assert.equal(card(0).style.transform, "translate3d(0px,0,0)");
+      assert.equal(card(1).style.transform, `translate3d(${pitch}px,0,0) scale(1.015)`);
+      assert.deepEqual(
+        animations.map((a) => [a.node.dataset.index, a.keyframes.at(-1).transform]),
+        [
+          ["0", "translate3d(0px,0,0)"],
+          ["1", `translate3d(${pitch}px,0,0) scale(1.015)`]
+        ]
+      );
+      assert.deepEqual(animations[1].keyframes[0], { transform: `translate3d(${pitch}px,0,0)` });
+      assert.equal(animations[1].options.duration, 160);
+      // Recycled cards (pool slots reused further right) jump: no tween, a running one stops.
+      animations.length = 0;
+      for (let column = 2; column <= 8; column += 1)
+        view.update(rows, { row: 0, columns: { r: column } });
+      assert.equal(animations.length, 14, "only the focus change is tweened");
+      assert.ok(
+        animations.every(
+          (a) => a.keyframes[0].transform.split(" ")[0] === a.keyframes[1].transform.split(" ")[0]
+        ),
+        "no tween moves a card"
+      );
+      // Under a hold menu: no focused card, no scale.
+      view.update(rows, { row: 0, columns: { r: 8 } }, { hideFocus: true });
+      assert.equal(card(8).style.transform, `translate3d(${8 * pitch}px,0,0)`);
+      assert.equal(view.focusedNode(), null);
+
+      // Reduced performance mode (no vidaa-balanced-motion): no scale.
+      document.documentElement.classList.remove("vidaa-balanced-motion");
+      const plain = new El();
+      const still = createDomHomeRenderer(plain, {
+        geometry,
+        imageQueue: { request() {} },
+        layout: {}
+      });
+      still.setRows(rows);
+      still.update(rows, { row: 0, columns: {} });
+      const first = plain.querySelector(".tv2-rows").children[0].querySelector(".tv2-track")
+        .children[0];
+      assert.equal(first.style.transform, "translate3d(0px,0,0)");
+
+      // modernHeroFullScreenBackdropEnabled: the current Home class on the modern hero shell.
+      const full = new El();
+      createDomHomeRenderer(full, {
+        geometry,
+        imageQueue: { request() {} },
+        layout: { modernHeroFullScreenBackdropEnabled: true }
+      });
+      assert.ok(
+        full.querySelector(".tv2-hero-shell").classList.contains("home-modern-fullscreen-backdrop")
+      );
+      const classic = new El();
+      createDomHomeRenderer(classic, {
+        geometry: cardGeometry({ homeLayout: "classic" }, "classic"),
+        imageQueue: { request() {} },
+        layout: { modernHeroFullScreenBackdropEnabled: true }
+      });
+      assert.ok(
+        !classic
+          .querySelector(".tv2-hero-shell")
+          .classList.contains("home-modern-fullscreen-backdrop"),
+        "modern only"
+      );
+    } finally {
+      delete El.prototype.animate;
+      document.documentElement.classList.remove("vidaa-balanced-motion");
+    }
+  }
 } finally {
   for (const [object, name, value] of originals.reverse()) object[name] = value;
 }

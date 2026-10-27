@@ -1519,6 +1519,120 @@ try {
       LayoutPreferences.set({ modernSidebar: false });
     }
   }
+
+  // G2: Home left from the sidebar comes back with its sidebar open on Home (current Home
+  // restoreSidebarFocusState), the rails focus kept underneath; a Back return with a content
+  // route state goes back to the card, as the current Home's captureRouteState prefers it.
+  {
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    LayoutPreferences.set({ modernSidebar: true });
+    try {
+      const { screen } = mountScreen();
+      await flush();
+      screen.onKeyDown({ keyCode: 39 });
+      const rowKey = screen.rows[screen.focus.row].key;
+      screen.openSidebar(false);
+      const routeState = screen.captureRouteState();
+      screen.cleanup();
+      void screen.mount({}, { previousRoute: "search" });
+      assert.ok(screen.sidebarIndex >= 0, "the sidebar is open again");
+      assert.equal(screen.sidebarOpenedByBack, false, "Back closes it, never exits");
+      assert.equal(screen.pillIconOnly, false);
+      assert.equal(screen.rows[screen.focus.row].key, rowKey, "rails focus kept underneath");
+      assert.equal(focusedIndex(screen.focus, screen.rows), 1);
+      screen.closeSidebar();
+      screen.cleanup();
+      void screen.mount({}, { isBackNavigation: true, restoredState: routeState });
+      assert.equal(screen.sidebarIndex, -1, "a Back return to a card keeps the sidebar closed");
+      assert.equal(screen.pillIconOnly, true);
+      assert.equal(focusedIndex(screen.focus, screen.rows), 1);
+      screen.cleanup();
+      void screen.mount({}, { previousRoute: "search" });
+      assert.equal(screen.sidebarIndex, -1, "left from the rails: no sidebar on return");
+      screen.cleanup();
+    } finally {
+      LayoutPreferences.set({ modernSidebar: false });
+    }
+  }
+
+  // G2: no focused card under a hold menu (current Home lockHomeHoldFocus); it comes back when
+  // the menu is dismissed or closes after Remove.
+  {
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    PosterOptionsDialogController.prototype.open = async () => true;
+    const { screen } = mountScreen();
+    await flush();
+    const focusedCard = () =>
+      container
+        .querySelector(".tv2-rows")
+        .children.flatMap((section) => section.querySelector(".tv2-track").children)
+        .filter((node) => node.classList.contains("focused"));
+    assert.equal(focusedCard().length, 1);
+    screen.onKeyDown({ keyCode: 13 });
+    await advance(now + 650);
+    await flush();
+    assert.equal(screen.view.focusedNode(), null, "no focused card under the poster menu");
+    assert.equal(focusedCard().length, 0, "no focus ring under the poster menu");
+    screen.posterMenu.onDismiss();
+    assert.equal(focusedCard().length, 1, "the ring is back once the menu closes");
+    assert.equal(screen.view.focusedNode()?.dataset.itemId, "m0");
+
+    const cw = normalizeContinueWatchingItem({
+      contentId: "tt3",
+      type: "movie",
+      title: "Film",
+      positionMs: 1000,
+      durationMs: 5000
+    });
+    screen.applyRows([
+      { key: "continue_watching", kind: "continue", title: "CW", status: "success", items: [cw] },
+      ...screen.modelRows
+    ]);
+    screen.focus = { ...screen.focus, row: 0 };
+    screen.render();
+    screen.onKeyDown({ keyCode: 13 });
+    await advance(now + 650);
+    assert.ok(screen.cwDialog);
+    assert.equal(focusedCard().length, 0, "no focus ring under the Continue Watching menu");
+    screen.cwDialog._dismiss();
+    assert.equal(focusedCard().length, 1, "Back on the menu brings the ring back");
+    screen.cleanup();
+    await advance(now + 220);
+    PosterOptionsDialogController.prototype.open = originalPosterOpen;
+  }
+
+  // G2: classic/grid with heroSectionEnabled off (current Home showHeroSection): no hero row, no
+  // hero write or enrichment, and no rotation even where it would run (performance mode full).
+  for (const mode of ["classic", "grid"]) {
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    const { setTvPerformanceMode } = await import("../js/platform/tvRuntimePerformance.js");
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    LayoutPreferences.set({ homeLayout: mode, heroSectionEnabled: false });
+    setTvPerformanceMode("full");
+    const enriched = [];
+    heroMeta = (type, id) => (enriched.push(id), new Promise(() => {}));
+    try {
+      const { screen, calls } = mountScreen();
+      await flush();
+      assert.ok(!screen.rows.some((row) => row.kind === "hero"), `${mode}: no hero row`);
+      await advance(now + 60000);
+      assert.deepEqual(calls.setHero.filter(Boolean), [], `${mode}: no hero written`);
+      assert.deepEqual(enriched, [], `${mode}: no hero enrichment`);
+      assert.equal(screen.rotateTimer || null, null, `${mode}: no hero rotation`);
+      screen.cleanup();
+    } finally {
+      setTvPerformanceMode("auto");
+      LayoutPreferences.set({ homeLayout: "modern", heroSectionEnabled: true });
+      heroMeta = () => new Promise(() => {});
+    }
+  }
 } finally {
   metaRepository.getMetaFromAllAddons = originalMeta;
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;

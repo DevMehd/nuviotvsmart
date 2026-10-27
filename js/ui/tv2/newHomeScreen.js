@@ -175,17 +175,22 @@ export const NewHomeScreen = {
     this.backgroundLoad = !reload;
     // The phone remote's Home while on Home (same-route navigate): as Home picked in the sidebar.
     const reselect = navigation.previousRoute === "home" && !navigation.isBackNavigation;
+    const snapshot = reselect
+      ? null
+      : (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     this.loading = false;
     this.pendingRefresh = null;
     this.view = this.createView(token);
-    // Current Home: a Back return starts with the modern sidebar pill icon-only.
-    this.pillIconOnly = Boolean(navigation.isBackNavigation);
+    // Current Home: a Back return starts with the modern sidebar pill icon-only, unless it
+    // gives the sidebar its focus back.
+    this.pillIconOnly = Boolean(navigation.isBackNavigation && !snapshot?.sidebar);
     this.view.setSidebarPill?.(this.pillIconOnly);
     this.modelRows = [];
     this.rows = [];
     this.focus = createFocus();
     this.sidebarIndex = -1;
     this.sidebarOpenedByBack = false;
+    this.holdFocusLocked = false;
     this.pagesInFlight = new Set();
     this.removedContinue = [];
     this.interacted = false;
@@ -195,13 +200,13 @@ export const NewHomeScreen = {
     this.lastHeroNavAt = 0;
     this.heroHost = this.createHeroHost();
     this.focusMediaIdentity = "";
-    this.pendingSnapshot = reselect
-      ? null
-      : (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
+    this.pendingSnapshot = snapshot;
     this.restoring = Boolean(this.pendingSnapshot);
     this.subscribe();
     if (cached.length) this.applyRows(cached);
     if (reselect) this.onSidebarReselect();
+    // Home left from the sidebar: it opens again on Home (current Home restoreSidebarFocusState).
+    else if (snapshot?.sidebar) this.openSidebar(false);
     this.schedulePillCollapse();
     // Local profile state first, then the remote one (membership, avatar) when it differs.
     void getSidebarProfileState({ cacheOnly: true })
@@ -470,7 +475,7 @@ export const NewHomeScreen = {
    * A return shows the restored card's title.
    */
   applyInitialHero(rows, entries) {
-    if (this.interacted) return;
+    if (this.interacted || this.heroHidden()) return;
     const continueRow = rows.find((row) => row.key === "continue_watching");
     if (this.heroItem && !continueRow?.items.length) return;
     let hero = null;
@@ -604,7 +609,21 @@ export const NewHomeScreen = {
 
   render() {
     this.focus = trackCamera(this.focus, this.rows, this.viewOptions.geometry);
-    this.view?.update(this.rows, this.focus, { sidebarIndex: this.sidebarIndex });
+    this.view?.update(this.rows, this.focus, {
+      sidebarIndex: this.sidebarIndex,
+      hideFocus: Boolean(this.holdFocusLocked)
+    });
+  },
+
+  /** Current Home lock/unlockHomeHoldFocus: no focused card while a hold menu is open. */
+  lockHoldFocus(locked) {
+    this.holdFocusLocked = locked;
+    this.render();
+  },
+
+  /** Classic/grid with heroSectionEnabled off draw no hero: nothing to pick, enrich or rotate. */
+  heroHidden() {
+    return isLegacyLayout(this.layoutMode) && !this.viewOptions.layout.heroSectionEnabled;
   },
 
   /** Focused card or sidebar item, read by the benchmark driver. */
@@ -770,6 +789,7 @@ export const NewHomeScreen = {
     if (
       this.rotateTimer ||
       !isLegacyLayout(this.layoutMode) ||
+      this.heroHidden() ||
       this.heroCandidates.length <= 1 ||
       trailerPolicy.isPerformanceConstrained()
     )
@@ -992,12 +1012,13 @@ export const NewHomeScreen = {
     const token = this.token;
     const menu = (this.posterMenu ||= new PosterOptionsDialogController({
       onDetails: (target) => Router.navigate("detail", detailParams(target)),
-      onDismiss: () => this.render(),
+      onDismiss: () => this.lockHoldFocus(false),
       onChanged: (state) => this.markWatched(state)
     }));
-    await menu.open(item);
+    const opened = await menu.open(item);
     // A Home left while the menu state loaded gets no dialog.
     if (token !== this.token) menu.destroy({ restoreFocus: false });
+    else if (opened) this.lockHoldFocus(true);
   },
 
   /** Watched badge after the menu toggled it, before the next load publishes the stored state. */
@@ -1025,9 +1046,10 @@ export const NewHomeScreen = {
       })),
       onDismiss: () => {
         this.cwDialog = null;
-        this.render();
+        this.lockHoldFocus(false);
       }
     }).mount(document.body);
+    this.lockHoldFocus(true);
   },
 
   async activateContinueWatchingOption(action, item) {
@@ -1044,6 +1066,7 @@ export const NewHomeScreen = {
     if (action === "startOver") {
       this.cwDialog = null;
       dialog.destroy();
+      this.holdFocusLocked = false;
       this.resumeContinueWatching(item, { startOver: true });
       return;
     }
@@ -1051,6 +1074,7 @@ export const NewHomeScreen = {
     await removeContinueWatchingProgress(normalized);
     if (this.cwDialog === dialog) this.cwDialog = null;
     dialog.destroy();
+    this.holdFocusLocked = false;
     // Current Home pruneContinueWatchingItem: the whole title leaves, its snapshot is dropped.
     this.removedContinue.push({ ...normalized, videoId: null });
     clearContinueWatchingDisplaySnapshot(watchProgressRepository.getContinueWatchingSourceKey());
@@ -1172,7 +1196,9 @@ export const NewHomeScreen = {
   },
 
   cleanup() {
-    this.lastSnapshot = focusSnapshot(this.focus, this.rows) || this.lastSnapshot;
+    const snapshot = focusSnapshot(this.focus, this.rows) || this.lastSnapshot;
+    // Not in captureRouteState: a Back return goes to the card, as the current Home's.
+    this.lastSnapshot = snapshot && { ...snapshot, sidebar: this.sidebarIndex >= 0 };
     this.token = (this.token || 0) + 1;
     this.cancelHero();
     this.stopHeroRotation();

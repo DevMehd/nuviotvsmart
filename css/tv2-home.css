@@ -358,7 +358,76 @@
 }
 
 .tv2-card.focused {
-  box-shadow: 0 0 0 4px var(--focus-color);
+  box-shadow: 0 0 0 3px var(--focus-color);
+}
+
+/* Current Home VIDAA rail camera (animateVidaaFocusScroll): 140 ms, 100 ms on constrained
+   runtimes, none under reduced motion; compositor transform only. The focused card's 1.015
+   scale is a Web Animation (renderer placeCard). */
+html.vidaa-tv .tv2-track,
+html.vidaa-tv .tv2-rows {
+  transition: transform 140ms cubic-bezier(0.33, 0, 0.67, 1);
+}
+
+html.vidaa-tv.performance-constrained .tv2-track,
+html.vidaa-tv.performance-constrained .tv2-rows {
+  transition-duration: 100ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.vidaa-tv .tv2-track,
+  html.vidaa-tv .tv2-rows {
+    transition: none;
+  }
+}
+
+/* Current Home cardDepthEnabled (components-29.css): edge light and sheen over catalog, folder
+   and See All cards (posters) and Continue Watching cards, from the root presentation data
+   (LayoutPreferences applyCardDepthPresentation). */
+html[data-card-depth="true"][data-card-depth-posters="true"] .tv2-card.home-poster-card::before,
+html[data-card-depth="true"][data-card-depth-continue-watching="true"]
+  .tv2-card.home-continue-card::before {
+  content: "";
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, var(--card-depth-edge, 0.28));
+  border-right-color: rgba(255, 255, 255, var(--card-depth-edge-side, 0));
+  border-bottom-color: rgba(255, 255, 255, var(--card-depth-edge-bottom, 0));
+  border-left-color: rgba(255, 255, 255, var(--card-depth-edge-side, 0));
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, var(--card-depth-sheen, 0.1)) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 22%;
+  background-clip: padding-box;
+  pointer-events: none;
+}
+
+/* Classic/grid cards with a title block: the depth covers the artwork frame only. */
+html[data-card-depth="true"][data-card-depth-posters="true"]
+  .tv2-card.home-poster-card.has-label::before {
+  bottom: auto;
+  height: var(--tv2-frame-height);
+  border-radius: var(--tv2-card-radius, 24px);
+}
+
+/* Fullscreen backdrop (components-17.css): once the hero trailer shows, the rails and the hero
+   metadata fade out; the title or logo stays. */
+.tv2-home .home-modern-fullscreen-backdrop ~ .tv2-main {
+  transition: opacity 480ms ease;
+}
+
+.tv2-home.tv2-hero-trailer-active .home-modern-fullscreen-backdrop ~ .tv2-main,
+.tv2-home.tv2-hero-trailer-active .home-modern-fullscreen-backdrop .home-modern-hero-meta-line,
+.tv2-home.tv2-hero-trailer-active .home-modern-fullscreen-backdrop .home-modern-hero-secondary,
+.tv2-home.tv2-hero-trailer-active .home-modern-fullscreen-backdrop .home-hero-description {
+  opacity: 0;
 }
 
 /* Classic/grid titles under the artwork (components-15.css .home-poster-copy): a fixed block,
@@ -381,7 +450,7 @@
 }
 
 .tv2-card.has-label.focused .tv2-card-image {
-  box-shadow: 0 0 0 4px var(--focus-color);
+  box-shadow: 0 0 0 3px var(--focus-color);
 }
 
 .tv2-card-label {
@@ -423,7 +492,7 @@
 }
 
 .tv2-card.has-label.tv2-card-emoji.focused .tv2-card-title {
-  box-shadow: 0 0 0 4px var(--focus-color);
+  box-shadow: 0 0 0 3px var(--focus-color);
 }
 
 .tv2-card.has-label .tv2-card-gif {
@@ -492,7 +561,7 @@
 }
 
 .tv2-card.is-seeall.focused .tv2-seeall {
-  box-shadow: 0 0 0 4px var(--focus-color);
+  box-shadow: 0 0 0 3px var(--focus-color);
 }
 
 .tv2-seeall .home-seeall-arrow.is-rtl {

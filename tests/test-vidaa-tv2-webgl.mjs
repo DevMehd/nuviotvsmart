@@ -70,7 +70,7 @@ assert.deepEqual(calls, [
   "queue-cleared",
   "dom",
   ["rows", rows],
-  ["update", 1, { sidebarIndex: -1 }],
+  ["update", 1, { sidebarIndex: -1, hideFocus: false }],
   ["hero", "a1"]
 ]);
 
