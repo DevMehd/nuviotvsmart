@@ -27,6 +27,8 @@ import { buildVisibleHomeCatalogDescriptors } from "../screens/home/homeCatalogD
 import { HOME_ADDON_MANIFEST_TIMEOUT_MS } from "../screens/home/homeConstants.js";
 import { formatCatalogRowTitle } from "../screens/home/homeUtils.js";
 import { catalogPageSkip, mergeCatalogPage } from "../screens/home/homeCatalogPage.js";
+import { mergeRefreshedHomeRows } from "../screens/home/homeRowMerge.js";
+import { mergeHomeCatalogRefreshRow } from "../screens/home/homeScreenMethods-04-get-hero-focus-delay.js";
 import { personalHomeRows } from "../screens/perso/personalUi.js";
 import { watchedTitleStateRepository } from "../../data/repository/watchedTitleStateRepository.js";
 import { buildWatchedTitleIdSet } from "../components/watchedTitleBadge.js";
@@ -73,11 +75,22 @@ export function personalRows() {
 /**
  * Loads rows progressively: emits the list after each source. `isCurrent` lets a newer load
  * (profile change, remount) discard this one. `onWatched` receives the watched title ids.
+ * `retained` (route return, background refresh) holds the rows on screen: their catalog rows
+ * stay until fresh ones merge in (current Home background loadData), `focusedRowKey()` and
+ * `layoutMode` guard the focused row; `continueOnly` refreshes Continue Watching alone.
  */
-export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true } = {}) {
+export async function loadHomeRows({
+  onRows,
+  onWatched,
+  isCurrent = () => true,
+  retained = [],
+  focusedRowKey = () => "",
+  layoutMode = "",
+  continueOnly = false
+} = {}) {
   let rows = [];
   let continueRows = [];
-  let catalogRows = [];
+  let catalogRows = retained.filter((row) => row.entry);
   const emit = () => {
     if (!isCurrent()) return false;
     rows = [...continueRows, ...catalogRows, ...personalRows()];
@@ -112,6 +125,10 @@ export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true }
       continueWatchingFailed(publish)
     );
   } else if (!emit()) return rows;
+  if (continueOnly) {
+    releaseEnrichment();
+    return rows;
+  }
 
   const addons = await addonRepository
     .getInstalledAddons({
@@ -124,10 +141,23 @@ export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true }
   host.collections = CollectionsStore.get();
   const { uniqueCatalogDescriptors, visibleCatalogDescriptors } =
     buildVisibleHomeCatalogDescriptors(addons);
+  // Collections are rebuilt from their store by sortAndFilterRows, never retained.
+  const kept = retained
+    .map((row) => row.entry)
+    .filter((row) => row && row.rowKind !== "collection");
+  const background = kept.length > 0;
+  const keptByKey = new Map(kept.map((row) => [row.homeCatalogKey, row]));
+  // Current Home: a refresh drops retained catalogs no longer configured (disabled, removed).
+  const configuredKeys = new Set(
+    visibleCatalogDescriptors.map((catalog) =>
+      buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId)
+    )
+  );
   const showTypeSuffix = host.layoutPrefs.catalogTypeSuffixEnabled !== false;
   // Fetched rows by key; `saved` holds the VIDAA page-one snapshots shown until a page succeeds.
   const fetched = new Map();
-  const saved = savedCatalogRows(host, uniqueCatalogDescriptors);
+  // Saved pages paint a cold load only; a refresh keeps the rows on screen.
+  const saved = background ? new Map() : savedCatalogRows(host, uniqueCatalogDescriptors);
   const refreshWatched = watchedTitleRefresher({ fetched, isCurrent, onWatched });
   void refreshWatched();
   // Current Home order: pinned collections, then catalogs and collections in store order.
@@ -135,9 +165,23 @@ export async function loadHomeRows({ onRows, onWatched, isCurrent = () => true }
     const shown = new Map([...saved, ...fetched]);
     shown.forEach((row, key) => {
       if (row.result?.status !== "success" && saved.has(key)) shown.set(key, saved.get(key));
+      // Current Home stale refresh merge: same page-one head keeps pagination and cards, an
+      // empty or failed page keeps the shown row, a focused classic/grid row is not replaced.
+      const current = keptByKey.get(key);
+      if (current)
+        shown.set(
+          key,
+          mergeHomeCatalogRefreshRow(current, shown.get(key), {
+            rowHasFocus: focusedRowKey() === key,
+            layoutMode
+          })
+        );
+    });
+    const merged = mergeRefreshedHomeRows(kept, [...shown.values()], configuredKeys, {
+      background
     });
     catalogRows = host
-      .sortAndFilterRows([...shown.values()], host.collections)
+      .sortAndFilterRows(merged, host.collections)
       .map((row) =>
         row.rowKind === "collection" ? collectionRow(row) : catalogRow(row, showTypeSuffix)
       )

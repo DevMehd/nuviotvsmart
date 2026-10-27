@@ -6,6 +6,9 @@ import { Platform } from "../../platform/index.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
 import { CollectionsStore } from "../../data/local/collectionsStore.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
+import { addonRepository } from "../../data/repository/addonRepository.js";
+import { ProfileManager } from "../../core/profile/profileManager.js";
+import { StartupSyncService } from "../../core/profile/startupSyncService.js";
 import {
   watchedItemIdentityValues,
   watchedItemsShareIdentity
@@ -20,11 +23,16 @@ import {
   CW_HOLD_DELAY_MS,
   HERO_ROTATE_FIRST_DELAY_MS,
   HERO_ROTATE_INTERVAL_MS,
+  HOME_CATALOG_REFRESH_TTL_MS,
   HOME_GRID_SAFE_MAX_COLUMNS,
   HOME_LAYOUT_SEQUENCE,
   HOME_MAX_ITEMS_PER_ROW_CLASSIC
 } from "../screens/home/homeConstants.js";
-import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
+import {
+  MODERN_SIDEBAR_PILL_AUTO_COLLAPSE_MS,
+  t
+} from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
+import { shouldApplyLateContinueWatchingFocus } from "../screens/home/homeFocusPolicy.js";
 import {
   isCloudContinueWatchingItem,
   normalizeContinueWatchingItem
@@ -148,7 +156,31 @@ export const NewHomeScreen = {
     this.collections = CollectionsStore.get();
     this.profile = null;
     this.watchedTitleIds = null;
+    // Current Home mount: a profile or Continue Watching source change (or forceReload) reloads
+    // everything; otherwise the last visit's rows paint at once and refresh in the background.
+    const profileId = String(ProfileManager.getActiveProfileId() || "");
+    const sourceKey = watchProgressRepository.getContinueWatchingSourceKey();
+    const reload =
+      !this.modelRows?.length ||
+      profileId !== this.loadedProfileId ||
+      sourceKey !== this.loadedSourceKey ||
+      Boolean(params?.forceReload && !navigation.isBackNavigation);
+    if (reload) {
+      this.lastSnapshot = null;
+      this.continueFocusApplied = false;
+      this.loadedProfileId = profileId;
+      this.loadedSourceKey = sourceKey;
+    }
+    const cached = reload ? [] : this.modelRows;
+    this.backgroundLoad = !reload;
+    // The phone remote's Home while on Home (same-route navigate): as Home picked in the sidebar.
+    const reselect = navigation.previousRoute === "home" && !navigation.isBackNavigation;
+    this.loading = false;
+    this.pendingRefresh = null;
     this.view = this.createView(token);
+    // Current Home: a Back return starts with the modern sidebar pill icon-only.
+    this.pillIconOnly = Boolean(navigation.isBackNavigation);
+    this.view.setSidebarPill?.(this.pillIconOnly);
     this.modelRows = [];
     this.rows = [];
     this.focus = createFocus();
@@ -163,21 +195,145 @@ export const NewHomeScreen = {
     this.lastHeroNavAt = 0;
     this.heroHost = this.createHeroHost();
     this.focusMediaIdentity = "";
-    this.pendingSnapshot =
-      (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
+    this.pendingSnapshot = reselect
+      ? null
+      : (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     this.restoring = Boolean(this.pendingSnapshot);
+    this.subscribe();
+    if (cached.length) this.applyRows(cached);
+    if (reselect) this.onSidebarReselect();
+    this.schedulePillCollapse();
+    // Local profile state first, then the remote one (membership, avatar) when it differs.
     void getSidebarProfileState({ cacheOnly: true })
+      .catch(() => null)
       .then((profile) => {
-        if (token !== this.token) return;
-        this.profile = profile;
-        this.view?.setProfile(profile);
+        if (token !== this.token) return null;
+        if (profile) this.setSidebarProfile(profile);
+        return getSidebarProfileState();
+      })
+      .then((profile) => {
+        if (
+          token === this.token &&
+          profile &&
+          JSON.stringify(profile) !== JSON.stringify(this.profile)
+        )
+          this.setSidebarProfile(profile);
       })
       .catch(() => {});
+    this.loadRows({ retained: cached });
+  },
+
+  /** Profile pill and avatar; the sidebar focus stays on an existing item. */
+  setSidebarProfile(profile) {
+    this.profile = profile;
+    this.view?.setProfile(profile);
+    if (this.sidebarIndex < 0 || !this.view) return;
+    this.sidebarIndex = Math.max(
+      0,
+      Math.min(this.sidebarIndex, this.view.sidebarItems().length - 1)
+    );
+    this.render();
+  },
+
+  /**
+   * One rows load at a time (its own token, so a refresh never stops hero or menus); a refresh
+   * asked meanwhile runs after it, as the current Home coalesces them. Catalogs then refresh in
+   * place once older than the current Home's 15 min freshness window.
+   */
+  loadRows({ retained = [], continueOnly = false } = {}) {
+    const token = this.token;
+    const load = (this.loadToken || 0) + 1;
+    this.loadToken = load;
+    this.loading = true;
+    // A Continue Watching refresh leaves the catalogs' age as it is.
+    if (!continueOnly) clearTimeout(this.staleTimer);
+    const isCurrent = () => token === this.token && load === this.loadToken;
     void loadHomeRows({
-      isCurrent: () => token === this.token,
+      isCurrent,
+      retained,
+      continueOnly,
+      focusedRowKey: () => this.rows[this.focus.row]?.key || "",
+      layoutMode: this.layoutMode,
       onRows: (rows) => this.applyRows(rows),
       onWatched: (ids) => this.applyWatched(ids)
-    });
+    })
+      .catch((error) => console.warn("New Home load failed", error))
+      .finally(() => {
+        if (!isCurrent()) return;
+        this.loading = false;
+        const pending = this.pendingRefresh;
+        this.pendingRefresh = null;
+        if (pending) this.refreshRows(pending);
+        else if (!continueOnly)
+          this.staleTimer = setTimeout(() => this.refreshRows(), HOME_CATALOG_REFRESH_TTL_MS);
+      });
+  },
+
+  /** Background refresh merged into the shown rows (route return, sync, addons, stale catalogs). */
+  refreshRows({ continueOnly = false } = {}) {
+    if (!this.view) return;
+    if (this.loading) {
+      this.pendingRefresh = {
+        continueOnly: (this.pendingRefresh?.continueOnly ?? true) && continueOnly
+      };
+      return;
+    }
+    this.backgroundLoad = true;
+    this.loadRows({ retained: this.modelRows, continueOnly });
+  },
+
+  /**
+   * While mounted, as the current Home: a startup pull refreshes Continue Watching (watch state,
+   * unchanged inputs) or everything; an addon or manifest change refreshes everything.
+   */
+  subscribe() {
+    this.unsubscribe();
+    const refresh = () => this.refreshRows();
+    this.unsubscribers = [
+      StartupSyncService.subscribeToPullCompleted(
+        ({ profileId, changedHomeInputs, source } = {}) => {
+          if (profileId && String(profileId) !== String(ProfileManager.getActiveProfileId() || ""))
+            return;
+          this.refreshRows({
+            continueOnly: source === "watch-state" || changedHomeInputs === false
+          });
+        }
+      ),
+      addonRepository.onInstalledAddonsChanged(refresh),
+      addonRepository.onManifestCacheChanged(refresh)
+    ];
+  },
+
+  unsubscribe() {
+    (this.unsubscribers || []).forEach((off) => off?.());
+    this.unsubscribers = [];
+  },
+
+  /** Current Home modern sidebar pill: label shown, icon-only 4 s later (Up shows it again). */
+  schedulePillCollapse({ restart = false } = {}) {
+    if (!this.viewOptions.layout?.modernSidebar || this.sidebarIndex >= 0 || this.pillIconOnly) {
+      clearTimeout(this.pillTimer);
+      this.pillTimer = null;
+      return;
+    }
+    if (this.pillTimer && !restart) return;
+    clearTimeout(this.pillTimer);
+    this.pillTimer = setTimeout(() => {
+      this.pillTimer = null;
+      if (this.sidebarIndex >= 0 || !this.view) return;
+      this.pillIconOnly = true;
+      this.view.setSidebarPill?.(true);
+    }, MODERN_SIDEBAR_PILL_AUTO_COLLAPSE_MS);
+  },
+
+  /** Down hides the pill label, Up shows it again until the auto-collapse. */
+  movePill(direction) {
+    if (!this.viewOptions.layout?.modernSidebar || this.sidebarIndex >= 0) return;
+    if (direction !== "up" && direction !== "down") return;
+    const wasIconOnly = this.pillIconOnly;
+    this.pillIconOnly = direction === "down";
+    this.view.setSidebarPill?.(this.pillIconOnly);
+    this.schedulePillCollapse({ restart: wasIconOnly });
   },
 
   /** Layout of the preferences (modern, grid, classic) and its card geometry. */
@@ -220,6 +376,7 @@ export const NewHomeScreen = {
     this.view = this.domView();
     if (this.profile) this.view.setProfile(this.profile);
     if (this.watchedTitleIds) this.view.setWatched(this.watchedTitleIds);
+    this.view.setSidebarPill?.(this.pillIconOnly);
     this.view.setRows(this.rows);
     this.render();
     this.view.setHero(this.heroItem, {
@@ -275,14 +432,28 @@ export const NewHomeScreen = {
       if (firstFilled >= 0 && !this.pendingSnapshot)
         this.focus = { ...this.focus, row: firstFilled };
     }
-    // Current Home late focus (shouldApplyLateContinueWatchingFocus): Continue Watching filled
-    // before any key takes focus, except on a return. Classic/grid start on their hero card.
-    const continueRow = rows.findIndex(
-      (row) => row.key === "continue_watching" && row.items.length
-    );
-    const anchor = rows[0]?.kind === "hero" ? 0 : continueRow;
-    if (anchor >= 0 && !this.interacted && !this.restoring)
-      this.focus = { ...this.focus, row: anchor };
+    // Classic/grid start on their hero card, until a key or a return.
+    if (rows[0]?.kind === "hero") {
+      if (!this.interacted && !this.restoring) this.focus = { ...this.focus, row: 0 };
+    } else if (this.layoutMode === "modern" && this.sidebarIndex < 0) {
+      // Current Home late focus: modern Continue Watching takes focus once, before any key,
+      // never on a return or a background refresh.
+      const continueRow = rows.findIndex(
+        (row) => row.key === "continue_watching" && row.items.length
+      );
+      if (
+        continueRow >= 0 &&
+        shouldApplyLateContinueWatchingFocus({
+          background: this.backgroundLoad,
+          hasUserInteracted: this.interacted,
+          suppressInitialFocus: this.restoring,
+          hasAppliedInitialFocus: this.continueFocusApplied
+        })
+      ) {
+        this.focus = { ...this.focus, row: continueRow };
+        this.continueFocusApplied = true;
+      }
+    }
     this.view.setRows(rows);
     this.render();
     this.applyInitialHero(this.modelRows, entries);
@@ -653,6 +824,7 @@ export const NewHomeScreen = {
     this.view = this.createView(this.token);
     if (this.profile) this.view.setProfile(this.profile);
     if (this.watchedTitleIds) this.view.setWatched?.(this.watchedTitleIds);
+    this.view.setSidebarPill?.(this.pillIconOnly);
     this.interacted = true;
     this.heroItem = null;
     this.heroIndex = 0;
@@ -698,6 +870,7 @@ export const NewHomeScreen = {
     if (direction) {
       event.preventDefault?.();
       if (!allowDpadRepeat(this, event)) return;
+      this.movePill(direction);
       if (this.sidebarIndex >= 0) this.moveInSidebar(direction);
       else this.moveInRails(direction);
       return;
@@ -956,6 +1129,7 @@ export const NewHomeScreen = {
       .findIndex((node) => node.classList.contains("selected"));
     this.sidebarIndex = Math.max(0, selected);
     this.sidebarOpenedByBack = openedByBack;
+    this.schedulePillCollapse();
     // Modern drops its pending hero; a classic/grid hero stays committed and keeps its enrichment.
     if (!isLegacyLayout(this.layoutMode)) this.cancelHero();
     this.render();
@@ -965,6 +1139,7 @@ export const NewHomeScreen = {
   closeSidebar() {
     this.sidebarIndex = -1;
     this.sidebarOpenedByBack = false;
+    this.schedulePillCollapse({ restart: true });
     this.render();
     this.scheduleHero({ moved: true });
   },
@@ -998,6 +1173,11 @@ export const NewHomeScreen = {
     this.token = (this.token || 0) + 1;
     this.cancelHero();
     this.stopHeroRotation();
+    // The rows stay for the next visit; their loads, refreshes and subscriptions stop.
+    this.unsubscribe();
+    clearTimeout(this.staleTimer);
+    clearTimeout(this.pillTimer);
+    this.pillTimer = null;
     // Current Home cleanup drops its trailer lookups (profile switch, failed lookup).
     trailerSources.clear();
     clearTimeout(this.pageTimer);

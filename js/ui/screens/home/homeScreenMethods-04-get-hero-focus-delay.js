@@ -15,7 +15,7 @@ function catalogItemIdentity(item = {}) {
   return `${type}:${id}`;
 }
 
-function mergeHomeCatalogRefreshRow(currentRow, freshRow, { rowHasFocus = false, layoutMode = "" } = {}) {
+export function mergeHomeCatalogRefreshRow(currentRow, freshRow, { rowHasFocus = false, layoutMode = "" } = {}) {
   const currentItems = Array.isArray(currentRow?.result?.data?.items) ? currentRow.result.data.items : [];
   const freshItems = Array.isArray(freshRow?.result?.data?.items) ? freshRow.result.data.items : [];
   if (!freshItems.length) {

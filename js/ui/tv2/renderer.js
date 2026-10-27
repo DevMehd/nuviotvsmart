@@ -1,6 +1,10 @@
 import { Platform } from "../../platform/index.js";
 import { getTvHeroTransitionMode } from "../../platform/tvRuntimePerformance.js";
-import { renderLegacySidebar } from "../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
+import {
+  getRootSidebarNodes,
+  renderRootSidebar,
+  setModernSidebarPillIconOnly
+} from "../components/sidebarNavigationHelpers-03-render-root-sidebar.js";
 import { posterCardModel } from "../screens/home/homeScreenHelpers-15-create-poster-card-markup.js";
 import {
   buildHeroIndicators,
@@ -45,7 +49,8 @@ import { sizedImageUrl } from "./imagePipeline.js";
 //   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item, { loading, candidates }),
 //   setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
-//   stopHeroTrailer({ deferred }) and setFocusGif(url) (DOM only, Lightning stays poster-only).
+//   stopHeroTrailer({ deferred }), setFocusGif(url) and setSidebarPill(iconOnly) (DOM only:
+//   Lightning stays poster-only with the legacy sidebar).
 // This is the DOM one, the universal fallback and the only one drawing classic and grid (D9);
 // render/lightning/ draws the modern Home in WebGL.
 
@@ -196,7 +201,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   const legacy = mode !== "modern";
   container.innerHTML = `
     <div class="tv2-home tv2-layout-${mode}">
-      ${renderLegacySidebar({ selectedRoute: "home", layout })}
+      ${renderRootSidebar({ selectedRoute: "home", layout })}
       ${legacy ? "" : HERO_MARKUP}
       <div class="home-main tv2-main"><div class="tv2-rows"></div></div>
     </div>`;
@@ -238,6 +243,8 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   // Bumped by every row emit: continue cards refill then, their release labels depend on time.
   let rowsVersion = 0;
   let focusedNode = null;
+  let sidebarOpen = false;
+  let pillIconOnly = false;
   // Stop of the hero trailer or folder video, and the card showing its focus GIF.
   let stopTrailer = null;
   let gifNode = null;
@@ -457,10 +464,21 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     }
     focusedNode?.classList.add("focused");
     root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
+    sidebarOpen = sidebarIndex >= 0;
+    if (layout.modernSidebar) {
+      // Class writes of the current Home's setModernSidebarExpanded fast path, never measured.
+      const shell = container.querySelector(".modern-sidebar-shell");
+      shell?.classList.toggle("expanded", sidebarOpen);
+      shell?.classList.toggle("panel-visible", sidebarOpen);
+      container
+        .querySelector(".modern-sidebar-panel")
+        ?.setAttribute("aria-hidden", sidebarOpen ? "false" : "true");
+      return;
+    }
     const sidebar = container.querySelector(".home-sidebar");
-    sidebar?.classList.toggle("expanded", sidebarIndex >= 0);
+    sidebar?.classList.toggle("expanded", sidebarOpen);
     // Labels show only with content-expanded, as the current Home's setLegacySidebarExpanded.
-    sidebar?.classList.toggle("content-expanded", sidebarIndex >= 0);
+    sidebar?.classList.toggle("content-expanded", sidebarOpen);
   }
 
   /**
@@ -589,13 +607,28 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   }
 
   function setProfile(profile) {
-    const sidebar = container.querySelector(".home-sidebar");
+    const sidebar = container.querySelector(
+      layout.modernSidebar ? ".modern-sidebar-shell" : ".home-sidebar"
+    );
     if (!sidebar) return;
-    sidebar.outerHTML = renderLegacySidebar({ selectedRoute: "home", layout, profile });
+    sidebar.outerHTML = renderRootSidebar({
+      selectedRoute: "home",
+      layout,
+      profile,
+      expanded: sidebarOpen,
+      pillIconOnly
+    });
   }
 
+  /** Modern sidebar pill (modernSidebar): icon only or with its label. */
+  function setSidebarPill(iconOnly) {
+    pillIconOnly = Boolean(iconOnly);
+    setModernSidebarPillIconOnly(container, pillIconOnly);
+  }
+
+  /** Legacy items, or the modern panel's (the pill itself is not a stop). */
   function sidebarItems() {
-    return Array.from(container.querySelectorAll(".home-sidebar .focusable"));
+    return getRootSidebarNodes(container, layout);
   }
 
   /** Watched title ids (homeModel onWatched): visible cards refill at the next update. */
@@ -613,6 +646,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     stopHeroTrailer,
     setFocusGif,
     setProfile,
+    setSidebarPill,
     sidebarItems,
     focusedNode: () => focusedNode,
     destroy() {

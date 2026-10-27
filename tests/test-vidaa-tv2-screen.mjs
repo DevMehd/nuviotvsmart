@@ -59,6 +59,10 @@ class El {
   insertBefore(node) {
     return this.appendChild(node);
   }
+  // The shared sidebar helpers (lot C13) filter legacy items by their panel.
+  closest() {
+    return null;
+  }
   // Enough for a NuvioDialog (lot C7 menus).
   setAttribute() {}
   addEventListener() {}
@@ -121,6 +125,14 @@ const { watchProgressRepository } =
 const { addonRepository } = await import("../js/data/repository/addonRepository.js");
 const { catalogRepository } = await import("../js/data/repository/catalogRepository.js");
 const { NewHomeScreen } = await import("../js/ui/tv2/newHomeScreen.js");
+// The remote sidebar profile (lot C13) reads membership and avatars: no network in tests.
+const { MemberAccessRepository } =
+  await import("../js/data/remote/supabase/memberAccessRepository.js");
+const { AvatarRepository } = await import("../js/data/remote/supabase/avatarRepository.js");
+MemberAccessRepository.getAccess = async () => null;
+AvatarRepository.getAvatarCatalog = async () => [];
+const { ProfileManager } = await import("../js/core/profile/profileManager.js");
+const { StartupSyncService } = await import("../js/core/profile/startupSyncService.js");
 // The router fills this singleton in the app; card models read the current route (lot C4).
 const { Router } = await import("../js/ui/navigation/routerState.js");
 Router.getCurrent = () => "home";
@@ -1206,6 +1218,233 @@ try {
       LayoutPreferences.set({ homeLayout: "modern" });
       addonRepository.getInstalledAddons = addons;
       catalogRepository.getCatalog = () => catalogResult();
+    }
+  }
+
+  // C13: a route return draws the last visit's rows before any repository call, then merges a
+  // background refresh (same page-one head keeps the cards, a removed catalog leaves); catalogs
+  // refresh again after 15 min while mounted; the phone remote's Home is a sidebar reselect.
+  {
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    catalogResult = async () => catalogPage;
+    const addons = addonRepository.getInstalledAddons;
+    const recent = watchProgressRepository.getRecent;
+    const repoCalls = [];
+    addonRepository.getInstalledAddons = async (...args) => {
+      repoCalls.push("addons");
+      return addons(...args);
+    };
+    watchProgressRepository.getRecent = async (...args) => {
+      repoCalls.push("recent");
+      return recent(...args);
+    };
+    try {
+      const { screen, calls } = mountScreen();
+      await advance(now + 1000);
+      const posterKey = screen.rows.find((row) => row.kind === "poster").key;
+      const cards = screen.modelRows.find((row) => row.key === posterKey).items;
+      screen.onKeyDown({ keyCode: 39 });
+      screen.cleanup();
+      repoCalls.length = 0;
+      const drawn = calls.setRows;
+      screen.applyRows = function (rows) {
+        repoCalls.push(`rows:${rows.some((row) => row.key === posterKey)}`);
+        return NewHomeScreen.applyRows.call(this, rows);
+      };
+      void screen.mount({}, { previousRoute: "detail" });
+      delete screen.applyRows;
+      assert.ok(calls.setRows > drawn);
+      assert.equal(repoCalls[0], "rows:true", "cached rows drawn before any repository call");
+      assert.ok(screen.rows.some((row) => row.key === posterKey && row.items.length));
+      assert.equal(screen.rows[screen.focus.row].key, posterKey, "focus restored");
+      assert.equal(focusedIndex(screen.focus, screen.rows), 1);
+      await advance(now + 1000);
+      assert.ok(repoCalls.includes("addons"), "background refresh");
+      assert.equal(
+        screen.modelRows.find((row) => row.key === posterKey).items,
+        cards,
+        "same page-one head: cards (and pagination) kept"
+      );
+      assert.equal(focusedIndex(screen.focus, screen.rows), 1, "focus kept by the refresh");
+
+      // Stale catalogs: a refresh 15 min after the last load, none after cleanup.
+      repoCalls.length = 0;
+      await advance(now + 15 * 60 * 1000);
+      assert.ok(repoCalls.includes("addons"), "catalogs refreshed once stale");
+      repoCalls.length = 0;
+
+      // Phone remote Home while on Home: remount on the first card, sidebar closed.
+      screen.cleanup();
+      void screen.mount({}, { previousRoute: "home" });
+      assert.equal(screen.sidebarIndex, -1);
+      assert.equal(focusedIndex(screen.focus, screen.rows), 0, "back on the first card");
+      await advance(now + 1000);
+      screen.cleanup();
+      repoCalls.length = 0;
+      await advance(now + 16 * 60 * 1000);
+      assert.deepEqual(repoCalls, [], "no refresh after cleanup");
+
+      // A catalog removed meanwhile leaves on return (configured keys).
+      addonRepository.getInstalledAddons = async () => [
+        { baseUrl: "https://addon.example", id: "addon", name: "Addon", catalogs: [] }
+      ];
+      void screen.mount({}, { previousRoute: "addons" });
+      assert.ok(
+        screen.rows.some((row) => row.key === posterKey),
+        "drawn until the refresh"
+      );
+      await advance(now + 1000);
+      assert.ok(!screen.modelRows.some((row) => row.key === posterKey), "removed catalog left");
+      screen.cleanup();
+    } finally {
+      addonRepository.getInstalledAddons = addons;
+      watchProgressRepository.getRecent = recent;
+    }
+  }
+
+  // C13: a profile change (or forceReload) reloads everything and drops the return snapshot.
+  {
+    now = 0;
+    timers.clear();
+    const active = ProfileManager.getActiveProfileId;
+    try {
+      const { screen } = mountScreen();
+      await advance(now + 1000);
+      const posterKey = screen.rows.find((row) => row.kind === "poster").key;
+      screen.onKeyDown({ keyCode: 39 });
+      screen.cleanup();
+      assert.ok(screen.lastSnapshot);
+      ProfileManager.getActiveProfileId = () => "another-profile";
+      void screen.mount({}, { previousRoute: "profileSelection" });
+      assert.equal(screen.lastSnapshot, null, "snapshot dropped");
+      assert.equal(screen.pendingSnapshot, null);
+      assert.ok(!screen.rows.some((row) => row.key === posterKey), "nothing cached drawn");
+      await advance(now + 1000);
+      assert.equal(focusedIndex(screen.focus, screen.rows), 0, "first card");
+      screen.onKeyDown({ keyCode: 39 });
+      screen.cleanup();
+      void screen.mount({ forceReload: true }, { previousRoute: "settings" });
+      assert.equal(screen.lastSnapshot, null, "forceReload drops it too");
+      assert.ok(!screen.rows.some((row) => row.key === posterKey));
+      screen.cleanup();
+    } finally {
+      ProfileManager.getActiveProfileId = active;
+    }
+  }
+
+  // C13: a startup pull refreshes Continue Watching alone (watch state) or everything (changed
+  // inputs); another profile's pull is ignored; cleanup unsubscribes. Addon manifests refresh.
+  {
+    now = 0;
+    timers.clear();
+    const subscribe = StartupSyncService.subscribeToPullCompleted;
+    const recent = watchProgressRepository.getRecent;
+    let listener = null;
+    // Catalog pages count full refreshes (Continue Watching enrichment also reads the addons).
+    let addonCalls = 0;
+    StartupSyncService.subscribeToPullCompleted = (fn) => {
+      listener = fn;
+      return () => listener === fn && (listener = null);
+    };
+    catalogRepository.getCatalog = () => {
+      addonCalls += 1;
+      return catalogResult();
+    };
+    try {
+      const { screen } = mountScreen();
+      await advance(now + 1000);
+      assert.ok(!screen.rows.some((row) => row.key === "continue_watching"));
+      addonCalls = 0;
+      watchProgressRepository.getRecent = async () => [
+        {
+          contentId: "tt9",
+          contentType: "movie",
+          title: "Resume",
+          poster: "https://img.invalid/tt9.jpg",
+          positionMs: 10,
+          durationMs: 100,
+          updatedAt: 1
+        }
+      ];
+      listener({ profileId: "another-profile", source: "watch-state" });
+      await advance(now + 1000);
+      assert.ok(!screen.rows.some((row) => row.key === "continue_watching"), "other profile");
+      listener({ source: "watch-state" });
+      await advance(now + 1000);
+      assert.ok(
+        screen.rows.some((row) => row.key === "continue_watching" && row.items.length),
+        "Continue Watching refreshed"
+      );
+      assert.equal(addonCalls, 0, "Continue Watching only");
+      assert.ok(screen.rows.some((row) => row.kind === "poster" && row.items.length));
+      listener({ changedHomeInputs: true });
+      await advance(now + 1000);
+      assert.equal(addonCalls, 1, "changed inputs refresh everything");
+      addonRepository.notifyManifestCacheChanged();
+      await advance(now + 1000);
+      assert.equal(addonCalls, 2, "a manifest change refreshes everything");
+      screen.cleanup();
+      assert.equal(listener, null, "unsubscribed on cleanup");
+      addonRepository.notifyManifestCacheChanged();
+      await advance(now + 1000);
+      assert.equal(addonCalls, 2, "no addon refresh after cleanup");
+    } finally {
+      StartupSyncService.subscribeToPullCompleted = subscribe;
+      catalogRepository.getCatalog = () => catalogResult();
+      watchProgressRepository.getRecent = recent;
+    }
+  }
+
+  // C13: the remote sidebar profile replaces the local one; an open sidebar keeps a real item.
+  {
+    now = 0;
+    timers.clear();
+    const profiles = ProfileManager.getProfiles;
+    const names = ["Local", "Remote"];
+    ProfileManager.getProfiles = async () => [{ id: "1", name: names.shift() || "Remote" }];
+    // The profile pill's accent fallback reads the theme.
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+    try {
+      const { screen } = mountScreen();
+      screen.sidebarIndex = 7;
+      await flush();
+      assert.equal(screen.profile.activeProfileName, "Remote", "remote profile shown");
+      assert.equal(screen.sidebarIndex, 0, "sidebar focus clamped");
+      screen.cleanup();
+    } finally {
+      ProfileManager.getProfiles = profiles;
+      delete globalThis.getComputedStyle;
+    }
+  }
+
+  // C13: modern sidebar pill: label, icon-only after 4 s or on Down, label again on Up; a Back
+  // return starts icon-only.
+  {
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    now = 0;
+    timers.clear();
+    LayoutPreferences.set({ modernSidebar: true });
+    try {
+      const { screen } = mountScreen();
+      const pill = () => container.querySelector(".modern-sidebar-pill");
+      await flush();
+      assert.equal(screen.pillIconOnly, false);
+      await advance(now + 4000);
+      assert.equal(screen.pillIconOnly, true, "icon only after 4 s");
+      assert.ok(pill().classList.contains("icon-only"));
+      screen.onKeyDown({ keyCode: 38 });
+      assert.equal(screen.pillIconOnly, false, "Up shows the label");
+      assert.ok(!pill().classList.contains("icon-only"));
+      screen.onKeyDown({ keyCode: 40 });
+      assert.equal(screen.pillIconOnly, true, "Down hides it");
+      screen.cleanup();
+      void screen.mount({}, { isBackNavigation: true, previousRoute: "detail" });
+      assert.equal(screen.pillIconOnly, true, "a Back return starts icon-only");
+      screen.cleanup();
+    } finally {
+      LayoutPreferences.set({ modernSidebar: false });
     }
   }
 } finally {
