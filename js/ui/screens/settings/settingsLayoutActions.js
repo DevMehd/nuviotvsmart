@@ -1,6 +1,5 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./settingsScreenContext.js";
-import { Platform } from "../../../platform/index.js";
 import { getTvPerformanceMode, setTvPerformanceMode } from "../../../platform/tvRuntimePerformance.js";
 import { getNewHomeMode, setNewHomeMode } from "../../tv2/newHomeSetting.js";
 
@@ -24,20 +23,19 @@ export function registerLayoutActions(model) {
   this.actionMap.set("layout:toggle:cardAppearance", () => {
     this.toggleExpandedSection("layout", "cardAppearance");
   });
-  if (Platform.isVidaa())
-    this.actionMap.set("layout:newHome", () => {
-      this.openOptionDialog({
-        title: t("layout_new_home", {}, "New Home (beta)"),
-        options: [
-          { id: "off", labelKey: "layout_new_home_off" },
-          { id: "dom", labelKey: "layout_new_home_dom" },
-          { id: "webgl", labelKey: "layout_new_home_webgl" }
-        ],
-        selectedId: getNewHomeMode(),
-        returnFocusKey: "layout:newHome",
-        onSelect: (option) => setNewHomeMode(option.id)
-      });
+  this.actionMap.set("layout:newHome", () => {
+    this.openOptionDialog({
+      title: t("layout_new_home", {}, "New Home (beta)"),
+      options: [
+        { id: "off", labelKey: "layout_new_home_off" },
+        { id: "dom", labelKey: "layout_new_home_dom" },
+        { id: "webgl", labelKey: "layout_new_home_webgl" }
+      ],
+      selectedId: getNewHomeMode(),
+      returnFocusKey: "layout:newHome",
+      onSelect: (option) => setNewHomeMode(option.id)
     });
+  });
   this.actionMap.set("layout:performanceMode", () => {
     this.openOptionDialog({
       title: t("layout_animations_effects", {}, "Animations & effects"),
