@@ -1,5 +1,10 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-27 — 1.3.5
+
+- Le réglage « Nouvel accueil (bêta) » (Paramètres → Disposition, tout en bas) apparaît aussi dans le navigateur, pas seulement sur la télé.
+- Paramètres : les groupes repliables affichent « Ouvert » / « Fermé » en français au lieu de « Open » / « Closed ».
+
 ## 2026-10-27 — 1.3.4
 
 - Nouvel accueil (bêta), à activer dans Paramètres → Disposition → « Nouvel accueil (bêta) » (effet au prochain démarrage ; « Désactivé » garde l’accueil actuel). Il reprend tout l’accueil actuel : Continuer à regarder et Next Up, catalogues, collections, « Pour toi », grande bannière avec notes et bande-annonce, appui long, menu latéral, dispositions moderne, grille et classique (touche 76).
