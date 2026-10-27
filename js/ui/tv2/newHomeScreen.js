@@ -31,8 +31,11 @@ import {
   continueWatchingMenuOptions,
   removeContinueWatchingProgress
 } from "../screens/home/homeScreenHelpers-13-continue-watching-stream-params.js";
+import { createHomeScreenMethods03 } from "../screens/home/homeScreenMethods-03-is-scroll-animation-active.js";
 import { createHomeScreenMethods08 } from "../screens/home/homeScreenMethods-08-open-hold-menu-for-node.js";
 import { createHomeScreenMethods11 } from "../screens/home/homeScreenMethods-11-enrich-current-hero-async.js";
+import { createHomeScreenMethods12 } from "../screens/home/homeScreenMethods-12-sync-collection-hero-media.js";
+import { createHomeScreenMethods13 } from "../screens/home/homeScreenMethods-13-mount-trailer-layer.js";
 import { createHomeScreenMethods22 } from "../screens/home/homeScreenMethods-22-pick-initial-hero.js";
 import { createHomeScreenMethods27 } from "../screens/home/homeScreenMethods-27-enrich-continue-watching.js";
 import { normalizeHomeRowItem } from "../screens/home/homeScreenHelpers-05-normalize-collection-folder-item.js";
@@ -40,6 +43,8 @@ import {
   preloadHeroAssets,
   shouldEnrichModernHero
 } from "../screens/home/homeScreenHelpers-02-extract-release-date-text.js";
+import { applyTrailerAudioPreferences } from "../screens/home/homeScreenHelpers-06-resolve-trailer-source.js";
+import { homeMetadataSettingsSignature } from "../screens/home/homeMetadataSettings.js";
 import { ensureHeroMdbListRatings } from "../screens/home/homeHeroMdbListLoad.js";
 import { MODERN_HOME_CONSTANTS } from "../screens/home/modernHomeLayout.js";
 import {
@@ -78,6 +83,19 @@ const { pickInitialHero } = createHomeScreenMethods22();
 const { pickHeroItem, collectHeroCandidates } = createHomeScreenMethods27();
 // Hero enrichment of the current Home (addon meta, TMDB, IMDb), run on heroHost().
 const { enrichCurrentHeroAsync } = createHomeScreenMethods11();
+// Current Home trailer policy (prefs, legacy-runtime suppression, constrained-TV delay, deferred
+// teardown) and trailer lookup (inline, TMDB, addon meta); none of them reads screen state.
+const trailerPolicy = {
+  ...createHomeScreenMethods03(),
+  getFocusedPosterFlowConfig: createHomeScreenMethods12().getFocusedPosterFlowConfig
+};
+const { getTrailerSourceForItem } = createHomeScreenMethods13();
+// Trailer lookups per title, bounded like the current Home's prefetch cache.
+const trailerSources = new Map();
+const TRAILER_SOURCE_CACHE = 32;
+
+// A menu or dialog is open over Home (NuvioDialog marker).
+const modalOpen = () => Boolean(globalThis.document?.body?.classList?.contains("nuvio-modal-open"));
 
 /** Hero source of a card, as the current Home's getNodeHeroSource (personal rows have no entry). */
 function heroSource(row, item) {
@@ -123,6 +141,7 @@ export const NewHomeScreen = {
     this.heroLoading = false;
     this.lastHeroNavAt = 0;
     this.heroHost = this.createHeroHost();
+    this.focusMediaIdentity = "";
     this.pendingSnapshot =
       (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     this.restoring = Boolean(this.pendingSnapshot);
@@ -359,13 +378,18 @@ export const NewHomeScreen = {
     // hero is dropped (its timer no longer matches the focus), so a later move reschedules it.
     if (isHero && !moved) {
       this.heroPending = "";
+      this.scheduleFocusMedia(hero);
       return;
     }
     this.cancelHero();
     // Current Home holds the skeleton for Continue Watching until it resolves or the first key.
     if (this.heroLoading && !this.interacted) return;
     // Back on the hero (after a move or the sidebar): only an unfinished enrichment is redone.
-    if (!hero?.id || (isHero && !shouldEnrichModernHero(this.heroItem))) return;
+    if (!hero?.id) return;
+    if (isHero && !shouldEnrichModernHero(this.heroItem)) {
+      this.scheduleFocusMedia(hero);
+      return;
+    }
     const token = this.heroToken;
     const now = Date.now();
     const previous = Number(this.lastHeroNavAt || 0);
@@ -401,13 +425,90 @@ export const NewHomeScreen = {
           this.heroPending = "";
           this.showHero(focused);
           this.enrichHero();
+          this.scheduleFocusMedia(focused);
         }),
       delay
     );
   },
 
+  /**
+   * Focus media of the calm hero (current Home focused poster flow, hero_media target, and
+   * syncCollectionHeroMedia): a folder shows its focus GIF and hero video now; a poster's trailer
+   * plays after max(250, expand delay) plus the constrained-TV delay. Never while VIDAA navigation
+   * is busy; a move, OK, the sidebar or cleanup stops it (stopFocusMedia).
+   */
+  scheduleFocusMedia(hero) {
+    const identity = buildHeroIdentity(hero);
+    // A rows refresh under the sidebar or a menu starts nothing.
+    if (!identity || identity === this.focusMediaIdentity || this.sidebarIndex >= 0 || modalOpen())
+      return;
+    const row = this.rows[this.focus.row];
+    if (row?.kind === "collection") {
+      this.focusMediaIdentity = identity;
+      if (hero.focusGifEnabled && hero.focusGifUrl) this.view?.setFocusGif?.(hero.focusGifUrl);
+      if (hero.heroVideoUrl)
+        this.view?.playHeroTrailer?.({ kind: "video", url: hero.heroVideoUrl, muted: true });
+      return;
+    }
+    const prefs = this.viewOptions.layout;
+    const { shouldPreviewTrailer, trailerTarget } = trailerPolicy.getFocusedPosterFlowConfig(prefs);
+    // D5: the expanded_card target needs poster expansion (later lot).
+    if (row?.kind !== "poster" || !shouldPreviewTrailer || trailerTarget !== "hero_media") return;
+    if (!this.view?.playHeroTrailer) return;
+    this.focusMediaIdentity = identity;
+    // Keyed like the current Home's prefetch: the metadata settings choose the trailer source.
+    const key = `${identity}|${homeMetadataSettingsSignature()}`;
+    if (!trailerSources.has(key)) {
+      trailerSources.set(
+        key,
+        getTrailerSourceForItem(hero).catch(() => null)
+      );
+      if (trailerSources.size > TRAILER_SOURCE_CACHE)
+        trailerSources.delete(trailerSources.keys().next().value);
+    }
+    const source = trailerSources.get(key);
+    const token = this.heroToken;
+    const current = () => token === this.heroToken && this.focusMediaIdentity === identity;
+    const dwell = Math.max(0, Number(prefs.focusedPosterBackdropExpandDelaySeconds ?? 3)) * 1000;
+    const delay =
+      (Platform.isVidaa() ? Math.max(250, dwell) : dwell) +
+      trailerPolicy.getFocusedPosterTrailerDelayMs("hero_media");
+    const play = async () => {
+      if (!current()) return;
+      if (isVidaaNavigationBusy({ quietMs: HERO_BUSY_POLL_MS })) {
+        this.trailerTimer = setTimeout(play, HERO_BUSY_POLL_MS);
+        return;
+      }
+      const base = await source;
+      if (!current()) return;
+      // A lookup that ends during navigation waits for calm again.
+      if (isVidaaNavigationBusy({ quietMs: HERO_BUSY_POLL_MS })) {
+        this.trailerTimer = setTimeout(play, HERO_BUSY_POLL_MS);
+        return;
+      }
+      const trailer = applyTrailerAudioPreferences(base, prefs);
+      if (trailer && !modalOpen()) this.view?.playHeroTrailer(trailer);
+    };
+    this.trailerTimer = setTimeout(play, delay);
+  },
+
+  /** Stops the trailer, folder video and focus GIF; deferred teardown on constrained TVs. */
+  stopFocusMedia({ deferred = Boolean(trailerPolicy.shouldUseImmediateFocusScroll()) } = {}) {
+    clearTimeout(this.trailerTimer);
+    if (!this.focusMediaIdentity) return;
+    this.focusMediaIdentity = "";
+    this.view?.stopHeroTrailer?.({ deferred });
+    this.view?.setFocusGif?.("");
+  },
+
+  /** Ambient mode stops Home previews through this current Home name. */
+  cancelFocusedPosterFlow() {
+    this.stopFocusMedia();
+  },
+
   /** Drops the pending hero and aborts its enrichment (move, sidebar, leaving Home). */
   cancelHero() {
+    this.stopFocusMedia();
     this.heroToken = (this.heroToken || 0) + 1;
     this.heroHost?.heroEnrichmentAbortController?.abort?.();
     this.heroPending = "";
@@ -433,6 +534,7 @@ export const NewHomeScreen = {
     }
     if (code !== 13) return;
     event.preventDefault?.();
+    this.stopFocusMedia();
     if (this.sidebarIndex >= 0) {
       const action = this.view.sidebarItems()[this.sidebarIndex]?.dataset.action;
       activateLegacySidebarAction(action, "home");
@@ -684,7 +786,7 @@ export const NewHomeScreen = {
   consumeBackRequest() {
     this.cancelPendingContinueWatchingHold();
     // A menu's Back already closed it; its exit animation still holds the modal marker.
-    if (globalThis?.document?.body?.classList?.contains("nuvio-modal-open")) return true;
+    if (modalOpen()) return true;
     if (this.sidebarIndex < 0) this.openSidebar(true);
     else if (this.sidebarOpenedByBack) {
       this.sidebarOpenedByBack = false;

@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { reconcileHomeFocusMediaTracking } from "./homeFocusMediaTracking.js";
+import { mountTrailerMedia } from "./homeTrailerLayer.js";
 import { positionVidaaHomePosterPreview, clearVidaaHomePosterPreviewPosition } from "./vidaaHomePosterExpansion.js";
 
 export function createHomeScreenMethods13() {
@@ -15,156 +16,11 @@ export function createHomeScreenMethods13() {
       this.clearTrailerLayer(container);
       this.homeActiveTrailerLayers ||= new Set();
       this.homeActiveTrailerLayers.add(container);
-      if (source.kind === "youtube" && source.embedUrl) {
-        const frame = document.createElement("iframe");
-        frame.className = "home-inline-trailer-frame";
-        frame.src = source.embedUrl;
-        frame.title = "Trailer preview";
-        frame.allow = "autoplay; encrypted-media; picture-in-picture";
-        frame.allowFullscreen = true;
-        frame.referrerPolicy = "strict-origin-when-cross-origin";
-        let revealTimer = 0;
-        let fallbackTimer = 0;
-        let revealed = false;
-        const reveal = (delayMs = 0) => {
-          if (revealed || revealTimer) {
-            return;
-          }
-          revealTimer = setTimeout(() => {
-            revealTimer = 0;
-            if (revealed || !frame.isConnected || frame.parentElement !== container) {
-              return;
-            }
-            revealed = true;
-            if (fallbackTimer) {
-              clearTimeout(fallbackTimer);
-              fallbackTimer = 0;
-            }
-            container.classList.add("is-active");
-            onReady?.();
-          }, delayMs);
-        };
-        const handleProxyMessage = (event) => {
-          if (event?.source !== frame.contentWindow) {
-            return;
-          }
-          const data = event?.data;
-          if (!data || typeof data !== "object" || data.source !== "nuvio-youtube-proxy") {
-            return;
-          }
-          if (data.type === "ended" || data.type === "error") {
-            frame.dataset.ambientTrailerPlaying = "false";
-          }
-          if (data.type === "firstFrame") {
-            frame.dataset.ambientTrailerPlaying = "true";
-            reveal(150);
-            return;
-          }
-          const state = data.type === "state" && data.state && typeof data.state === "object" ? data.state : null;
-          if (state) {
-            frame.dataset.ambientTrailerPlaying = String(state.paused === false && state.loading === false);
-          }
-          if (state && Number(state.currentTime || 0) > 0 && state.paused === false) {
-            reveal(150);
-          } else if (state && state.controllable === false && state.loading === false) {
-            reveal(1200);
-          }
-        };
-        const cleanup = () => {
-          window.removeEventListener("message", handleProxyMessage);
-          if (revealTimer) {
-            clearTimeout(revealTimer);
-            revealTimer = 0;
-          }
-          if (fallbackTimer) {
-            clearTimeout(fallbackTimer);
-            fallbackTimer = 0;
-          }
-        };
-        this.homeTrailerFrameCleanup ||= new WeakMap();
-        this.homeTrailerFrameCleanup.set(frame, cleanup);
-        window.addEventListener("message", handleProxyMessage);
-        frame.addEventListener(
-          "load",
-          () => {
-            if (!revealed) {
-              fallbackTimer = setTimeout(() => reveal(), 7000);
-            }
-          },
-          { once: true }
-        );
-        container.appendChild(frame);
-        return;
-      }
-      if (source.kind === "video" && source.url) {
-        const shouldMute = source.muted !== false;
-        const video = document.createElement("video");
-        video.className = "home-inline-trailer-video";
-        video.autoplay = true;
-        video.loop = true;
-        video.playsInline = true;
-        video.defaultMuted = shouldMute;
-        video.muted = shouldMute;
-        video.preload = "auto";
-        video.setAttribute("autoplay", "");
-        video.setAttribute("loop", "");
-        video.setAttribute("playsinline", "");
-        video.setAttribute("webkit-playsinline", "");
-        if (shouldMute) {
-          video.setAttribute("muted", "");
-        } else {
-          video.removeAttribute("muted");
-        }
-        try {
-          video.volume = shouldMute ? 0 : 1;
-        } catch (_) {}
-        try {
-          video.disableRemotePlayback = true;
-        } catch (_) {}
-
-        let didActivate = false;
-        const activate = () => {
-          if (didActivate || !video.isConnected || video.parentElement !== container || video.paused || Number(video.readyState || 0) < 2) {
-            return;
-          }
-          didActivate = true;
-          container.classList.add("is-active");
-          onReady?.();
-        };
-        ["playing", "timeupdate"].forEach((eventName) => {
-          video.addEventListener(eventName, activate, { once: true });
-        });
-        video.addEventListener(
-          "error",
-          () => {
-            if (!video.isConnected || video.parentElement !== container) return;
-            this.clearTrailerLayer(container);
-            this.setHeroTrailerActive(false);
-            container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
-          },
-          { once: true }
-        );
-        container.appendChild(video);
-        video.setAttribute("src", String(source.url || ""));
-        try {
-          video.load?.();
-        } catch (_) {}
-        const playAttempt = video.play?.();
-        if (playAttempt?.then) {
-          playAttempt.then(activate).catch(() => {
-            if (!video.isConnected || video.parentElement !== container) return;
-            this.clearTrailerLayer(container);
-            this.setHeroTrailerActive(false);
-            container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
-          });
-        } else {
-          setTimeout(() => {
-            if (video.isConnected && !didActivate && Number(video.readyState || 0) >= 2) {
-              activate();
-            }
-          }, 500);
-        }
-      }
+      mountTrailerMedia(container, source, onReady, () => {
+        this.clearTrailerLayer(container);
+        this.setHeroTrailerActive(false);
+        container.closest(".home-poster-card")?.classList.remove("is-trailer-active");
+      });
     },
     collapseFocusedPoster(node = this.expandedPosterNode, options = {}) {
       // Avoid overlapping flex-size transitions that leave stale poster layers on

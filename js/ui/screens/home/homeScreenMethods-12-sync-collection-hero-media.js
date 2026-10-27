@@ -1,5 +1,6 @@
 import * as internals from "./homeScreenContext.js";
 import { reconcileHomeFocusMediaTracking } from "./homeFocusMediaTracking.js";
+import { pauseTrailerMedia, releaseTrailerMedia } from "./homeTrailerLayer.js";
 
 export function createHomeScreenMethods12() {
   const { MODERN_HOME_CONSTANTS, firstNonEmpty, isCollectionFolderItem, normalizeCollectionFolderItem } = internals;
@@ -167,52 +168,13 @@ export function createHomeScreenMethods12() {
         this.homeTrailerLayerCleanupTimers.delete(container);
       }
       this.pauseTrailerLayer(container);
-      const activeFrame = container.querySelector("iframe");
-      if (activeFrame) {
-        this.homeTrailerFrameCleanup?.get(activeFrame)?.();
-        this.homeTrailerFrameCleanup?.delete(activeFrame);
-        try {
-          activeFrame.src = "about:blank";
-        } catch (_) {}
-        try {
-          activeFrame.removeAttribute("src");
-        } catch (_) {}
-      }
-      const activeVideo = container.querySelector("video");
-      if (activeVideo) {
-        try {
-          activeVideo.removeAttribute("src");
-          activeVideo.load?.();
-        } catch (_) {}
-      }
-      container.innerHTML = "";
-      container.classList.remove("is-active");
+      releaseTrailerMedia(container);
     },
     pauseTrailerLayer(container) {
       if (!container) {
         return;
       }
-      const activeFrame = container.querySelector("iframe");
-      if (activeFrame) {
-        activeFrame.dataset.ambientTrailerPlaying = "false";
-        try {
-          activeFrame.contentWindow?.postMessage(
-            {
-              source: "nuvio-detail-trailer",
-              type: "command",
-              command: "pause",
-              payload: {}
-            },
-            "*"
-          );
-        } catch (_) {}
-      }
-      const activeVideo = container.querySelector("video");
-      if (activeVideo) {
-        try {
-          activeVideo.pause();
-        } catch (_) {}
-      }
+      pauseTrailerMedia(container);
     },
     scheduleTrailerLayerCleanup(container) {
       if (!container) {

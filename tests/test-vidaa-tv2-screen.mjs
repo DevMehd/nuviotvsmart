@@ -801,6 +801,152 @@ try {
       catalogResult = async () => catalogPage;
     }
   }
+
+  // Hero trailer (lot C10): once the hero is calm, the focused poster's trailer plays in the hero
+  // after max(250, expand delay) plus the constrained-TV delay, never while navigation is busy;
+  // every move, OK, the sidebar and cleanup stop it. Folders get their hero video and focus GIF.
+  {
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    const { createHomeScreenMethods03 } =
+      await import("../js/ui/screens/home/homeScreenMethods-03-is-scroll-animation-active.js");
+    const savedPrefs = LayoutPreferences.get;
+    LayoutPreferences.get = function () {
+      return {
+        ...savedPrefs.call(this),
+        focusedPosterBackdropTrailerEnabled: true,
+        focusedPosterBackdropExpandDelaySeconds: 1
+      };
+    };
+    const policy = createHomeScreenMethods03();
+    const dwell = 1000 + policy.getFocusedPosterTrailerDelayMs("hero_media");
+    const deferredStop = { deferred: Boolean(policy.shouldUseImmediateFocusScroll()) };
+    catalogResult = async () => ({
+      status: "success",
+      data: {
+        items: Array.from({ length: 40 }, (_, i) => ({
+          id: `tt${200 + i}`,
+          type: "movie",
+          name: `T${i}`,
+          trailerYtIds: ["dQw4w9WgXcQ"]
+        }))
+      }
+    });
+    const mountRecorded = () => {
+      const calls = { play: [], stop: [], gif: [] };
+      const screen = Object.create(NewHomeScreen);
+      screen.domView = function () {
+        const view = NewHomeScreen.domView.call(this);
+        const { playHeroTrailer, stopHeroTrailer, setFocusGif } = view;
+        view.playHeroTrailer = (source) => {
+          calls.play.push(source);
+          playHeroTrailer(source);
+        };
+        view.stopHeroTrailer = (options) => {
+          calls.stop.push(options);
+          stopHeroTrailer(options);
+        };
+        view.setFocusGif = (url) => {
+          calls.gif.push(url);
+          setFocusGif(url);
+        };
+        return view;
+      };
+      void screen.mount();
+      return { screen, calls };
+    };
+    try {
+      const { screen, calls } = mountRecorded();
+      await flush();
+      const start = now;
+      await advance(start + dwell - 1);
+      assert.equal(calls.play.length, 0, "no trailer before the dwell");
+      await advance(start + dwell);
+      assert.equal(calls.play.length, 1, "the initial hero's trailer after the dwell");
+      assert.equal(calls.play[0].kind, "youtube");
+      assert.equal(calls.play[0].muted, true, "muted by default");
+      screen.applyRows(screen.rows);
+      await advance(now + dwell * 2);
+      assert.equal(calls.play.length, 1, "a rows refresh keeps the trailer");
+      assert.equal(calls.stop.length, 0);
+
+      // A move stops it; a held key keeps the next one from starting.
+      screen.onKeyDown({ keyCode: 39 });
+      assert.deepEqual(calls.stop, [deferredStop], "a move stops the trailer");
+      noteVidaaNavigationKeyDown(39);
+      await advance(now + 900);
+      assert.equal(calls.play.length, 1, "no hero nor trailer while navigation is busy");
+      noteVidaaNavigationKeyUp(39);
+      await advance(now + 120);
+      assert.equal(screen.heroItem.id, "tt201");
+      // A key held at the dwell's end (no move) delays the trailer until 60 ms of quiet.
+      await advance(now + dwell - 100);
+      noteVidaaNavigationKeyDown(38);
+      await advance(now + 500);
+      assert.equal(calls.play.length, 1, "the trailer waits for calm");
+      noteVidaaNavigationKeyUp(38);
+      await advance(now + 120);
+      assert.equal(calls.play.length, 2, "the next title's trailer once calm");
+
+      // OK and the sidebar stop it.
+      screen.onKeyDown({ keyCode: 13 });
+      assert.equal(calls.stop.length, 2, "OK stops the trailer");
+      screen.cancelPendingContinueWatchingHold();
+      screen.openSidebar(false);
+      screen.closeSidebar();
+      await advance(now + 450 + dwell);
+      assert.equal(calls.play.length, 3, "back on the hero, its trailer again");
+      screen.openSidebar(false);
+      assert.equal(calls.stop.length, 3, "the sidebar stops the trailer");
+      screen.closeSidebar();
+      await advance(now + 450 + 10);
+      screen.cleanup();
+      assert.equal(calls.stop.length, 4, "cleanup stops a pending trailer");
+      await advance(now + dwell * 2);
+      assert.equal(calls.play.length, 3, "nothing after cleanup");
+
+      // Folders: hero video (muted loop) and focus GIF once calm, both stopped by a move.
+      const folder = {
+        collectionId: "c1",
+        folderId: "f1",
+        title: "Folder",
+        coverImageUrl: "https://img.invalid/cover.jpg",
+        focusGifUrl: "https://img.invalid/focus.gif",
+        heroVideoUrl: "https://video.invalid/hero.mp4"
+      };
+      const folderRow = {
+        key: "collection_c1",
+        kind: "collection",
+        title: "C",
+        items: [folder],
+        status: "success",
+        entry: { rowKind: "collection", collection: { id: "c1", title: "C" } }
+      };
+      const second = mountRecorded();
+      await flush();
+      second.screen.applyRows([folderRow, ...second.screen.rows]);
+      second.screen.onKeyDown({ keyCode: 38 });
+      await advance(now + 449);
+      assert.equal(second.calls.gif.filter(Boolean).length, 0, "no GIF before calm");
+      await advance(now + 1);
+      assert.equal(second.screen.heroItem.folderId, "f1");
+      assert.deepEqual(second.calls.gif.at(-1), "https://img.invalid/focus.gif");
+      assert.deepEqual(second.calls.play.at(-1), {
+        kind: "video",
+        url: "https://video.invalid/hero.mp4",
+        muted: true
+      });
+      second.screen.onKeyDown({ keyCode: 40 });
+      assert.equal(second.calls.gif.at(-1), "", "a move clears the GIF");
+      assert.ok(second.calls.stop.length >= 1, "a move stops the folder video");
+      second.screen.cleanup();
+    } finally {
+      LayoutPreferences.get = savedPrefs;
+      catalogResult = async () => catalogPage;
+    }
+  }
 } finally {
   metaRepository.getMetaFromAllAddons = originalMeta;
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;

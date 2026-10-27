@@ -190,6 +190,22 @@
   text-shadow: none;
 }
 
+/* Collection focus GIF over the cover once focus settles (current Home .home-poster-focus-gif). */
+.tv2-card-gif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.tv2-card.is-focus-gif-active .tv2-card-gif[src] {
+  opacity: 1;
+}
+
 /* Continue Watching card (components-14/17.css, modern sizes): badge, copy, progress, blur. */
 .tv2-card.home-continue-card {
   background: linear-gradient(145deg, #393939, #111);

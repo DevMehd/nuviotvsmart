@@ -21,6 +21,11 @@ import {
   encodeHeroBackdropFallbacks
 } from "../screens/home/homeImageHelpers.js";
 import { setHomeHtmlIfChanged } from "../screens/home/homeStableMarkup.js";
+import {
+  mountTrailerMedia,
+  pauseTrailerMedia,
+  releaseTrailerMedia
+} from "../screens/home/homeTrailerLayer.js";
 import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimization.js";
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
 import { slotFor, homeLayout, rowCardSize, ROW_TITLE_HEIGHT } from "./railEngine.js";
@@ -29,7 +34,8 @@ import { sizedImageUrl } from "./imagePipeline.js";
 
 // Renderers of the new TV Home (nuv-091) share one interface:
 //   setRows(rows), update(rows, focus, { sidebarIndex }), setHero(item, { loading }), setProfile(state),
-//   sidebarItems(), destroy(); optionally setWatched(ids) (DOM only, Lightning stays poster-only).
+//   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
+//   stopHeroTrailer({ deferred }) and setFocusGif(url) (DOM only, Lightning stays poster-only).
 // This is the DOM one, the universal fallback; render/lightning/ draws the whole Home in WebGL.
 
 /**
@@ -130,6 +136,7 @@ const HERO_MARKUP = `
             <div class="home-hero-backdrop-loading"></div>
             <img class="home-hero-backdrop placeholder" alt="" decoding="async" fetchpriority="high" onerror="${buildImageFallbackErrorHandler()}" />
           </div>
+          <div class="home-hero-trailer-layer"></div>
         </div>
         <div class="home-hero-copy home-modern-hero-copy">
           <div class="home-hero-brand"><h1 class="home-hero-title-text"></h1></div>
@@ -168,6 +175,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     primary: container.querySelector(".tv2-hero-shell .home-modern-hero-meta-line"),
     secondary: container.querySelector(".tv2-hero-shell .home-modern-hero-secondary"),
     description: container.querySelector(".tv2-hero-shell .home-hero-description"),
+    trailerLayer: container.querySelector(".tv2-hero-shell .home-hero-trailer-layer"),
     logo: null,
     identity: ""
   };
@@ -180,6 +188,9 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   // Bumped by every row emit: continue cards refill then, their release labels depend on time.
   let rowsVersion = 0;
   let focusedNode = null;
+  // Stop of the hero trailer or folder video, and the card showing its focus GIF.
+  let stopTrailer = null;
+  let gifNode = null;
   root.style.setProperty("--tv2-card-radius", `${geometry.radius ?? 24}px`);
 
   function setRows(rows) {
@@ -229,6 +240,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       node.innerHTML = `<img class="tv2-card-image" alt="" decoding="async" />${watchedBadge}
         <div class="tv2-card-overlay"><img class="tv2-card-logo" alt="" decoding="async" />
           <div class="tv2-card-overlay-title"></div><div class="tv2-card-overlay-subtitle"></div></div>
+        ${view.kind === "collection" ? `<img class="tv2-card-gif" alt="" decoding="async" />` : ""}
         ${
           view.kind === "continue"
             ? `<span class="tv2-cw-badge"></span><div class="tv2-cw-copy"><div class="tv2-cw-kicker"></div>
@@ -248,6 +260,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         kicker: node.querySelector(".tv2-cw-kicker"),
         subtitle: node.querySelector(".tv2-cw-subtitle"),
         progress: node.querySelector(".tv2-cw-progress span"),
+        gif: node.querySelector(".tv2-card-gif"),
         source: null
       });
       view.track.appendChild(node);
@@ -398,6 +411,40 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     hero.description.classList.toggle("is-empty", !display.description);
   }
 
+  /** Current Home hero_media trailer (or folder hero video): the backdrop fades out once it shows. */
+  function playHeroTrailer(source) {
+    stopHeroTrailer();
+    // A deferred stop's paused media leaves at once, as the current Home's mount does.
+    releaseTrailerMedia(hero.trailerLayer);
+    stopTrailer = mountTrailerMedia(
+      hero.trailerLayer,
+      source,
+      () => hero.media.classList.add("trailer-active"),
+      () => stopHeroTrailer()
+    );
+  }
+
+  /** `deferred`: paused now, unloaded once idle (constrained TVs, as the current Home). */
+  function stopHeroTrailer({ deferred = false } = {}) {
+    hero.media.classList.remove("trailer-active");
+    stopTrailer?.({ deferred });
+    stopTrailer = null;
+  }
+
+  /** Current Home collection focus GIF over the focused folder card, through the image queue; "" clears it. */
+  function setFocusGif(url = "") {
+    if (gifNode) {
+      gifNode.classList.remove("is-focus-gif-active");
+      imageQueue.request(cards.get(gifNode).gif, "");
+      gifNode = null;
+    }
+    const gif = url && focusedNode && cards.get(focusedNode)?.gif;
+    if (!gif) return;
+    gifNode = focusedNode;
+    gifNode.classList.add("is-focus-gif-active");
+    imageQueue.request(gif, url, { priority: true });
+  }
+
   function setProfile(profile) {
     const sidebar = container.querySelector(".home-sidebar");
     if (!sidebar) return;
@@ -419,10 +466,17 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     update,
     setWatched,
     setHero,
+    playHeroTrailer,
+    stopHeroTrailer,
+    setFocusGif,
     setProfile,
     sidebarItems,
     focusedNode: () => focusedNode,
     destroy() {
+      stopHeroTrailer();
+      pauseTrailerMedia(hero.trailerLayer);
+      releaseTrailerMedia(hero.trailerLayer);
+      setFocusGif("");
       views.clear();
       focusedNode = null;
     }
