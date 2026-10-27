@@ -1397,6 +1397,78 @@ try {
     }
   }
 
+  // C13 review: a watch-state pull queued during the cold load neither ends the timed-out row's
+  // silent retry (D1) nor cancels the 15 min catalog refresh.
+  {
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    const subscribe = StartupSyncService.subscribeToPullCompleted;
+    const addons = addonRepository.getInstalledAddons;
+    let listener = null;
+    let addonCalls = 0;
+    StartupSyncService.subscribeToPullCompleted = (fn) => {
+      listener = fn;
+      return () => listener === fn && (listener = null);
+    };
+    addonRepository.getInstalledAddons = async () => {
+      addonCalls += 1;
+      return [
+        {
+          baseUrl: "https://addon.example",
+          id: "addon",
+          name: "Addon",
+          catalogs: [
+            { id: "top", apiType: "movie", name: "Top" },
+            { id: "slow", apiType: "movie", name: "Slow" }
+          ]
+        }
+      ];
+    };
+    const slowCalls = [];
+    catalogRepository.getCatalog = (params) => {
+      if (params.catalogId !== "slow") return Promise.resolve(catalogPage);
+      const call = deferred();
+      slowCalls.push(call);
+      return call.promise;
+    };
+    try {
+      const { screen } = mountScreen();
+      await flush();
+      listener({ source: "watch-state" });
+      await advance(now + 3500);
+      assert.ok(slowCalls.length >= 2, "retried after the deferred pass");
+      slowCalls.forEach((call) =>
+        call.resolve({ status: "success", data: { items: [{ id: "s0", type: "movie" }] } })
+      );
+      await advance(now + 1000);
+      assert.equal(
+        screen.modelRows.find((row) => row.key.includes("slow"))?.status,
+        "success",
+        "the pending row still fills"
+      );
+      addonCalls = 0;
+      await advance(now + 15 * 60 * 1000);
+      assert.ok(addonCalls > 0, "catalogs still refresh once stale");
+      screen.cleanup();
+
+      // Every catalog loaded: the queued pull refreshes Continue Watching alone, the timer stays.
+      catalogRepository.getCatalog = () => Promise.resolve(catalogPage);
+      const cold = mountScreen().screen;
+      assert.ok(cold.loading);
+      listener({ source: "watch-state" });
+      await advance(now + 1000);
+      addonCalls = 0;
+      await advance(now + 15 * 60 * 1000);
+      assert.ok(addonCalls > 0, "the 15 min refresh survives a queued Continue Watching refresh");
+      cold.cleanup();
+    } finally {
+      StartupSyncService.subscribeToPullCompleted = subscribe;
+      addonRepository.getInstalledAddons = addons;
+      catalogRepository.getCatalog = () => catalogResult();
+    }
+  }
+
   // C13: the remote sidebar profile replaces the local one; an open sidebar keeps a real item.
   {
     now = 0;

@@ -263,9 +263,10 @@ export const NewHomeScreen = {
         this.loading = false;
         const pending = this.pendingRefresh;
         this.pendingRefresh = null;
-        if (pending) this.refreshRows(pending);
-        else if (!continueOnly)
+        // A queued Continue Watching refresh keeps this load's catalog age.
+        if (!continueOnly)
           this.staleTimer = setTimeout(() => this.refreshRows(), HOME_CATALOG_REFRESH_TTL_MS);
+        if (pending) this.refreshRows(pending);
       });
   },
 
@@ -279,7 +280,9 @@ export const NewHomeScreen = {
       return;
     }
     this.backgroundLoad = true;
-    this.loadRows({ retained: this.modelRows, continueOnly });
+    // A new load ends the last one's silent retry (D1): pending catalog rows reload with it.
+    const pendingCatalogs = this.modelRows.some((row) => row.entry && row.status === "loading");
+    this.loadRows({ retained: this.modelRows, continueOnly: continueOnly && !pendingCatalogs });
   },
 
   /**
