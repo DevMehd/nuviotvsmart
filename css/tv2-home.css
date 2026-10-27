@@ -414,6 +414,69 @@
   display: none;
 }
 
+/* Classic folder cards with a title block: emoji, focus ring and GIF keep to the cover frame. */
+.tv2-card.has-label.tv2-card-emoji .tv2-card-title {
+  bottom: auto;
+  height: var(--tv2-frame-height);
+  border-radius: var(--tv2-card-radius, 24px);
+  background: var(--card-bg);
+}
+
+.tv2-card.has-label.tv2-card-emoji.focused .tv2-card-title {
+  box-shadow: 0 0 0 4px var(--focus-color);
+}
+
+.tv2-card.has-label .tv2-card-gif {
+  height: var(--tv2-frame-height);
+  border-radius: var(--tv2-card-radius, 24px);
+}
+
+/* Grid folder title over the cover (components-17.css .home-collection-title-overlay). */
+.tv2-card-folder-title {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 8px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.74));
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv2-card-folder-title:empty {
+  display: none;
+}
+
+/* Grid sticky section header (components-16.css .home-grid-sticky), over the rows at the top;
+   its title and visibility come from railEngine gridStickyTitle, never from a scroll listener. */
+.tv2-grid-sticky {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 12px 48px 12px var(--tv2-content-start, 168px);
+  background: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.94) 70%, rgba(0, 0, 0, 0) 100%);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.tv2-grid-sticky.is-visible {
+  opacity: 1;
+}
+
 /* See All card (components-13.css .home-seeall-card): its frame instead of the artwork. */
 .tv2-seeall {
   display: none;

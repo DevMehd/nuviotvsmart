@@ -448,6 +448,43 @@ try {
     tmdb("w342", "hp")
   );
 
+  // Folder titles (createPosterCardMarkup): under the card in classic, over the cover in grid,
+  // none for hideTitle; grid sticky header with the section under the scroll.
+  const folderRow = {
+    key: "collection_f",
+    kind: "collection",
+    title: "Folders",
+    status: "success",
+    tileShape: "POSTER",
+    items: [
+      { id: "collection:c:a", type: "collection_folder", name: "Folder A", coverEmoji: "🎬" },
+      { id: "collection:c:b", type: "collection_folder", name: "", hideTitle: true }
+    ]
+  };
+  for (const mode of ["classic", "grid"]) {
+    const folderContainer = new El();
+    const folderView = createDomHomeRenderer(folderContainer, {
+      geometry: cardGeometry({}, mode),
+      imageQueue: { request() {} },
+      layout: { homeLayout: mode }
+    });
+    folderView.setRows([folderRow]);
+    folderView.update([folderRow], { row: 0, columns: {}, scrollY: 0 });
+    const [shown, hidden] = folderContainer
+      .querySelector(".tv2-rows")
+      .children[0].querySelector(".tv2-track").children;
+    const label = (node) => node.querySelector(".tv2-card-label-title").textContent;
+    const overlay = (node) => node.querySelector(".tv2-card-folder-title").textContent;
+    assert.equal(label(shown), mode === "classic" ? "Folder A" : "", `${mode} label`);
+    assert.equal(overlay(shown), mode === "grid" ? "Folder A" : "", `${mode} overlay`);
+    assert.equal(label(hidden) + overlay(hidden), "", `${mode} hideTitle`);
+    assert.equal(shown.querySelector(".tv2-card-title").textContent, "🎬", "emoji kept");
+    assert.equal(shown.style.height, mode === "classic" ? "391px" : "354px", `${mode} height`);
+    const sticky = folderContainer.querySelector(".tv2-grid-sticky");
+    assert.equal(sticky.textContent, mode === "grid" ? "Folders" : "", "no hero: section title");
+    assert.equal(sticky.classList.contains("is-visible"), mode === "grid");
+  }
+
   // Model: watched title ids come with the rows, the base set first.
   replace(LayoutPreferences, "get", () => ({
     homeLayout: "modern",

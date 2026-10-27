@@ -6,8 +6,15 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.location = { search: "" };
 globalThis.document = { documentElement: { classList: { contains: () => false } } };
 
-const { cardGeometry, homeLayout, slotFor, trackCamera, buildLayoutRows } =
-  await import("../js/ui/tv2/railEngine.js");
+const {
+  cardGeometry,
+  homeLayout,
+  slotFor,
+  trackCamera,
+  buildLayoutRows,
+  rowLabelHeight,
+  gridStickyTitle
+} = await import("../js/ui/tv2/railEngine.js");
 const { createFocus, moveFocus, focusedIndex } = await import("../js/ui/tv2/focusModel.js");
 const { legacyRowPlan, gridVisibleCount } =
   await import("../js/ui/screens/home/homeCatalogPage.js");
@@ -245,6 +252,52 @@ for (const mode of ["modern", "classic", "grid"]) {
   });
   focus = moveFocus({ ...createFocus(), columns: { "b#0": 6 } }, short, "down");
   assert.equal(focusedIndex(focus, short), 1, "clamped to the shorter last line");
+}
+
+// Collection folder titles (createPosterCardMarkup): under the card in classic, whatever
+// posterLabelsEnabled, unless every folder hides it; an overlay in grid, so no label block there.
+{
+  const folders = (hidden) => ({
+    key: "collection_x",
+    kind: "collection",
+    title: "X",
+    items: [
+      { id: "f1", hideTitle: hidden },
+      { id: "f2", hideTitle: true }
+    ]
+  });
+  assert.equal(rowLabelHeight(folders(false), classicGeometry), 49);
+  assert.equal(
+    rowLabelHeight(folders(false), cardGeometry({ posterLabelsEnabled: false }, "classic")),
+    49
+  );
+  assert.equal(rowLabelHeight(folders(true), classicGeometry), 0, "every title hidden");
+  assert.equal(rowLabelHeight(folders(false), cardGeometry({}, "grid")), 0, "grid overlays it");
+  assert.equal(rowLabelHeight(folders(false), cardGeometry({}, "modern")), 0);
+}
+
+// Grid sticky header (setupGridStickyHeader): the section under the scroll + 72 px, from fixed
+// row tops, once the 400 px hero is scrolled past by 48 px; Continue Watching is no section.
+{
+  const geometry = cardGeometry({}, "grid");
+  const rows = buildLayoutRows(model, { geometry, heroEnabled: true, ...vidaaCaps });
+  const at = (scrollY) =>
+    gridStickyTitle(homeLayout(rows, { ...createFocus(), scrollY }, geometry));
+  const top = (key) =>
+    homeLayout(rows, createFocus(), geometry).rows.find((r) => r.row.key === key).top;
+  assert.equal(at(0), "", "hero on screen");
+  assert.equal(at(top("top#0") - 73), "", "Continue Watching is not a section");
+  assert.equal(at(top("top#0") - 72), "TOP");
+  assert.equal(at(top("top#1")), "TOP", "later grid lines keep their section title");
+  assert.equal(at(top("collection_c") - 72), "C", "folder rows are sections");
+  assert.equal(at(top("perso#2")), "Pour toi");
+  const noHero = buildLayoutRows(model, { geometry, heroEnabled: false, ...vidaaCaps });
+  const first = homeLayout(noHero, createFocus(), geometry).rows[1].top;
+  assert.equal(
+    gridStickyTitle(homeLayout(noHero, { ...createFocus(), scrollY: first - 72 }, geometry)),
+    "TOP",
+    "no hero: shown as soon as a section reaches the top"
+  );
 }
 
 console.log("PASS: new TV Home layouts (modern, classic, grid)");

@@ -41,7 +41,14 @@ import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimizatio
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
 import { I18n } from "../../i18n/index.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
-import { slotFor, homeLayout, rowCardSize, rowHeight, rowLabelHeight } from "./railEngine.js";
+import {
+  gridStickyTitle,
+  slotFor,
+  homeLayout,
+  rowCardSize,
+  rowHeight,
+  rowLabelHeight
+} from "./railEngine.js";
 import { focusedIndex } from "./focusModel.js";
 import { sizedImageUrl } from "./imagePipeline.js";
 
@@ -203,10 +210,11 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     <div class="tv2-home tv2-layout-${mode}">
       ${renderRootSidebar({ selectedRoute: "home", layout })}
       ${legacy ? "" : HERO_MARKUP}
-      <div class="home-main tv2-main"><div class="tv2-rows"></div></div>
+      <div class="home-main tv2-main">${mode === "grid" ? '<div class="tv2-grid-sticky"></div>' : ""}<div class="tv2-rows"></div></div>
     </div>`;
   const root = container.querySelector(".tv2-home");
   const rowsHost = container.querySelector(".tv2-rows");
+  const gridSticky = mode === "grid" ? container.querySelector(".tv2-grid-sticky") : null;
   // Classic/grid: the hero is the "__hero__" row's section, inside the rows.
   const legacyHero = legacy ? document.createElement("div") : null;
   if (legacyHero) {
@@ -331,6 +339,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         <div class="tv2-card-overlay"><img class="tv2-card-logo" alt="" decoding="async" />
           <div class="tv2-card-overlay-title"></div><div class="tv2-card-overlay-subtitle"></div></div>
         ${view.kind === "collection" ? `<img class="tv2-card-gif" alt="" decoding="async" />` : ""}
+        ${view.kind === "collection" && mode === "grid" ? `<div class="tv2-card-folder-title" dir="auto"></div>` : ""}
         ${
           view.kind === "continue"
             ? `<span class="tv2-cw-badge"></span><div class="tv2-cw-copy"><div class="tv2-cw-kicker"></div>
@@ -356,8 +365,12 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         subtitle: node.querySelector(".tv2-cw-subtitle"),
         progress: node.querySelector(".tv2-cw-progress span"),
         gif: node.querySelector(".tv2-card-gif"),
-        labelTitle: node.querySelector(".tv2-card-label-title"),
-        labelSubtitle: node.querySelector(".tv2-card-label-subtitle"),
+        labelTitle: view.labelHeight ? node.querySelector(".tv2-card-label-title") : null,
+        labelSubtitle: view.labelHeight ? node.querySelector(".tv2-card-label-subtitle") : null,
+        folderTitle:
+          view.kind === "collection" && mode === "grid"
+            ? node.querySelector(".tv2-card-folder-title")
+            : null,
         source: null
       });
       view.track.appendChild(node);
@@ -375,10 +388,20 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     const seeAll = Boolean(item.seeAll);
     node.classList.toggle("is-seeall", seeAll);
     node.dataset.action = seeAll ? "openCatalogSeeAll" : "openDetail";
+    // Folder title (current Home collectionDisplayTitle): under the card in classic, over it in grid.
+    const folderTitle =
+      row.kind === "collection" && !item.hideTitle
+        ? item.name || item.heroTitle || item.collectionTitle || "Collection"
+        : "";
+    if (card.folderTitle) card.folderTitle.textContent = folderTitle;
     if (card.labelTitle) {
-      card.labelTitle.textContent = seeAll ? "" : item.name || item.title || "";
+      card.labelTitle.textContent = seeAll
+        ? ""
+        : row.kind === "collection"
+          ? folderTitle
+          : item.name || item.title || "";
       card.labelSubtitle.textContent =
-        seeAll || mode !== "classic" ? "" : buildPosterSubtitle(item, mode);
+        seeAll || mode !== "classic" || item.hideTitle ? "" : buildPosterSubtitle(item, mode);
     }
     if (seeAll) {
       node.classList.remove("is-watched", "is-landscape", "tv2-card-emoji");
@@ -446,6 +469,13 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     // Landscape logos after every artwork: the lowest priority in the same bounded queue.
     logos.forEach(([node, url]) => imageQueue.request(node, url));
     rowsHost.style.transform = `translate3d(0,${placed.offsetY}px,0)`;
+    if (gridSticky) {
+      // The last title stays while the header fades out.
+      const stickyTitle = gridStickyTitle(placed);
+      if (stickyTitle && gridSticky.textContent !== stickyTitle)
+        gridSticky.textContent = stickyTitle;
+      gridSticky.classList.toggle("is-visible", Boolean(stickyTitle));
+    }
 
     focusedNode?.classList.remove("focused");
     focusedNode = null;

@@ -6,7 +6,10 @@ import { gridVisibleCount, legacyRowPlan } from "../screens/home/homeCatalogPage
 export const ROW_TITLE_HEIGHT = 56;
 export const RAIL_VIEWPORT = 1920 - 220;
 // Classic/grid focusable hero row: the current Home's 400 px hero card plus its margin.
-export const HERO_ROW_HEIGHT = 432;
+const HERO_CARD_HEIGHT = 400;
+export const HERO_ROW_HEIGHT = HERO_CARD_HEIGHT + 32;
+// Classic title block under a card: 10 padding + 20 title + 4 + 15 subtitle (components-15.css).
+const CLASSIC_LABEL_HEIGHT = 49;
 // Classic "from {addon}" line under the row title (components-15.css .home-row-subtitle).
 const ROW_SUBTITLE_HEIGHT = 20;
 const SCREEN_HEIGHT = 1080;
@@ -42,7 +45,7 @@ export function cardGeometry(layoutPrefs = {}, layoutMode = layoutPrefs?.homeLay
     labelHeight: 0,
     gridColumns: 0
   };
-  // Titles under classic/grid cards: 10 padding + 20 title + 4 + 15 subtitle (components-15.css).
+  // Titles under classic/grid catalog cards (posterLabelsEnabled).
   const labels = layoutPrefs?.posterLabelsEnabled !== false;
   if (mode === "classic")
     return {
@@ -56,7 +59,7 @@ export function cardGeometry(layoutPrefs = {}, layoutMode = layoutPrefs?.homeLay
       landscapePosters: false,
       contentStart: 192,
       viewport: 1920 - 192,
-      labelHeight: labels ? 49 : 0
+      labelHeight: labels ? CLASSIC_LABEL_HEIGHT : 0
     };
   if (mode === "grid") {
     // repeat(auto-fill, minmax(232px, 1fr)) with a 12 px column gap over 1920 - rail - 2 * 24.
@@ -152,8 +155,19 @@ export function rowHeight(row, geometry) {
   );
 }
 
-/** Classic/grid catalog cards carry their title under the artwork. */
-export const rowLabelHeight = (row, geometry) => (row.kind === "poster" ? geometry.labelHeight : 0);
+/**
+ * Classic/grid catalog cards carry their title under the artwork. Classic folder cards too, whatever
+ * posterLabelsEnabled, unless every folder hides it; grid overlays folder titles on the cover
+ * (createPosterCardMarkup collection branch).
+ */
+export function rowLabelHeight(row, geometry) {
+  if (row.kind === "poster") return geometry.labelHeight;
+  return row.kind === "collection" &&
+    geometry.layoutMode === "classic" &&
+    row.items.some((item) => !item.hideTitle)
+    ? CLASSIC_LABEL_HEIGHT
+    : 0;
+}
 
 const visibleCards = (row, geometry) =>
   Math.max(1, Math.floor(geometry.viewport / (rowCardSize(row, geometry).width + geometry.gap)));
@@ -232,6 +246,22 @@ export function homeLayout(rows, focus, geometry) {
     ? 0 - Math.max(0, Math.min(focusTop - 40, top - (SCREEN_HEIGHT - MODERN_ROWS_TOP)))
     : 0 - (focus.scrollY ?? 0);
   return { rows: placed, offsetY };
+}
+
+/**
+ * Grid sticky section header (current Home setupGridStickyHeader) from the fixed row tops of
+ * homeLayout instead of offsetTop: the title of the last catalog or folder section starting at
+ * most 72 px under the scroll, once the hero card is scrolled past by 48 px. "" hides it.
+ */
+export function gridStickyTitle({ rows, offsetY }) {
+  const scrollY = -offsetY;
+  let title = "";
+  rows.forEach(({ row, top }) => {
+    const section = (row.kind === "poster" || row.kind === "collection") && !row.gridLine;
+    if (section && top <= scrollY + 72) title = row.title || "";
+  });
+  const heroShown = rows[0]?.row.kind === "hero" && scrollY <= HERO_CARD_HEIGHT - 48;
+  return heroShown ? "" : title;
 }
 
 /** Current Home See All card (createSeeAllCardMarkup): the last card of a classic/grid catalog. */
