@@ -1,5 +1,12 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-27 — 1.3.4
+
+- Nouvel accueil (bêta), à activer dans Paramètres → Disposition → « Nouvel accueil (bêta) » (effet au prochain démarrage ; « Désactivé » garde l’accueil actuel). Il reprend tout l’accueil actuel : Continuer à regarder et Next Up, catalogues, collections, « Pour toi », grande bannière avec notes et bande-annonce, appui long, menu latéral, dispositions moderne, grille et classique (touche 76).
+- Il est conçu pour la télé : seules les affiches proches de la sélection existent, les images sont chargées à la bonne taille quand tu t’arrêtes, et le retour d’une fiche réutilise l’accueil déjà affiché au lieu de le reconstruire. Un catalogue qui ne répond pas ne bloque plus les rangées suivantes et se recharge tout seul.
+- Choix « Activé, WebGL (prototype) » : en disposition moderne, l’accueil est dessiné par la carte graphique, en version plus simple (sans badges ni bande-annonce) ; grille et classique restent en mode DOM, et il y repasse tout seul en cas de souci.
+- Police : toute l’interface utilise de nouveau JetBrains Sans, la police du mobile, au lieu d’Arial.
+
 ## 2026-10-26 — 1.3.3
 
 - Correctifs officiels intégrés pour la télé : le son ne reste plus coupé après un démarrage lent ou un changement automatique de source, la langue audio préférée est retrouvée même quand les pistes arrivent tard, la lecture reste stable en changeant d’audio ou de sous-titres, et les sources passant par un proxy (MediaFlow) se lisent.
