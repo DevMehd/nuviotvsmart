@@ -234,6 +234,9 @@ try {
     // One tap: one hero 450 ms later, artwork warmed 20 ms after the move.
     screen.onKeyDown({ keyCode: 39 });
     const tapped = now;
+    // A rows refresh (late catalog, next page) keeps the pending hero of the same title.
+    await advance(tapped + 300);
+    screen.applyRows(screen.rows);
     await advance(tapped + 449);
     assert.equal(heroes().length, 1, "no hero before 450 ms");
     await advance(tapped + 450);
@@ -301,6 +304,9 @@ try {
     );
     assert.equal(calls.setHero[0], null, "skeleton first");
     assert.equal(calls.setHero.filter(Boolean).length, 0, "no catalog hero while it loads");
+    // The focused catalog card does not replace the held skeleton once calm (no key yet).
+    await advance(now + 1000);
+    assert.equal(calls.setHero.filter(Boolean).length, 0, "skeleton held until Continue Watching");
     recent.resolve([
       {
         contentId: "tt9",

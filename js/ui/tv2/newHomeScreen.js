@@ -282,9 +282,13 @@ export const NewHomeScreen = {
    * just before; both wait while VIDAA navigation is busy. The current hero is not rescheduled.
    */
   scheduleHero() {
-    this.cancelHero();
     const hero = this.focusedHeroSource();
     const identity = buildHeroIdentity(hero);
+    // A rows refresh keeps the pending hero of the same title: only moves reschedule it.
+    if (identity && identity === this.heroPending) return;
+    this.cancelHero();
+    // Current Home holds the skeleton for Continue Watching until it resolves or the first key.
+    if (this.heroLoading && !this.interacted) return;
     if (!hero?.id || identity === buildHeroIdentity(this.heroItem)) return;
     const token = this.heroToken;
     const now = Date.now();
@@ -314,8 +318,13 @@ export const NewHomeScreen = {
       () => whenCalm("heroPreloadTimer", (focused) => void preloadHeroAssets(focused, "modern")),
       preloadDelay
     );
+    this.heroPending = identity;
     this.heroTimer = setTimeout(
-      () => whenCalm("heroTimer", (focused) => this.showHero(focused)),
+      () =>
+        whenCalm("heroTimer", (focused) => {
+          this.heroPending = "";
+          this.showHero(focused);
+        }),
       delay
     );
   },
@@ -323,6 +332,7 @@ export const NewHomeScreen = {
   /** Drops the pending hero (move, sidebar, leaving Home). */
   cancelHero() {
     this.heroToken = (this.heroToken || 0) + 1;
+    this.heroPending = "";
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroPreloadTimer);
   },
