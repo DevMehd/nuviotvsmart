@@ -907,6 +907,29 @@ try {
       await advance(now + dwell * 2);
       assert.equal(calls.play.length, 3, "nothing after cleanup");
 
+      // Leaving Home drops the trailer lookups, as the current Home's cleanup: back on Home
+      // (another profile, a lookup that failed), a title's trailer is looked up again.
+      catalogResult = async () => ({
+        status: "success",
+        data: {
+          items: Array.from({ length: 40 }, (_, i) => ({
+            id: `tt${200 + i}`,
+            type: "movie",
+            name: `T${i}`,
+            trailerYtIds: ["aBcDeFgHiJk"]
+          }))
+        }
+      });
+      const again = mountRecorded();
+      await flush();
+      await advance(now + dwell);
+      assert.match(
+        again.calls.play.at(-1)?.embedUrl || "",
+        /aBcDeFgHiJk/,
+        "a new visit looks the trailer up again"
+      );
+      again.screen.cleanup();
+
       // Folders: hero video (muted loop) and focus GIF once calm, both stopped by a move.
       const folder = {
         collectionId: "c1",

@@ -803,6 +803,8 @@ export const NewHomeScreen = {
     this.lastSnapshot = focusSnapshot(this.focus, this.rows) || this.lastSnapshot;
     this.token = (this.token || 0) + 1;
     this.cancelHero();
+    // Current Home cleanup drops its trailer lookups (profile switch, failed lookup).
+    trailerSources.clear();
     clearTimeout(this.pageTimer);
     this.cancelPendingContinueWatchingHold();
     // A menu left mounted would keep nuvio-modal-open and block every key.
