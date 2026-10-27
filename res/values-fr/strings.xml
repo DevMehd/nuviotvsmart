@@ -2384,7 +2384,7 @@
     <string name="playback_net_chunk_size">Taille des blocs</string>
     <string name="playback_net_chunk_size_sub">Taille de chaque bloc de téléchargement par connexion. Des blocs plus grands réduisent la surcharge mais utilisent plus de mémoire.</string>
     <string name="common.auto">Auto</string>
-    <string name="common.closed">Closed</string>
+    <string name="common.closed">Fermé</string>
     <string name="common.comingSoon">Coming soon.</string>
     <string name="common.comingSoonWithContext">{{subject}} Coming soon.</string>
     <string name="common.arabic">Arabic</string>
@@ -2400,7 +2400,7 @@
     <string name="common.japanese">Japanese</string>
     <string name="common.korean">Korean</string>
     <string name="common.native">Native</string>
-    <string name="common.open">Open</string>
+    <string name="common.open">Ouvert</string>
     <string name="common.polish">Polish</string>
     <string name="common.portuguese">Portuguese</string>
     <string name="common.provider">Provider</string>
