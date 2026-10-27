@@ -300,6 +300,11 @@ try {
   view.setWatched(watchedTitleIds);
   view.update(rows, focus);
   assert.equal(first.classList.contains("is-watched"), true, "badge shown after setWatched");
+  // The same set again (lot D route return): the card is not filled again.
+  first.classList.remove("is-watched");
+  view.setWatched(new Set(watchedTitleIds));
+  view.update(rows, focus);
+  assert.equal(first.classList.contains("is-watched"), false, "same watched set: no refill");
   view.setWatched(new Set());
   view.update(rows, focus);
   assert.equal(first.classList.contains("is-watched"), false, "badge hidden again");

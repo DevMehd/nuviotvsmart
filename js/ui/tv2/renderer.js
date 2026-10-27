@@ -57,7 +57,7 @@ import { sizedImageUrl } from "./imagePipeline.js";
 //   setRows(rows), update(rows, focus, { sidebarIndex, hideFocus }), setHero(item, { loading, candidates }),
 //   setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
-//   stopHeroTrailer({ deferred }), setFocusGif(url) and setSidebarPill(iconOnly) (DOM only:
+//   stopHeroTrailer({ deferred }), setFocusGif(url), setSidebarPill(iconOnly) and suspend() (DOM only:
 //   Lightning stays poster-only with the legacy sidebar).
 // This is the DOM one, the universal fallback and the only one drawing classic and grid (D9);
 // render/lightning/ draws the modern Home in WebGL.
@@ -275,7 +275,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         views.delete(key);
       }
     }
-    rows.forEach((row) => {
+    // Sections already in order stay put (a kept view re-applies the same rows on return); from
+    // the first out-of-order one, the rest are appended in order.
+    let moved = false;
+    rows.forEach((row, index) => {
       let view = views.get(row.key);
       if (!view && row.kind === "hero") {
         view = { section: legacyHero, slots: [], kind: "hero" };
@@ -297,7 +300,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         };
         views.set(row.key, view);
       }
-      rowsHost.appendChild(view.section);
+      if (moved || rowsHost.children[index] !== view.section) {
+        rowsHost.appendChild(view.section);
+        moved = true;
+      }
       view.section.style.height = `${rowHeight(row, geometry)}px`;
       if (row.kind === "hero") return;
       view.section.querySelector(".tv2-row-title").textContent = row.title || "";
@@ -703,8 +709,26 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
 
   /** Watched title ids (homeModel onWatched): visible cards refill at the next update. */
   function setWatched(ids) {
+    // The same set again (route return, refresh): visible cards keep their fill.
+    if (
+      ids &&
+      watchedIds &&
+      ids.size === watchedIds.size &&
+      [...ids].every((id) => watchedIds.has(id))
+    )
+      return;
     watchedIds = ids;
     watchedVersion += 1;
+  }
+
+  /** Home hidden with its view kept: trailer media unloaded now (no audio), focus GIF cleared. */
+  function suspend() {
+    stopHeroTrailer();
+    if (hero.trailerLayer) {
+      pauseTrailerMedia(hero.trailerLayer);
+      releaseTrailerMedia(hero.trailerLayer);
+    }
+    setFocusGif("");
   }
 
   return {
@@ -719,13 +743,9 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     setSidebarPill,
     sidebarItems,
     focusedNode: () => focusedNode,
+    suspend,
     destroy() {
-      stopHeroTrailer();
-      if (hero.trailerLayer) {
-        pauseTrailerMedia(hero.trailerLayer);
-        releaseTrailerMedia(hero.trailerLayer);
-      }
-      setFocusGif("");
+      suspend();
       views.clear();
       focusedNode = null;
     }

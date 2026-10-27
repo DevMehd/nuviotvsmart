@@ -46,4 +46,22 @@ q2.request(x, "");
 q2.request(y, "y.jpg");
 assert.equal(y.src, "y.jpg", "an image removed while loading frees its slot");
 
+// Home hidden with its view kept (lot D): clear() frees the slots; on return a loaded image stays,
+// an interrupted one loads again with its handlers (fallbacks).
+const q3 = createImageQueue({ concurrency: 2 });
+const done = node();
+const cut = node();
+q3.request(done, "done.jpg");
+q3.request(cut, "cut.jpg", { fallbacks: ["cut-fallback.jpg"] });
+finish(done);
+q3.clear();
+assert.equal(cut.onerror, null, "the interrupted load lost its handlers");
+done.src = "";
+done.src = "done.jpg";
+q3.request(done, "done.jpg");
+q3.request(cut, "cut.jpg", { fallbacks: ["cut-fallback.jpg"] });
+assert.equal(done.onload, null, "a loaded image is not requested again");
+cut.onerror();
+assert.equal(cut.src, "cut-fallback.jpg", "the reloaded image tries its fallback");
+
 console.log("PASS: VIDAA new Home image queue never leaks loading slots.");

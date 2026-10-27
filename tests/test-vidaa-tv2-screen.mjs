@@ -1334,6 +1334,87 @@ try {
     }
   }
 
+  // Lot D: a same-profile return keeps the DOM view (no new renderer, no row section made again,
+  // same image queue); a layout or profile change rebuilds it.
+  {
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    catalogResult = async () => catalogPage;
+    const active = ProfileManager.getActiveProfileId;
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    const createElement = document.createElement;
+    let sections = 0;
+    document.createElement = (tag) => {
+      if (tag === "section") sections += 1;
+      return createElement(tag);
+    };
+    try {
+      let views = 0;
+      const screen = Object.create(NewHomeScreen);
+      screen.domView = function () {
+        views += 1;
+        return NewHomeScreen.domView.call(this);
+      };
+      void screen.mount();
+      await advance(now + 1000);
+      const drawn = sections;
+      const rowsHost = container.querySelector(".tv2-rows");
+      const shown = [...rowsHost.children];
+      assert.equal(views, 1);
+      assert.ok(drawn > 0, "rows drawn");
+      screen.onKeyDown({ keyCode: 39 });
+      const { view, imageQueue } = screen;
+      screen.cleanup();
+      assert.equal(screen.view, null, "a hidden Home draws nothing");
+      assert.equal(imageQueue.pendingCount, 0, "no image queued while hidden");
+      // Hidden as the current Home's preserved DOM, never emptied (ScreenUtils.hide would).
+      assert.ok(container.classList.contains("home-dom-preserved"));
+      assert.equal(container.style.display, "none");
+      void screen.mount({}, { previousRoute: "detail", isBackNavigation: true });
+      assert.equal(screen.view, view, "same view");
+      assert.ok(!container.classList.contains("home-dom-preserved"));
+      assert.equal(screen.imageQueue, imageQueue, "same image queue");
+      assert.equal(views, 1, "no new renderer");
+      assert.ok(
+        shown.every((section) => rowsHost.children.includes(section)),
+        "the cached rows keep their sections"
+      );
+      // Only the empty Continue Watching placeholder of the first emit is new.
+      assert.equal(sections, drawn + 1, "no row section made again");
+      assert.equal(focusedIndex(screen.focus, screen.rows), 1, "focus restored");
+      assert.equal(view.focusedNode()?.dataset.itemId, "m1");
+      await advance(now + 1000);
+      assert.equal(views, 1, "background refresh in the same view");
+      assert.equal(sections, drawn + 1);
+
+      // A layout change rebuilds the view.
+      screen.cleanup();
+      LayoutPreferences.set({ homeLayout: "grid" });
+      void screen.mount({}, { previousRoute: "settings" });
+      assert.equal(views, 2, "layout change: new renderer");
+      assert.notEqual(screen.view, view);
+      await advance(now + 1000);
+      screen.cleanup();
+      LayoutPreferences.set({ homeLayout: "modern" });
+      void screen.mount({}, { previousRoute: "settings" });
+      assert.equal(views, 3);
+      await advance(now + 1000);
+
+      // A profile change rebuilds it too.
+      screen.cleanup();
+      ProfileManager.getActiveProfileId = () => "another-profile";
+      void screen.mount({}, { previousRoute: "profileSelection" });
+      assert.equal(views, 4, "profile change: new renderer");
+      await advance(now + 1000);
+      screen.cleanup();
+    } finally {
+      document.createElement = createElement;
+      ProfileManager.getActiveProfileId = active;
+      LayoutPreferences.set({ homeLayout: "modern" });
+    }
+  }
+
   // C13: a startup pull refreshes Continue Watching alone (watch state) or everything (changed
   // inputs); another profile's pull is ignored; cleanup unsubscribes. Addon manifests refresh.
   {

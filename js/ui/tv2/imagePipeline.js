@@ -95,7 +95,11 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
     },
     clear() {
       pending.clear();
-      loading.forEach(release);
+      // An interrupted load lost its handlers (fallbacks): a kept view's next request reloads it.
+      loading.forEach((node) => {
+        requested.delete(node);
+        release(node);
+      });
       if (timer) clearTimeout(timer);
       timer = null;
     },

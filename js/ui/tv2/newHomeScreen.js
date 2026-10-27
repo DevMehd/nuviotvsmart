@@ -89,7 +89,13 @@ import {
 import { createImageQueue } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
 import { createLightningHomeRenderer } from "./render/lightning/lightningHomeRenderer.js";
-import { sessionNewHomeMode, homeEngine, noteHomeEngine } from "./newHomeSetting.js";
+import {
+  sessionNewHomeMode,
+  homeEngine,
+  noteHomeEngine,
+  activeHomeEngine
+} from "./newHomeSetting.js";
+import { I18n } from "../../i18n/index.js";
 
 // New TV Home (nuv-091). Enabled by the "Nouvel accueil (bêta)" setting: DOM renderer, or the
 // full WebGL prototype (lot B2), which falls back to DOM when WebGL fails.
@@ -120,6 +126,9 @@ const { getTrailerSourceForItem } = createHomeScreenMethods13();
 const trailerSources = new Map();
 const TRAILER_SOURCE_CACHE = 32;
 
+// What a kept view was drawn with: layout preferences and language (labels, RTL).
+const layoutKey = (layout) => JSON.stringify([I18n.getLocale(), layout]);
+
 // A menu or dialog is open over Home (NuvioDialog marker).
 const modalOpen = () => Boolean(globalThis.document?.body?.classList?.contains("nuvio-modal-open"));
 
@@ -148,14 +157,9 @@ export const NewHomeScreen = {
     this.token = (this.token || 0) + 1;
     const token = this.token;
     this.container = document.getElementById("home");
+    this.container.classList.remove("home-dom-preserved");
     ScreenUtils.show(this.container);
-    this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
-    this.setLayout(LayoutPreferences.get());
-    this.layoutFocus = {};
-    // Current Home getRowItemLimit counts the collections loaded with the rows.
-    this.collections = CollectionsStore.get();
-    this.profile = null;
-    this.watchedTitleIds = null;
+    const layout = LayoutPreferences.get();
     // Current Home mount: a profile or Continue Watching source change (or forceReload) reloads
     // everything; otherwise the last visit's rows paint at once and refresh in the background.
     const profileId = String(ProfileManager.getActiveProfileId() || "");
@@ -171,6 +175,23 @@ export const NewHomeScreen = {
       this.loadedProfileId = profileId;
       this.loadedSourceKey = sourceKey;
     }
+    // Same profile, source, layout and language: the DOM view cleanup hid is shown again as it was
+    // (its sections, pooled cards, hero and sidebar), as the current Home keeps its DOM.
+    const kept = this.keptView;
+    this.keptView = null;
+    const reuse = Boolean(kept) && !reload && this.layoutKey === layoutKey(layout);
+    if (!reuse) {
+      kept?.destroy();
+      this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
+      this.profile = null;
+      this.watchedTitleIds = null;
+      this.heroItem = null;
+      this.heroLoading = false;
+    }
+    this.setLayout(layout);
+    this.layoutFocus = {};
+    // Current Home getRowItemLimit counts the collections loaded with the rows.
+    this.collections = CollectionsStore.get();
     const cached = reload ? [] : this.modelRows;
     this.backgroundLoad = !reload;
     // The phone remote's Home while on Home (same-route navigate): as Home picked in the sidebar.
@@ -180,7 +201,7 @@ export const NewHomeScreen = {
       : (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     this.loading = false;
     this.pendingRefresh = null;
-    this.view = this.createView(token);
+    this.view = reuse ? kept : this.createView(token);
     // Current Home: a Back return starts with the modern sidebar pill icon-only, unless it
     // gives the sidebar its focus back.
     this.pillIconOnly = Boolean(navigation.isBackNavigation && !snapshot?.sidebar);
@@ -194,9 +215,7 @@ export const NewHomeScreen = {
     this.pagesInFlight = new Set();
     this.removedContinue = [];
     this.interacted = false;
-    this.heroItem = null;
     this.heroCandidates = [];
-    this.heroLoading = false;
     this.lastHeroNavAt = 0;
     this.heroHost = this.createHeroHost();
     this.focusMediaIdentity = "";
@@ -213,7 +232,9 @@ export const NewHomeScreen = {
       .catch(() => null)
       .then((profile) => {
         if (token !== this.token) return null;
-        if (profile) this.setSidebarProfile(profile);
+        // A kept view already shows it: the sidebar is not rewritten.
+        if (profile && JSON.stringify(profile) !== JSON.stringify(this.profile))
+          this.setSidebarProfile(profile);
         return getSidebarProfileState();
       })
       .then((profile) => {
@@ -346,6 +367,7 @@ export const NewHomeScreen = {
 
   /** Layout of the preferences (modern, grid, classic) and its card geometry. */
   setLayout(layout) {
+    this.layoutKey = layoutKey(layout);
     this.layoutMode = homeLayoutMode(layout);
     this.viewOptions = {
       geometry: cardGeometry(layout, this.layoutMode),
@@ -1220,8 +1242,17 @@ export const NewHomeScreen = {
     this.cwDialog?.destroy();
     this.cwDialog = null;
     this.imageQueue?.clear();
-    this.view?.destroy();
+    // A pure DOM view stays for the next mount (no draw while hidden); WebGL and fallbacks rebuild.
+    if (activeHomeEngine() !== "dom") {
+      this.view?.destroy();
+      ScreenUtils.hide(this.container);
+    } else {
+      if (this.view) this.view.suspend();
+      this.keptView ||= this.view;
+      // Hidden, not emptied (ScreenUtils.hide would): the current Home's preserved-DOM class.
+      this.container.style.display = "none";
+      this.container.classList.add("home-dom-preserved");
+    }
     this.view = null;
-    ScreenUtils.hide(this.container);
   }
 };
