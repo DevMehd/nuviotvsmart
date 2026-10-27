@@ -32,10 +32,15 @@ import {
   removeContinueWatchingProgress
 } from "../screens/home/homeScreenHelpers-13-continue-watching-stream-params.js";
 import { createHomeScreenMethods08 } from "../screens/home/homeScreenMethods-08-open-hold-menu-for-node.js";
+import { createHomeScreenMethods11 } from "../screens/home/homeScreenMethods-11-enrich-current-hero-async.js";
 import { createHomeScreenMethods22 } from "../screens/home/homeScreenMethods-22-pick-initial-hero.js";
 import { createHomeScreenMethods27 } from "../screens/home/homeScreenMethods-27-enrich-continue-watching.js";
 import { normalizeHomeRowItem } from "../screens/home/homeScreenHelpers-05-normalize-collection-folder-item.js";
-import { preloadHeroAssets } from "../screens/home/homeScreenHelpers-02-extract-release-date-text.js";
+import {
+  preloadHeroAssets,
+  shouldEnrichModernHero
+} from "../screens/home/homeScreenHelpers-02-extract-release-date-text.js";
+import { ensureHeroMdbListRatings } from "../screens/home/homeHeroMdbListLoad.js";
 import { MODERN_HOME_CONSTANTS } from "../screens/home/modernHomeLayout.js";
 import {
   getVidaaHeroFocusDelay,
@@ -71,6 +76,8 @@ const { openCloudContinueWatchingFromItem } = createHomeScreenMethods08();
 // Hero choice of the current Home, called on plain objects (they read only what is passed).
 const { pickInitialHero } = createHomeScreenMethods22();
 const { pickHeroItem, collectHeroCandidates } = createHomeScreenMethods27();
+// Hero enrichment of the current Home (addon meta, TMDB, IMDb), run on heroHost().
+const { enrichCurrentHeroAsync } = createHomeScreenMethods11();
 
 /** Hero source of a card, as the current Home's getNodeHeroSource (personal rows have no entry). */
 function heroSource(row, item) {
@@ -115,6 +122,7 @@ export const NewHomeScreen = {
     this.heroCandidates = [];
     this.heroLoading = false;
     this.lastHeroNavAt = 0;
+    this.heroHost = this.createHeroHost();
     this.pendingSnapshot =
       (navigation.isBackNavigation && navigation.restoredState) || this.lastSnapshot || null;
     this.restoring = Boolean(this.pendingSnapshot);
@@ -222,6 +230,7 @@ export const NewHomeScreen = {
       });
     if (hero) {
       this.showHero(hero);
+      this.enrichHero();
       return;
     }
     const loading = continueRow?.status === "loading";
@@ -236,6 +245,65 @@ export const NewHomeScreen = {
     if (!hero || buildHeroIdentity(hero) === buildHeroIdentity(this.heroItem)) return;
     this.heroItem = hero;
     this.view?.setHero(hero);
+  },
+
+  /**
+   * The `this` of the current Home's enrichCurrentHeroAsync and ensureHeroMdbListRatings: the
+   * screen's hero, its hero token as focus token (a move, the sidebar or leaving Home stops the
+   * commit) and the focused title as focused node. No collection GIFs (collection heroes are
+   * not enriched); a Continue Watching hero's MDBList ratings reach the hero, not the snapshot.
+   */
+  createHeroHost() {
+    const screen = this;
+    const token = this.token;
+    return {
+      layoutMode: "modern",
+      heroCandidates: [],
+      get heroItem() {
+        return screen.heroItem;
+      },
+      set heroItem(item) {
+        screen.heroItem = item;
+      },
+      get heroFocusToken() {
+        return screen.heroToken || 0;
+      },
+      get homeLoadToken() {
+        return screen.token;
+      },
+      getCurrentFocusedNode: () => screen.focusedHeroSource(),
+      getNodeHeroSource: (hero) => hero,
+      async waitForVidaaHomeLoadingIdle(isCurrent) {
+        while (isCurrent()) {
+          if (!isVidaaNavigationBusy()) return true;
+          await new Promise((resolve) => setTimeout(resolve, HERO_BUSY_POLL_MS));
+        }
+        return false;
+      },
+      // As the current Home: the enriched data goes into the cards' items (same id and identity).
+      mergeHeroIntoCatalogState(itemId, merged) {
+        const identity = buildHeroIdentity(merged);
+        const matches = (item) =>
+          String(item?.id || "") === itemId && buildHeroIdentity(item) === identity;
+        screen.rows.forEach((row) => {
+          if (row.kind !== "continue" && row.items.some(matches))
+            row.items = row.items.map((item) => (matches(item) ? { ...item, ...merged } : item));
+        });
+      },
+      applyHeroToDom() {
+        if (token === screen.token) screen.view?.setHero(screen.heroItem);
+      }
+    };
+  },
+
+  /** Current Home: the shown hero is enriched once it is committed, and gets its MDBList ratings. */
+  enrichHero() {
+    const host = this.heroHost;
+    if (shouldEnrichModernHero(this.heroItem))
+      void enrichCurrentHeroAsync.call(host, this.heroItem, host.heroFocusToken, {
+        deferCommit: true
+      });
+    void ensureHeroMdbListRatings.call(host);
   },
 
   focusedHeroSource() {
@@ -281,15 +349,19 @@ export const NewHomeScreen = {
    * the user settles (VIDAA 450 ms, 600 ms after moves under 130 ms apart), its artwork warmed
    * just before; both wait while VIDAA navigation is busy. The current hero is not rescheduled.
    */
-  scheduleHero() {
+  scheduleHero({ moved = false } = {}) {
     const hero = this.focusedHeroSource();
     const identity = buildHeroIdentity(hero);
     // A rows refresh keeps the pending hero of the same title: only moves reschedule it.
     if (identity && identity === this.heroPending) return;
+    const isHero = Boolean(identity) && identity === buildHeroIdentity(this.heroItem);
+    // A rows refresh also keeps the shown hero's running enrichment.
+    if (isHero && !moved) return;
     this.cancelHero();
     // Current Home holds the skeleton for Continue Watching until it resolves or the first key.
     if (this.heroLoading && !this.interacted) return;
-    if (!hero?.id || identity === buildHeroIdentity(this.heroItem)) return;
+    // Back on the hero (after a move or the sidebar): only an unfinished enrichment is redone.
+    if (!hero?.id || (isHero && !shouldEnrichModernHero(this.heroItem))) return;
     const token = this.heroToken;
     const now = Date.now();
     const previous = Number(this.lastHeroNavAt || 0);
@@ -324,14 +396,16 @@ export const NewHomeScreen = {
         whenCalm("heroTimer", (focused) => {
           this.heroPending = "";
           this.showHero(focused);
+          this.enrichHero();
         }),
       delay
     );
   },
 
-  /** Drops the pending hero (move, sidebar, leaving Home). */
+  /** Drops the pending hero and aborts its enrichment (move, sidebar, leaving Home). */
   cancelHero() {
     this.heroToken = (this.heroToken || 0) + 1;
+    this.heroHost?.heroEnrichmentAbortController?.abort?.();
     this.heroPending = "";
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroPreloadTimer);
@@ -528,7 +602,7 @@ export const NewHomeScreen = {
       return;
     }
     this.focus = next;
-    this.scheduleHero();
+    this.scheduleHero({ moved: true });
     this.render();
     if (direction === "right") this.requestNextPage();
   },
@@ -592,7 +666,7 @@ export const NewHomeScreen = {
     this.sidebarIndex = -1;
     this.sidebarOpenedByBack = false;
     this.render();
-    this.scheduleHero();
+    this.scheduleHero({ moved: true });
   },
 
   /** Home picked again in the sidebar: back to the first card, like the current Home. */

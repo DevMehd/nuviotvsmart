@@ -183,6 +183,14 @@ const originalNavigate = Router.navigate;
 const originalPosterOpen = PosterOptionsDialogController.prototype.open;
 const originalRemoveProgress = watchProgressRepository.removeProgress;
 Recommendations.refresh = async () => {};
+// Hero enrichment (lot C9) reads addon metadata with options (a signal); Continue Watching
+// enrichment calls the real repository without. Until the C9 case, hero metadata never answers.
+const { metaRepository } = await import("../js/data/repository/metaRepository.js");
+const originalMeta = metaRepository.getMetaFromAllAddons;
+let heroMeta = () => new Promise(() => {});
+metaRepository.getMetaFromAllAddons = function (type, id, base, options) {
+  return options ? heroMeta(type, id, options) : originalMeta.call(this, type, id, base);
+};
 try {
   // cleanup() before getCatalog resolves: the late result never reaches the renderer.
   {
@@ -633,7 +641,158 @@ try {
     assert.ok(!document.body.classList.contains("nuvio-modal-open"), "cleanup closes the menu");
     assert.equal(document.body.children.length, 0);
   }
+
+  // Hero enrichment (lot C9): the current Home's enrichCurrentHeroAsync and MDBList ratings run on
+  // a facade; Italian TMDB first, addon fallback, and a move, the sidebar or cleanup abort it.
+  {
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    const { TmdbSettingsStore, TmdbService, TmdbMetadataService, mdbListRepository } =
+      await import("../js/ui/screens/home/homeScreenContext.js");
+    const { MdbListSettingsStore } = await import("../js/data/local/mdbListSettingsStore.js");
+    const { buildModernHeroPresentation } =
+      await import("../js/ui/screens/home/homeScreenHelpers-11-build-hero-display-model.js");
+    const saved = {
+      tmdbSettings: TmdbSettingsStore.get,
+      ensureTmdbId: TmdbService.ensureTmdbId,
+      fetchEnrichment: TmdbMetadataService.fetchEnrichment,
+      mdbSettings: MdbListSettingsStore.get,
+      imdbRating: mdbListRepository.getImdbRatingForItem,
+      ratings: mdbListRepository.getRatingsForMeta
+    };
+    let mdbSettings = { enabled: true, apiKey: "fixture-mdb-key", showImdb: true };
+    TmdbSettingsStore.get = () => ({
+      enabled: true,
+      modernHomeEnabled: true,
+      language: "it-IT",
+      apiKey: "fixture-tmdb-key",
+      useBasicInfo: true,
+      useArtwork: true,
+      useDetails: true
+    });
+    MdbListSettingsStore.get = () => mdbSettings;
+    // One set of answers per title, released by the test.
+    const requests = new Map();
+    const request = (id) => {
+      if (!requests.has(id))
+        requests.set(id, { tmdb: deferred(), addon: deferred(), mdb: deferred() });
+      return requests.get(id);
+    };
+    TmdbService.ensureTmdbId = async (id) => Number(String(id).slice(2));
+    TmdbMetadataService.fetchEnrichment = (options) => {
+      request(`tt${options.tmdbId}`).language = options.language;
+      return request(`tt${options.tmdbId}`).tmdb.promise;
+    };
+    heroMeta = (type, id, options) => {
+      request(id).signal = options.signal;
+      return request(id).addon.promise;
+    };
+    mdbListRepository.getImdbRatingForItem = (id) => request(id).mdb.promise;
+    mdbListRepository.getRatingsForMeta = (hero, id) => request(id).mdb.promise;
+    catalogRepository.getCatalog = () => catalogResult();
+    catalogResult = async () => ({
+      status: "success",
+      data: {
+        items: Array.from({ length: 40 }, (_, i) => ({
+          id: `tt${100 + i}`,
+          type: "movie",
+          name: `English ${i}`,
+          logo: `https://img.invalid/en-${i}.png`,
+          background: `https://img.invalid/bg-${i}.jpg`
+        }))
+      }
+    });
+    const english = { status: "success", data: { description: "English addon overview" } };
+    try {
+      const { screen, calls } = mountScreen();
+      await flush();
+      const heroes = () => calls.setHero.filter(Boolean);
+      assert.equal(heroes().at(-1).id, "tt100");
+      const first = requests.get("tt100");
+      assert.ok(first?.signal, "the initial hero is enriched");
+      assert.equal(first.language, "it-IT");
+      const shown = heroes().length;
+      first.addon.resolve(english);
+      await flush();
+      assert.equal(heroes().length, shown, "English addon data waits for the Italian preview");
+      first.tmdb.resolve({
+        localizedTitle: "Titolo italiano",
+        description: "Descrizione italiana",
+        logo: "https://img.invalid/it-logo.png",
+        backdrop: "https://img.invalid/it-bg.jpg"
+      });
+      await flush();
+      assert.equal(heroes().at(-1).name, "Titolo italiano", "same title, enriched hero written");
+      assert.equal(heroes().at(-1).description, "Descrizione italiana");
+      assert.equal(screen.rows[screen.focus.row].items[0].name, "Titolo italiano", "card patched");
+      first.mdb.resolve(8.6);
+      await flush();
+      assert.equal(heroes().at(-1).imdbRating, 8.6);
+
+      // A move aborts the running enrichment: its late answers are never shown.
+      screen.onKeyDown({ keyCode: 39 });
+      await advance(now + 450);
+      assert.equal(heroes().at(-1).id, "tt101");
+      const second = requests.get("tt101");
+      assert.ok(second?.signal && !second.signal.aborted);
+      screen.onKeyDown({ keyCode: 39 });
+      assert.ok(second.signal.aborted, "a move aborts the enrichment");
+      second.tmdb.resolve({ localizedTitle: "Tardivo" });
+      second.addon.resolve(english);
+      second.mdb.resolve(7);
+      await flush();
+      assert.ok(!heroes().some((hero) => hero.name === "Tardivo"), "no late enrichment");
+
+      // TMDB failure: the addon data is the fallback, without the English logo (title shown).
+      await advance(now + 450);
+      assert.equal(heroes().at(-1).id, "tt102");
+      const third = requests.get("tt102");
+      third.tmdb.resolve(null);
+      third.addon.resolve(english);
+      third.mdb.resolve(null);
+      await flush();
+      const fallback = heroes().at(-1);
+      assert.equal(fallback.description, "English addon overview");
+      assert.equal(buildModernHeroPresentation(fallback).logo, "", "missing logo");
+      assert.equal(buildModernHeroPresentation(fallback).title, "English 2", "title instead");
+
+      // The sidebar aborts it; back in the rails the unfinished title is enriched again.
+      screen.onKeyDown({ keyCode: 39 });
+      await advance(now + 450);
+      const fourth = requests.get("tt103");
+      const opened = fourth.signal;
+      screen.openSidebar(false);
+      assert.ok(opened.aborted, "the sidebar aborts the enrichment");
+      screen.closeSidebar();
+      await advance(now + 450);
+      assert.ok(fourth.signal !== opened && !fourth.signal.aborted, "enriched again once calm");
+      screen.cleanup();
+      assert.ok(fourth.signal.aborted, "cleanup aborts the enrichment");
+
+      // MDBList hero ratings (showOnHero) reach the hero of the new Home.
+      requests.clear();
+      mdbSettings = { ...mdbSettings, showOnHero: true };
+      const mdb = mountScreen();
+      await flush();
+      request("tt100").mdb.resolve({ ratings: { imdb: 7.9, tomatoes: 91 } });
+      await flush();
+      const rated = mdb.calls.setHero.filter(Boolean).at(-1);
+      assert.equal(rated.id, "tt100");
+      assert.equal(rated.mdbListRatings?.tomatoes, 91, "MDBList ratings on the hero");
+      mdb.screen.cleanup();
+    } finally {
+      TmdbSettingsStore.get = saved.tmdbSettings;
+      TmdbService.ensureTmdbId = saved.ensureTmdbId;
+      TmdbMetadataService.fetchEnrichment = saved.fetchEnrichment;
+      MdbListSettingsStore.get = saved.mdbSettings;
+      mdbListRepository.getImdbRatingForItem = saved.imdbRating;
+      mdbListRepository.getRatingsForMeta = saved.ratings;
+      catalogResult = async () => catalogPage;
+    }
+  }
 } finally {
+  metaRepository.getMetaFromAllAddons = originalMeta;
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;
   watchProgressRepository.getRecent = originalRecent;
   addonRepository.getInstalledAddons = originalAddons;
