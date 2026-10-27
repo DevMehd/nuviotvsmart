@@ -1,5 +1,9 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-27 — 1.3.6
+
+- « Nouvel accueil (bêta) » : choisir le réglage ouvre bien la liste Désactivé / DOM / WebGL dans le navigateur (et sur les télés autres que VIDAA) ; en 1.3.5, le clic ne faisait rien.
+
 ## 2026-10-27 — 1.3.5
 
 - Le réglage « Nouvel accueil (bêta) » (Paramètres → Disposition, tout en bas) apparaît aussi dans le navigateur, pas seulement sur la télé.
