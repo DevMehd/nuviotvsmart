@@ -190,6 +190,10 @@ async function swRequest(path, destination = "script") {
 }
 assert.equal((await swRequest("/app.bundle.1234567890abcdef.js")).cached, true);
 assert.equal(fetches, 0);
+// VIDAA module chunks carry esbuild content hashes: cache first, no network per launch.
+assert.equal((await swRequest("/m/metaDetailsScreen-ABCD2345.js")).cached, true);
+assert.equal((await swRequest("/m/chunk-Z7QW3X4Y.js")).cached, true);
+assert.equal(fetches, 0);
 await swRequest("/vidaa.html", "document");
 assert.equal(fetches, 1);
 await swRequest("/api/addon-data", "empty");

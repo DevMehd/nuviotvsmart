@@ -178,6 +178,25 @@ console.log("=== Running Nuvio TV VIDAA Platform Tests ===");
   assert.ok(indexContent.includes("sw.js"), "index.html must register sw.js");
   assert.ok(indexContent.includes("manifest.json"), "index.html must link manifest.json");
 
+  // Lot E1: the TV entry loads Chromium 111 modules split by screen; "/" keeps the IIFE.
+  const vidaaEntry = await fs.readFile(path.join(vidaaDistDir, "vidaa.html"), "utf8");
+  const worker = await fs.readFile(path.join(vidaaDistDir, "sw.js"), "utf8");
+  const entryModule = vidaaEntry.match(/<script type="module" src="(m\/app-[A-Z0-9]{8}\.js)"/)?.[1];
+  assert.ok(entryModule, "vidaa.html must load the app as a module from m/");
+  assert.match(vidaaEntry, /<script type="module" src="core-js\.vidaa\.[a-f0-9]{16}\.js"/);
+  assert.match(vidaaEntry, /<script nomodule defer src="app\.bundle\.[a-f0-9]{16}\.js"/);
+  assert.match(indexContent, /<script\s+defer\s+src="app\.bundle\.[a-f0-9]{16}\.js"/);
+  assert.ok(!indexContent.includes("m/app-"), "index.html keeps the IIFE bundle");
+  const precache = worker.match(/var ASSETS = \[([\s\S]*?)\];/)[1];
+  const moduleFiles = await fs.readdir(path.join(vidaaDistDir, "m"));
+  assert.ok(moduleFiles.length > 25, "router screens are split into chunks");
+  for (const file of moduleFiles)
+    assert.ok(precache.includes(`"./m/${file}"`), `sw.js must precache m/${file}`);
+  assert.ok(!precache.includes("app.bundle"), "the TV precaches modules, not the IIFE twice");
+  const buildId = vidaaEntry.match(/name="nuvio-build" content="([a-f0-9]{16})"/)[1];
+  assert.ok(worker.includes(`"nuvio-vidaa-${buildId}"`), "cache name follows the shell hash");
+  assert.ok(precache.includes(`"./core-js.vidaa.${buildId}.js"`));
+
   console.log(
     `✓ Packaging verified: nuvio-vidaa.zip is ${(zipStat.size / (1024 * 1024)).toFixed(2)} MB`
   );

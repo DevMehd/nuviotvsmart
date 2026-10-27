@@ -71,9 +71,13 @@ self.addEventListener("fetch", function (e) {
   )
     return;
 
-  // Build-hashed assets are immutable. Exact URL matching also prevents an
-  // older worker serving the wrong build while a new document is starting.
-  if (/\.[a-f0-9]{16}\.(js|css)$/.test(requestUrl.pathname) && !requestUrl.search) {
+  // Build-hashed assets (and esbuild-hashed VIDAA module chunks in /m/) are
+  // immutable. Exact URL matching also prevents an older worker serving the
+  // wrong build while a new document is starting.
+  if (
+    /\.[a-f0-9]{16}\.(js|css)$|\/m\/[^/]+-[A-Z0-9]{8}\.js$/.test(requestUrl.pathname) &&
+    !requestUrl.search
+  ) {
     e.respondWith(
       caches.open(CACHE_NAME).then(function (cache) {
         return cache.match(req).then(function (cached) {

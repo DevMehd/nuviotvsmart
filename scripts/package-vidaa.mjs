@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
 import { readAppMetadata } from "./appMetadata.mjs";
+import { buildVidaaModules, VIDAA_CORE_JS } from "./build-vidaa-modules.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -20,6 +21,16 @@ async function assertDistExists() {
   } catch {
     throw new Error(`Build output not found at ${distDir}. Run "npm run build" first.`);
   }
+}
+
+function replaceOnce(source, pattern, replacement) {
+  const matches =
+    typeof pattern === "string"
+      ? source.split(pattern).length - 1
+      : (source.match(new RegExp(pattern, "g")) || []).length;
+  if (matches !== 1)
+    throw new Error(`VIDAA entry rewrite expected one match for ${pattern}, found ${matches}.`);
+  return source.replace(pattern, replacement);
 }
 
 async function addDirectoryToZip(zip, currentDir, rootPath = currentDir) {
@@ -57,6 +68,9 @@ async function packageVidaa() {
     await cp(srcPath, destPath, { recursive: true });
   }
 
+  // vidaa.html loads Chromium 111 modules split by screen (lot E1); "/" keeps the IIFE.
+  const modules = await buildVidaaModules(vidaaDistDir);
+
   // Give each VIDAA app shell its own asset URLs and offline cache. Keep the
   // shared dist unchanged for the Tizen and webOS packagers.
   const workerSource = await readFile(path.join(rootDir, "sw.js"), "utf8");
@@ -67,7 +81,9 @@ async function packageVidaa() {
     "css/bundle.css",
     "nuvio.env.js",
     "boot-guard.js",
-    "assets/runtime/legacy-features.js"
+    "assets/runtime/legacy-features.js",
+    VIDAA_CORE_JS,
+    ...modules.files
   ];
   const shellHash = createHash("sha256").update(workerSource);
   for (const file of shellFiles) {
@@ -87,6 +103,7 @@ async function packageVidaa() {
       return `${prefix}${versionedAsset}${suffix}`;
     }
   );
+  const coreJsAlias = VIDAA_CORE_JS.replace(/\.js$/, `.${buildId}.js`);
   let versionedWorker = workerSource.replace(
     /^var CACHE_NAME = "[^"]+";/,
     `var CACHE_NAME = "nuvio-vidaa-${buildId}";`
@@ -97,12 +114,34 @@ async function packageVidaa() {
       JSON.stringify(`./${alias}`)
     );
   }
-  const vidaaEntry = versionedIndex.replace(
+  // The TV precaches its module graph instead of the IIFE kept for "/" and nomodule.
+  const iifeAssets = ["app.bundle.js", "core-js.bundle.js"].map((asset) =>
+    JSON.stringify(`./${assetAliases.get(asset)}`)
+  );
+  const moduleAssets = [coreJsAlias, ...modules.files].map((file) => JSON.stringify(`./${file}`));
+  versionedWorker = replaceOnce(versionedWorker, `  ${iifeAssets[0]},\n`, "");
+  versionedWorker = replaceOnce(
+    versionedWorker,
+    `  ${iifeAssets[1]},\n`,
+    `  ${moduleAssets.join(",\n  ")},\n`
+  );
+  let vidaaEntry = versionedIndex.replace(
     "<head>",
     `<head>\n    <meta name="nuvio-build" content="${buildId}" />\n    <script>window.__NUVIO_PLATFORM__ = "vidaa";window.__NUVIO_IMAGE_OPTIMIZATION__ = ${process.env.VERCEL === "1"};window.__NUVIO_ADDON_DATA_SERVICE__ = ${process.env.VERCEL === "1"};</script>`
   );
+  vidaaEntry = replaceOnce(
+    vidaaEntry,
+    /<script\s+defer\s+src="(core-js\.bundle\.[a-f0-9]{16}\.js)"([^>]*)><\/script>/,
+    `<script type="module" src="${coreJsAlias}"$2></script>\n    <script nomodule defer src="$1"$2></script>`
+  );
+  vidaaEntry = replaceOnce(
+    vidaaEntry,
+    /<script\s+defer\s+src="(app\.bundle\.[a-f0-9]{16}\.js)"([^>]*)><\/script>/,
+    `<script type="module" src="${modules.entry}"$2></script>\n    <script nomodule defer src="$1"$2></script>`
+  );
   await Promise.all([
     writeFile(indexPath, versionedIndex),
+    cp(path.join(vidaaDistDir, VIDAA_CORE_JS), path.join(vidaaDistDir, coreJsAlias)),
     writeFile(path.join(vidaaDistDir, "vidaa.html"), vidaaEntry),
     writeFile(path.join(vidaaDistDir, "sw.js"), versionedWorker),
     cp(path.join(rootDir, "manifest.json"), path.join(vidaaDistDir, "manifest.json")),
