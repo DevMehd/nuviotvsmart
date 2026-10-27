@@ -1069,6 +1069,63 @@ try {
       catalogRepository.getCatalog = () => catalogResult();
     }
   }
+
+  // C11 review: a modern page landing after key 76 goes into the data rows, never into the
+  // capped classic copy (which would lose its cap and its See All card).
+  {
+    const { LayoutPreferences } = await import("../js/data/local/layoutPreferences.js");
+    const { HOME_MAX_ITEMS_PER_ROW_CONSTRAINED } =
+      await import("../js/ui/screens/home/homeConstants.js");
+    now = 0;
+    timers.clear();
+    resetVidaaNavigationActivity();
+    const page = (from, count) =>
+      Array.from({ length: count }, (_, i) => ({ id: `q${from + i}`, type: "movie" }));
+    const addons = addonRepository.getInstalledAddons;
+    addonRepository.getInstalledAddons = async () => [
+      {
+        baseUrl: "https://addon.example",
+        id: "addon",
+        name: "Addon",
+        catalogs: [{ id: "top", apiType: "movie", name: "Top", extra: [{ name: "skip" }] }]
+      }
+    ];
+    let nextPage = null;
+    catalogRepository.getCatalog = (params) => {
+      if (!params.skip)
+        return Promise.resolve({
+          status: "success",
+          data: { items: page(0, 20), hasMore: true, supportsSkip: true }
+        });
+      nextPage = deferred();
+      return nextPage.promise;
+    };
+    try {
+      const { screen } = mountScreen();
+      await flush();
+      const key = screen.rows[screen.focus.row].key;
+      for (let step = 0; step < 20 && !nextPage; step += 1) {
+        screen.onKeyDown({ keyCode: 39 });
+        await advance(now + 1000);
+      }
+      assert.ok(nextPage, "a modern page is in flight");
+      screen.onKeyDown({ keyCode: 76 });
+      screen.onKeyDown({ keyCode: 76 });
+      assert.equal(screen.layoutMode, "classic");
+      nextPage.resolve({ status: "success", data: { items: page(20, 10), hasMore: true } });
+      await flush();
+      const classic = screen.rows.find((row) => row.key === key);
+      assert.equal(classic.items.length, HOME_MAX_ITEMS_PER_ROW_CONSTRAINED + 1, "cap kept");
+      assert.equal(classic.items.at(-1).seeAll, true, "See All kept");
+      const model = screen.modelRows.find((row) => row.key === key);
+      assert.equal(model.items.length, 30, "the page reached the data row");
+      screen.cleanup();
+    } finally {
+      LayoutPreferences.set({ homeLayout: "modern" });
+      addonRepository.getInstalledAddons = addons;
+      catalogRepository.getCatalog = () => catalogResult();
+    }
+  }
 } finally {
   metaRepository.getMetaFromAllAddons = originalMeta;
   watchProgressRepository.getAllForContinueWatching = originalAllProgress;

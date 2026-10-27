@@ -931,7 +931,8 @@ export const NewHomeScreen = {
       .then((page) => {
         if (!page) return;
         const { added, ...state } = page;
-        const live = this.rows.find((candidate) => candidate.key === row.key);
+        // The data row: in modern it is the drawn row; after key 76 the layout copy stays capped.
+        const live = this.modelRows.find((candidate) => candidate.key === row.key);
         if (!live) return;
         Object.assign(live, state);
         if (added) this.render();
