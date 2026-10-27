@@ -1601,6 +1601,14 @@ try {
     assert.equal(focusedCard().length, 0, "no focus ring under the Continue Watching menu");
     screen.cwDialog._dismiss();
     assert.equal(focusedCard().length, 1, "Back on the menu brings the ring back");
+    // Start from beginning: the ring is back at once (a cloud start may stay on Home).
+    screen.openContinueWatchingMenu(cw);
+    assert.equal(focusedCard().length, 0);
+    const navigate = Router.navigate;
+    Router.navigate = () => {};
+    await screen.activateContinueWatchingOption("startOver", cw);
+    Router.navigate = navigate;
+    assert.equal(focusedCard().length, 1, "Start from beginning brings the ring back");
     screen.cleanup();
     await advance(now + 220);
     PosterOptionsDialogController.prototype.open = originalPosterOpen;
@@ -1626,6 +1634,13 @@ try {
       assert.deepEqual(calls.setHero.filter(Boolean), [], `${mode}: no hero written`);
       assert.deepEqual(enriched, [], `${mode}: no hero enrichment`);
       assert.equal(screen.rotateTimer || null, null, `${mode}: no hero rotation`);
+      if (mode === "grid") {
+        // Key 76 into classic: still no hero pick, write or enrichment.
+        screen.onKeyDown({ keyCode: 76 });
+        assert.equal(screen.layoutMode, "classic");
+        assert.deepEqual(calls.setHero.filter(Boolean), [], "key 76: no hero written");
+        assert.deepEqual(enriched, [], "key 76: no hero enrichment");
+      }
       screen.cleanup();
     } finally {
       setTvPerformanceMode("auto");

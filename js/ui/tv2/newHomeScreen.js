@@ -861,8 +861,10 @@ export const NewHomeScreen = {
       ? this.initialHero(this.modelRows, this.modelRows.map((row) => row.entry).filter(Boolean))
       : this.focusedHeroSource();
     this.cancelHero();
-    this.showHero(hero);
-    this.enrichHero();
+    if (!this.heroHidden()) {
+      this.showHero(hero);
+      this.enrichHero();
+    }
     this.scheduleHero();
   },
 
@@ -1066,7 +1068,8 @@ export const NewHomeScreen = {
     if (action === "startOver") {
       this.cwDialog = null;
       dialog.destroy();
-      this.holdFocusLocked = false;
+      // A cloud start resolves its stream first and may stay on Home: the ring comes back now.
+      this.lockHoldFocus(false);
       this.resumeContinueWatching(item, { startOver: true });
       return;
     }
