@@ -56,6 +56,8 @@ q3.request(cut, "cut.jpg", { fallbacks: ["cut-fallback.jpg"] });
 finish(done);
 q3.clear();
 assert.equal(cut.onerror, null, "the interrupted load lost its handlers");
+assert.equal(cut.getAttribute("src"), undefined, "the interrupted load is cancelled while hidden");
+assert.equal(done.getAttribute("src"), "done.jpg", "a loaded image stays");
 done.src = "";
 done.src = "done.jpg";
 q3.request(done, "done.jpg");

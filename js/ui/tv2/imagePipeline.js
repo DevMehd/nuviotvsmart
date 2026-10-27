@@ -95,10 +95,12 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
     },
     clear() {
       pending.clear();
-      // An interrupted load lost its handlers (fallbacks): a kept view's next request reloads it.
+      // In-flight loads are cancelled (a hidden kept view loads nothing); its next request
+      // reloads them with their fallbacks.
       loading.forEach((node) => {
         requested.delete(node);
         release(node);
+        node.removeAttribute?.("src");
       });
       if (timer) clearTimeout(timer);
       timer = null;
