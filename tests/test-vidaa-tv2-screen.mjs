@@ -780,6 +780,16 @@ try {
       const rated = mdb.calls.setHero.filter(Boolean).at(-1);
       assert.equal(rated.id, "tt100");
       assert.equal(rated.mdbListRatings?.tomatoes, 91, "MDBList ratings on the hero");
+      // A rows refresh that puts focus back on the hero drops the other title's pending hero,
+      // so moving to that title again still makes it the hero.
+      const onHero = mdb.screen.focus;
+      mdb.screen.onKeyDown({ keyCode: 39 });
+      mdb.screen.focus = onHero;
+      mdb.screen.applyRows(mdb.screen.rows);
+      await advance(now + 450);
+      mdb.screen.onKeyDown({ keyCode: 39 });
+      await advance(now + 1000);
+      assert.equal(mdb.calls.setHero.filter(Boolean).at(-1).id, "tt101", "pending dropped");
       mdb.screen.cleanup();
     } finally {
       TmdbSettingsStore.get = saved.tmdbSettings;

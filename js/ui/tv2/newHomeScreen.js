@@ -355,8 +355,12 @@ export const NewHomeScreen = {
     // A rows refresh keeps the pending hero of the same title: only moves reschedule it.
     if (identity && identity === this.heroPending) return;
     const isHero = Boolean(identity) && identity === buildHeroIdentity(this.heroItem);
-    // A rows refresh also keeps the shown hero's running enrichment.
-    if (isHero && !moved) return;
+    // A rows refresh also keeps the shown hero's running enrichment; another title's pending
+    // hero is dropped (its timer no longer matches the focus), so a later move reschedules it.
+    if (isHero && !moved) {
+      this.heroPending = "";
+      return;
+    }
     this.cancelHero();
     // Current Home holds the skeleton for Continue Watching until it resolves or the first key.
     if (this.heroLoading && !this.interacted) return;
