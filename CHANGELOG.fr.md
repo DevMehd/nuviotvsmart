@@ -1,5 +1,11 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-29 — 1.3.9
+
+- Lecteur sur la télé VIDAA : les pistes audio portent leur vrai nom (langue, format, canaux, ou titre de la piste) au lieu de « Audio 1, Audio 2… ». Cela marche aussi quand la télé affiche ses propres sous-titres et pour les fichiers MP4.
+- La lecture démarre sans attendre que ces noms soient lus ; ils apparaissent dès qu’ils sont connus.
+- Si le serveur de la source ne permet pas de lire l’en-tête du fichier, « Audio N » reste affiché.
+
 ## 2026-10-29 — 1.3.8
 
 - Démarrage plus rapide sur la télé VIDAA : au lancement, l’application ne charge plus que l’accueil et la sélection du profil. Les autres écrans (fiche, lecteur, paramètres, recherche…) sont chargés la première fois que tu les ouvres, puis restent disponibles hors ligne. Si une mise à jour arrive pendant l’utilisation, l’application se recharge une fois d’elle-même au lieu de rester bloquée.
