@@ -1,11 +1,17 @@
-import { renderLegacySidebar } from "../../../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { loadScript } from "../../../../runtime/loadStreamingLibs.js";
 import { homeLayout, rowCardSize, rowLabelHeight, slotFor } from "../../railEngine.js";
 import { t } from "../../../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import { focusedIndex } from "../../focusModel.js";
 import { createImageQueue, glImageUrl } from "../../imagePipeline.js";
 import { cardImage, fillCard, navRowOf, setNavPosition } from "../../renderer.js";
-import { getWebglVariant, markWebglFailed, setWebglInfoSource } from "../../newHomeSetting.js";
+import {
+  getWebglVariant,
+  markWebglFailed,
+  sessionNewHomeMode,
+  setWebglInfoSource
+} from "../../newHomeSetting.js";
+import { createHomeSidebar } from "../../homeSidebar.js";
+import { Platform as AppPlatform } from "../../../../platform/index.js";
 import { buildModernHeroPresentation } from "../../../screens/home/homeScreenHelpers-11-build-hero-display-model.js";
 import { ATLAS_WEIGHTS, atlasUrls, glText } from "./sdfAtlas.js";
 import { createHeroCopy } from "./heroCopy.js";
@@ -19,7 +25,7 @@ import {
 
 // New TV Home (nuv-091, lot B2), 100 % WebGL prototype on Lightning: hero, rails, text (SDF
 // atlases, canvas text for characters outside them) and focus are drawn in one canvas. Same interface as createDomHomeRenderer. The
-// sidebar stays the shared DOM component; a hidden DOM proxy of the focused card keeps
+// sidebar (legacy rail or modern pill) stays the shared DOM one (homeSidebar.js); a hidden DOM proxy of the focused card keeps
 // openDetail and the diagnostic driver selectors working. Any failure reports to `onFailure`
 // and the screen swaps to the DOM renderer for the rest of the run.
 
@@ -29,7 +35,6 @@ let engineCount = 0;
 const APP_WIDTH = 1920;
 const APP_HEIGHT = 1080;
 // Same layout as css/tv2-home.css.
-const RAIL_LEFT = 220;
 const MAIN_TOP = 560;
 // Focus ring of the DOM card (tv2-home.css .tv2-card.focused box-shadow): 3 px, --focus-color.
 const FOCUS_RING = 3;
@@ -41,6 +46,13 @@ const TRAILER_FADE = { duration: 480, easing: "ease" };
 // Fixed GPU budget: the image windows of renderer.js need about 45 MB (poster ~0.7 MB, hero
 // 3.7 MB). Still above it after Lightning's own cleanup means the TV cannot hold the scene.
 export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
+// Idle loop (lot W6): once the scene has rested IDLE_THROTTLE_MS, the render loop wakes about
+// IDLE_FPS times a second instead of 60; any change puts it back to the display rate first.
+export const IDLE_FPS = 10;
+const IDLE_THROTTLE_MS = 1000;
+// Rows around the focus whose artwork stays attached off screen (lot W6 warm ring), so a short
+// move back finds its textures; rows farther away let theirs go.
+const WARM_ROWS = { before: 2, after: 3 };
 // Memory outside the image textures: the two SDF font atlases (1024×276 px each, about 1.2 MB as
 // RGBA) and the hero copy's few canvas texts. Lightning assumes 26 MB by default, which would
 // leave a 40-card window too little room before criticalCleanup.
@@ -232,11 +244,12 @@ export function glInfo() {
     peakTextureBytes: glStats.peakTextureBytes,
     failed: { ...glStats.failed },
     proxiedUrls: glStats.proxied.size,
+    // Render loop rate now: 0 (display rate), IDLE_FPS at rest, 4 while Home is away (lot W6).
+    targetFPS: engine.renderer.targetFPS,
     heroBand: null
   };
   if (!gl) return info;
-  const debug = gl.getExtension("WEBGL_debug_renderer_info");
-  info.renderer = String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  info.renderer = glRendererName(gl);
   const high = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   info.highFloat = high ? { precision: high.precision, rangeMax: high.rangeMax } : null;
   info.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
@@ -302,8 +315,40 @@ export function createEngineKeeper(create) {
   return keeper;
 }
 
+/** GL renderer string (unmasked when the TV allows it), as the Diagnostic shows it. */
+function glRendererName(gl) {
+  const debug = gl.getExtension("WEBGL_debug_renderer_info");
+  return String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+}
+
+/**
+ * Lot W6: a software WebGL (SwiftShader, llvmpipe) draws on the CPU, slower than the DOM Home, so
+ * VIDAA refuses it as "no-webgl:<renderer>" (kept in homeEngineFallback). Other platforms accept it
+ * (desktop checks and the SwiftShader fixture run there). Returns the refusal reason, or "".
+ */
+export function softwareWebglRefusal(rendererName, vidaa) {
+  return vidaa && /swiftshader|llvmpipe|softpipe/i.test(rendererName)
+    ? `no-webgl:${rendererName}`
+    : "";
+}
+
+let libLoad = null;
+/** tv2-lightning.js once per run; preloaded during startup in WebGL mode (lot W6). */
+export function loadLightning() {
+  if (globalThis.NuvioLightning) return Promise.resolve();
+  libLoad ||= loadScript(LIB_URL).catch(() => {
+    libLoad = null;
+  });
+  return libLoad;
+}
+
+/** Startup (app.js): fetch and parse the WebGL library while the app boots, WebGL mode only. */
+export function preloadWebglHome() {
+  if (sessionNewHomeMode() === "webgl") void loadLightning();
+}
+
 async function createEngine(report) {
-  if (!globalThis.NuvioLightning) await loadScript(LIB_URL).catch(() => {});
+  await loadLightning();
   const L = globalThis.NuvioLightning;
   if (!L) throw new Error("lightning-missing");
   const variant = getWebglVariant();
@@ -361,6 +406,15 @@ async function createEngine(report) {
     );
   } catch (_) {
     throw new Error("no-webgl");
+  }
+  const gl = renderer.canvas.getContext("webgl");
+  const refusal = gl ? softwareWebglRefusal(glRendererName(gl), AppPlatform.isVidaa()) : "";
+  if (refusal) {
+    try {
+      renderer.close();
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    } catch (_) {}
+    throw new Error(refusal);
   }
   // The focus ring's rounded border (not in Lightning's default shader set).
   renderer.stage.shManager.registerShaderType("RoundedWithBorder", L.RoundedWithBorder);
@@ -776,13 +830,14 @@ export function createLightningHomeRenderer(
   container,
   { geometry, imageQueue, layout = {}, onFailure }
 ) {
+  const sidebar = createHomeSidebar(container, layout);
   container.innerHTML = `
     <div class="tv2-home tv2-home-webgl">
-      ${renderLegacySidebar({ selectedRoute: "home", layout })}
+      ${sidebar.markup()}
       <div class="tv2-gl-trailer home-hero-trailer-layer"></div>
       <div class="tv2-gl-host"></div>
       <img class="tv2-gl-gif" alt="" decoding="async" />
-      <div class="home-main tv2-gl-proxy"><article class="home-poster-card tv2-card focusable" data-action="openDetail"><div class="tv2-card-title"></div></article></div>
+      <div class="home-main tv2-gl-proxy"><article class="home-poster-card tv2-card focusable" data-action="openDetail" data-engine="webgl"><div class="tv2-card-title"></div></article></div>
     </div>`;
   const root = container.querySelector(".tv2-home");
   const host = container.querySelector(".tv2-gl-host");
@@ -816,9 +871,8 @@ export function createLightningHomeRenderer(
   const gif = { url: "", id: "", key: "", timer: null };
   let stopTrailer = null;
   let trailerShown = false;
+  let idleTimer = null;
   const motion = homeMotion(root);
-  // The legacy sidebar is drawn until lot W6: content starts after its rail, even with the pill.
-  const geo = { ...geometry, contentStart: RAIL_LEFT, viewport: APP_WIDTH - RAIL_LEFT };
 
   function fail(reason) {
     if (failed) return;
@@ -955,7 +1009,9 @@ export function createLightningHomeRenderer(
       tween,
       settle,
       colors,
-      fade: motion.copy
+      fade: motion.copy,
+      // With the rails: after the legacy rail (220) or at the pill's inset (104).
+      x: geometry.contentStart
     });
     return {
       renderer,
@@ -1000,8 +1056,9 @@ export function createLightningHomeRenderer(
     // Bumped by every row emit: continue cards refill then, their release labels depend on time.
     rowsVersion += 1;
     if (!scene) return;
+    wake();
     const kept = new Map(
-      rows.map((row) => [row.key, { ...rowCardSize(row, geo), kind: row.kind }])
+      rows.map((row) => [row.key, { ...rowCardSize(row, geometry), kind: row.kind }])
     );
     for (const [key, view] of views) {
       const size = kept.get(key);
@@ -1028,17 +1085,17 @@ export function createLightningHomeRenderer(
           node: rowNode,
           title: scene.text({
             parent: rowNode,
-            x: geo.contentStart,
+            x: geometry.contentStart,
             y: 10,
             fontSize: 32,
-            maxWidth: geo.viewport
+            maxWidth: geometry.viewport
           }),
           status: scene.text({
             parent: rowNode,
-            x: geo.contentStart,
+            x: geometry.contentStart,
             y: 70,
             fontSize: 24,
-            maxWidth: geo.viewport,
+            maxWidth: geometry.viewport,
             color: scene.colors.tertiary
           }),
           track: scene.group({ parent: rowNode }),
@@ -1053,7 +1110,7 @@ export function createLightningHomeRenderer(
       view.title = scene.retext(view.title, row.title || "");
       // A loading row shows its skeleton cards, or the loading text without a count (D1: no error text).
       const skeletons = row.items.length || row.status !== "loading" ? 0 : row.loadingCount || 0;
-      setRowSkeletons(scene, view, skeletons, geo.gap, shimmers(motion));
+      setRowSkeletons(scene, view, skeletons, geometry.gap, shimmers(motion));
       view.status.text =
         row.items.length || skeletons || row.status !== "loading"
           ? ""
@@ -1078,12 +1135,25 @@ export function createLightningHomeRenderer(
     }
     proxy.className = `${row?.kind === "continue" ? "home-continue-card" : "home-poster-card"} tv2-card focusable${proxyFocused ? " focused" : ""}`;
     sidebarFocused?.classList.remove("focused");
-    sidebarFocused = sidebarIndex >= 0 && !hideFocus ? sidebarItems()[sidebarIndex] || null : null;
+    sidebarFocused = sidebarIndex >= 0 && !hideFocus ? sidebar.items()[sidebarIndex] || null : null;
     sidebarFocused?.classList.add("focused");
-    root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
-    const sidebar = container.querySelector(".home-sidebar");
-    sidebar?.classList.toggle("expanded", sidebarIndex >= 0);
-    sidebar?.classList.toggle("content-expanded", sidebarIndex >= 0);
+    sidebar.setOpen(sidebarIndex >= 0);
+  }
+
+  /** Before any scene change: the loop back to the display rate, the idle throttle cancelled. */
+  function wake() {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+    if (engine && !closed) engine.renderer.targetFPS = 0;
+  }
+
+  /** Lightning `idle` (a frame without scene changes): throttle once the scene stays at rest. */
+  function onIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (engine && !closed) engine.renderer.targetFPS = IDLE_FPS;
+    }, IDLE_THROTTLE_MS);
   }
 
   /**
@@ -1108,8 +1178,9 @@ export function createLightningHomeRenderer(
     Object.assign(last, { rows, focus, options });
     updateProxy(rows, focus, sidebarIndex, hideFocus);
     if (!scene) return;
+    wake();
     samplePeak();
-    const placed = homeLayout(rows, focus, geo);
+    const placed = homeLayout(rows, focus, geometry);
     const focusIndex = focusedIndex(focus, rows);
     const focusShown = sidebarIndex < 0 && !hideFocus;
     const viewHeight = APP_HEIGHT - MAIN_TOP;
@@ -1125,8 +1196,12 @@ export function createLightningHomeRenderer(
       const view = views.get(row.key);
       if (!view) return;
       view.node.y = top;
+      const warm =
+        rowIndex >= focus.row - WARM_ROWS.before && rowIndex <= focus.row + WARM_ROWS.after;
       if (rowIndex < firstRow || rowIndex > lastRow) {
-        // Off screen: its artwork goes once, as outside the DOM renderer's loading window.
+        // Off screen: outside the warm ring its artwork goes once, as outside the DOM renderer's
+        // loading window; inside it, the textures stay for a move back.
+        if (warm) return;
         view.slots.forEach((card) => {
           if (card.landscape) imageQueue.request(card.landscape.logo, "");
           if (!card.wanted) return;
@@ -1135,7 +1210,7 @@ export function createLightningHomeRenderer(
         });
         return;
       }
-      view.track.y = height - size.height - rowLabelHeight(row, geo) - geo.rowGap;
+      view.track.y = height - size.height - rowLabelHeight(row, geometry) - geometry.rowGap;
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
       view.slots.forEach((card) => (card.node.alpha = 0));
       for (let i = win.start; i < win.end; i += 1) {
@@ -1163,7 +1238,8 @@ export function createLightningHomeRenderer(
         }
         card.node.alpha = 1;
         const focused = rowIndex === focus.row && i === focusIndex;
-        const url = loadImages ? card.source.url : "";
+        // Outside the loading window, a warm row keeps what it has but loads nothing new.
+        const url = loadImages ? card.source.url : warm && !changed ? card.wanted : "";
         if (card.wanted !== url || focused) {
           card.wanted = url;
           imageQueue.request(card.image, url, {
@@ -1175,7 +1251,8 @@ export function createLightningHomeRenderer(
         if (!card.source.url) card.showTile(true);
         // A refill keeping a failed image's URL keeps its tile; a new request reports its own state.
         else if (changed && card.wanted !== card.source.url) card.showTile(false);
-        if (card.landscape) logos.push([card.landscape, loadImages ? card.landscape.url : ""]);
+        if (card.landscape && (loadImages || !warm))
+          logos.push([card.landscape, loadImages ? card.landscape.url : ""]);
         const scaled = Boolean(motion.scale) && focusShown && focused;
         placeCard(card, i * pitch, scaled);
         if (focused) ringCard = card;
@@ -1184,7 +1261,7 @@ export function createLightningHomeRenderer(
           focusRect = {
             id: `${row.key}:${i}`,
             collection: row.kind === "collection",
-            x: geo.contentStart + win.offset + i * pitch - size.width * grow,
+            x: geometry.contentStart + win.offset + i * pitch - size.width * grow,
             y: MAIN_TOP + placed.offsetY + top + view.track.y - size.height * grow,
             w: size.width * (1 + 2 * grow),
             h: size.height * (1 + 2 * grow)
@@ -1192,7 +1269,7 @@ export function createLightningHomeRenderer(
         }
       }
       // A new row is placed where it belongs, never slid in from the left edge.
-      tween(view.track, "x", geo.contentStart + win.offset, view.placed ? motion.rail : null);
+      tween(view.track, "x", geometry.contentStart + win.offset, view.placed ? motion.rail : null);
       view.placed = true;
     });
     tween(scene.rowsLayer, "y", placed.offsetY, scene.placed ? motion.rail : null);
@@ -1259,6 +1336,7 @@ export function createLightningHomeRenderer(
     last.hero = item;
     last.heroLoading = loading;
     if (!scene) return;
+    wake();
     const display = item ? buildModernHeroPresentation(item) : null;
     if (!item) setSkeleton(loading);
     scene.heroCopy.set(display);
@@ -1386,16 +1464,11 @@ export function createLightningHomeRenderer(
   }
 
   function setProfile(profile) {
-    const sidebar = container.querySelector(".home-sidebar");
-    if (!sidebar) return;
-    sidebar.outerHTML = renderLegacySidebar({ selectedRoute: "home", layout, profile });
+    sidebar.setProfile(profile);
+    // The sidebar nodes were replaced: focus the new one.
     sidebarFocused = null;
     if (last.focus)
       updateProxy(last.rows, last.focus, last.options.sidebarIndex ?? -1, last.options.hideFocus);
-  }
-
-  function sidebarItems() {
-    return Array.from(container.querySelectorAll(".home-sidebar .focusable"));
   }
 
   keeper
@@ -1404,6 +1477,9 @@ export function createLightningHomeRenderer(
       if (closed || failed) return keeper.release(fail);
       engine = ready;
       engine.renderer.targetFPS = 0;
+      engine.renderer.on("idle", onIdle);
+      // Something changed on its own (an image loaded, a fade started): full rate again.
+      engine.renderer.on("active", wake);
       host.appendChild(engine.canvas);
       root.classList.toggle("tv2-gl-trailer-above", engine.variant === "trailer-above");
       scene = buildScene(engine);
@@ -1424,7 +1500,8 @@ export function createLightningHomeRenderer(
     stopHeroTrailer,
     setFocusGif,
     setProfile,
-    sidebarItems,
+    setSidebarPill: sidebar.setPill,
+    sidebarItems: sidebar.items,
     focusedNode: () => sidebarFocused || (proxyFocused ? proxy : null),
     suspend,
     destroy() {
@@ -1434,9 +1511,10 @@ export function createLightningHomeRenderer(
       heroQueue.clear();
       if (scene) {
         views.forEach((view) => setRowSkeletons(scene, view, 0));
+        // Leaving Home (often for the player). No full cleanup (lot W6): the released textures
+        // stay cached until Lightning's own threshold cleanup (oldest first), so a return from
+        // the player finds the focused row's artwork without reloading it.
         scene.root.destroy();
-        // Leaving Home (often for the player): free every texture the scene held.
-        engine.renderer.stage.cleanup(true);
         // maxRetryCount 0: a failed texture stays cached as failed for the kept engine's life.
         // Forget failures on leaving Home, so a network blip is retried on the next visit.
         const { txManager } = engine.renderer.stage;
@@ -1446,7 +1524,12 @@ export function createLightningHomeRenderer(
       scene = null;
       // The kept engine's idle loop would wake 60 times a second while away (e.g. in the player);
       // 4 fps keeps the return to Home under 250 ms. stopLoop() cannot be undone safely.
-      if (engine) engine.renderer.targetFPS = 4;
+      clearTimeout(idleTimer);
+      if (engine) {
+        engine.renderer.off("idle", onIdle);
+        engine.renderer.off("active", wake);
+        engine.renderer.targetFPS = 4;
+      }
       engine?.canvas.remove();
       keeper.release(fail);
       views.clear();

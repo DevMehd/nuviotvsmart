@@ -66,8 +66,9 @@
             WebPlatformLegacy,
             RoundedWithBorder
           };
-          const { createLightningHomeRenderer, glInfo } =
+          const { createLightningHomeRenderer, glInfo, IDLE_FPS } =
             await import("/js/ui/tv2/render/lightning/lightningHomeRenderer.js");
+          const { createDomHomeRenderer } = await import("/js/ui/tv2/renderer.js");
           const { createImageQueue } = await import("/js/ui/tv2/imagePipeline.js");
           const { cardGeometry, homeLayout } = await import("/js/ui/tv2/railEngine.js");
           await document.fonts?.ready;
@@ -111,6 +112,29 @@
           };
           const geometry = cardGeometry({ homeLayout: "modern" });
           const failures = [];
+          // Lot W6: VIDAA refuses a software WebGL (this SwiftShader) with its renderer string, so
+          // the Home draws in DOM; off VIDAA it is used, which the rest of this page relies on.
+          const probe = document.createElement("canvas").getContext("webgl");
+          const probeDebug = probe?.getExtension("WEBGL_debug_renderer_info");
+          const gpu = String(probe?.getParameter(probeDebug ? probeDebug.UNMASKED_RENDERER_WEBGL : probe.RENDERER) || "");
+          if (/swiftshader|llvmpipe|softpipe/i.test(gpu)) {
+            const refused = [];
+            createLightningHomeRenderer(document.getElementById("home"), {
+              geometry,
+              imageQueue: createImageQueue(),
+              layout: { homeLayout: "modern" },
+              onFailure: (reason) => refused.push(reason)
+            });
+            for (const until = performance.now() + 5000; !refused.length && performance.now() < until; )
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            assert(refused[0] === `no-webgl:${gpu}`, `software WebGL refused on VIDAA: ${refused[0]} (${gpu})`);
+            assert(!document.querySelector(".tv2-gl-canvas"), "no canvas after the refusal");
+          }
+          // Only the engine's creation sees "not VIDAA": the cached TV profile stays VIDAA's.
+          const { getTvRuntimePerformanceProfile } = await import("/js/platform/tvRuntimePerformance.js");
+          getTvRuntimePerformanceProfile();
+          const isVidaa = Platform.isVidaa;
+          Platform.isVidaa = () => false;
           const view = createLightningHomeRenderer(document.getElementById("home"), {
             geometry,
             imageQueue: createImageQueue(),
@@ -130,8 +154,8 @@
             return out;
           };
           const { width, height } = geometry.poster;
-          // The legacy sidebar is drawn (lot W6 brings the pill): content starts at 220.
-          const drawn = (geo) => ({ ...geo, contentStart: 220, viewport: 1700 });
+          // Lot W6: the WebGL rails start at the geometry's contentStart (220 with the legacy rail).
+          const drawn = (geo) => geo;
           const [first] = homeLayout([row], focus, drawn(geometry)).rows;
           const top = 560 + first.top + 56;
           const cardX = (i) => 220 + first.win.offset + i * first.pitch;
@@ -177,6 +201,8 @@
               throw Error(`WebGL Home never settled: ${JSON.stringify(state)}`);
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
+          // The engine is kept for the page: back to VIDAA for everything else.
+          Platform.isVidaa = isVidaa;
           const [r, g, b] = state.tileCorner;
           assert(r < 80 && g < 80 && b < 80, `no-CORS card shows the dark tile, not white: ${state.tileCorner}`);
           const median = (list) => [...list].sort((x, y) => x - y)[list.length >> 1];
@@ -338,12 +364,28 @@
           const scrolled = { row: 0, columns: {} };
           view.setRows(tall);
           view.update(tall, scrolled, { sidebarIndex: -1 });
-          const artwork = () => trackOf(0).children.filter((card) => card.children[0].src);
+          const artworkOf = (index) => trackOf(index).children.filter((card) => card.children[0].src);
+          const artwork = () => artworkOf(0);
           assert(artwork().length > 0, "first row artwork requested");
+          await settle("second row artwork", () => artworkOf(1).length > 0);
+          // Lot W6 warm ring (focus − 2 to focus + 3): row 1 keeps its textures off screen, row 0 not.
+          scrolled.row = 3;
+          view.update(tall, scrolled, { sidebarIndex: -1 });
+          assert(artworkOf(1).length > 0, "a warm row keeps its artwork");
+          assert(!artwork().length, `row 0, outside the warm ring, keeps ${artwork().length} textures`);
           scrolled.row = 6;
           view.update(tall, scrolled, { sidebarIndex: -1 });
-          assert(!artwork().length, `off-screen row keeps ${artwork().length} textures`);
+          assert(!artworkOf(1).length, `off-screen row keeps ${artworkOf(1).length} textures`);
+          // Lot W6 idle loop: about 10 fps once the scene rests, the display rate again on a key.
+          for (const until = performance.now() + 8000; lightning.targetFPS !== IDLE_FPS; ) {
+            assert(performance.now() < until, `idle loop never throttled: ${lightning.targetFPS}`);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          scrolled.row = 5;
+          view.update(tall, scrolled, { sidebarIndex: -1 });
+          assert(lightning.targetFPS === 0, `a key restores the display rate: ${lightning.targetFPS}`);
           view.destroy();
+          assert(lightning.targetFPS === 4, "4 fps while Home is away");
 
           // Final positions equal homeLayout for each preference (pill, landscape posters, poster-style Continue Watching).
           const variants = [
@@ -369,7 +411,7 @@
             assert(rowsLayer().y === expected.offsetY, `${JSON.stringify(prefs)} rows y`);
             expected.rows.forEach(({ win, size, pitch: step }, index) => {
               const track = trackOf(index);
-              assert(track.x === 220 + win.offset, `${JSON.stringify(prefs)} row ${index} x ${track.x}`);
+              assert(track.x === geo.contentStart + win.offset, `${JSON.stringify(prefs)} row ${index} x ${track.x}`);
               const card = cardAt(track, win.start * step);
               assert(card && card.w === size.width && card.h === size.height, `${JSON.stringify(prefs)} row ${index} card ${card?.w}×${card?.h}`);
             });
@@ -608,6 +650,59 @@
           assert(!gifNode.classList.contains("is-active") && !gifNode.getAttribute("src"), "focus left: GIF cleared");
           w4bView.destroy();
 
+          // Lot W6: the shared DOM sidebar over the canvas. The pill sequence of the DOM renderer
+          // (icon only, open, profile, closed) gives the same classes and focus in WebGL, and both
+          // renderers expose the same methods (base ones never optional).
+          const pillLayout = { homeLayout: "modern", modernSidebar: true };
+          const pillGeo = cardGeometry(pillLayout);
+          const home = document.getElementById("home");
+          const sidebarRuns = {};
+          const methods = {};
+          for (const [engine, create] of [["dom", createDomHomeRenderer], ["webgl", createLightningHomeRenderer]]) {
+            const pillView = create(home, {
+              geometry: pillGeo,
+              imageQueue: createImageQueue(),
+              layout: pillLayout,
+              onFailure: (reason) => failures.push(reason)
+            });
+            const pillFocus = { row: 0, columns: { a: 0 } };
+            pillView.setRows([row]);
+            pillView.update([row], pillFocus, { sidebarIndex: -1 });
+            if (engine === "webgl") {
+              await settle("pill scene", () => document.querySelector(".tv2-gl-canvas") && rowsLayer()?.children.length === 1);
+              assert(trackOf(0).x === pillGeo.contentStart + homeLayout([row], pillFocus, pillGeo).rows[0].win.offset, "rails at the pill inset (104)");
+              assert(home.querySelector(".tv2-gl-proxy [data-engine='webgl']"), "focus proxy tagged data-engine=webgl");
+            }
+            const shell = () => home.querySelector(".modern-sidebar-shell");
+            const pill = () => home.querySelector(".modern-sidebar-pill");
+            const classes = (node) => ["expanded", "panel-visible", "icon-only"].filter((name) => node.classList.contains(name)).join(" ");
+            const snapshot = (label) => `${label}: shell[${classes(shell())}] pill[${classes(pill())}] open=${home.querySelector(".tv2-home").classList.contains("tv2-sidebar-open")} focus=${pillView.focusedNode()?.dataset.action || pillView.focusedNode()?.className.split(" ")[0] || "none"}`;
+            const run = [];
+            pillView.setSidebarPill(true);
+            run.push(snapshot("icon only"));
+            if (engine === "webgl") {
+              const box = pill().getBoundingClientRect();
+              const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+              assert(shell().contains(hit), `the pill is above the canvas: ${hit?.className}`);
+            }
+            pillView.update([row], pillFocus, { sidebarIndex: 0 });
+            run.push(snapshot("open"), `items=${pillView.sidebarItems().length}`);
+            pillView.setProfile({ activeProfileName: "Fixture", profileIndex: 1 });
+            pillView.update([row], pillFocus, { sidebarIndex: 0 });
+            run.push(snapshot("profile"));
+            pillView.update([row], pillFocus, { sidebarIndex: -1 });
+            pillView.setSidebarPill(false);
+            run.push(snapshot("closed"));
+            sidebarRuns[engine] = run;
+            methods[engine] = Object.keys(pillView).filter((key) => typeof pillView[key] === "function").sort().join();
+            pillView.destroy();
+          }
+          assert(JSON.stringify(sidebarRuns.dom) === JSON.stringify(sidebarRuns.webgl), `sidebar DOM ≠ WebGL:\n${sidebarRuns.dom.join("\n")}\n---\n${sidebarRuns.webgl.join("\n")}`);
+          assert(sidebarRuns.dom[0].includes("icon-only") && sidebarRuns.dom[1].includes("expanded panel-visible"), sidebarRuns.dom.join(" | "));
+          assert(methods.dom === methods.webgl, `same methods: ${methods.dom} / ${methods.webgl}`);
+          for (const name of ["setRows", "update", "setHero", "setProfile", "sidebarItems", "focusedNode", "destroy", "setWatched", "playHeroTrailer", "stopHeroTrailer", "setFocusGif", "setSidebarPill", "suspend"])
+            assert(methods.dom.split(",").includes(name), `contract method ${name}`);
+
           // Lot W5: the hero trailer plays in a DOM layer under the transparent canvas. On its first
           // frame the hero image fades out (the canvas reads transparent there) while the WebGL fade
           // stays over it; full screen also fades the rails. Stop brings the hero back; destroy
@@ -659,7 +754,7 @@
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF, hero trailer under the canvas (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF, hero trailer under the canvas, software WebGL refused on VIDAA, warm ring, idle loop, shared pill sidebar and contract (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;

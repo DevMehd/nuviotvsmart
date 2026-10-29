@@ -27,7 +27,7 @@ globalThis.document = {
 let reducedMotion = false;
 globalThis.matchMedia = () => ({ matches: reducedMotion });
 
-const { imageSlot, heroNodeProps, glInfo, homeMotion, tween, settle } =
+const { imageSlot, heroNodeProps, glInfo, homeMotion, tween, settle, softwareWebglRefusal } =
   await import("../js/ui/tv2/render/lightning/lightningHomeRenderer.js");
 const { createImageQueue } = await import("../js/ui/tv2/imagePipeline.js");
 const { createHeroCopy, heroCopyLines, HERO_COPY } =
@@ -706,6 +706,24 @@ assert.deepEqual(seen, [
 ]);
 assert.equal(store.has("tvWebglVariant"), false);
 
+// Lot W6: a software WebGL is refused on VIDAA only, with the exact renderer string kept for the
+// Diagnostic (homeEngineFallback); off VIDAA (desktop checks, the SwiftShader fixture) it is used.
+{
+  const swiftShader =
+    "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)";
+  assert.equal(softwareWebglRefusal(swiftShader, true), `no-webgl:${swiftShader}`);
+  assert.equal(
+    softwareWebglRefusal("llvmpipe (LLVM 15.0.7, 256 bits)", true).startsWith("no-webgl:"),
+    true
+  );
+  assert.equal(softwareWebglRefusal(swiftShader, false), "", "accepted off VIDAA");
+  assert.equal(softwareWebglRefusal("Mali-G52", true), "", "a TV GPU is accepted");
+  setting.resetSessionNewHomeMode();
+  setting.markWebglFailed(softwareWebglRefusal(swiftShader, true));
+  assert.equal(setting.homeEngineFallback(), `no-webgl:${swiftShader}`);
+  setting.resetSessionNewHomeMode();
+}
+
 console.log(
-  "PASS: WebGL Home image slots, fallbacks, text tile, hero cover, motion, hero copy, cards, skeletons, atlases and variants"
+  "PASS: WebGL Home image slots, fallbacks, text tile, hero cover, motion, hero copy, cards, skeletons, atlases, variants and software WebGL refusal"
 );

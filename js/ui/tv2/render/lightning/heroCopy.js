@@ -54,13 +54,14 @@ export function heroCopyLines(display) {
  * `deps`: `parent`; `node(props)`, `text(props)` (a weight-600 or 400 text node, canvas renderer
  * for text outside the atlas); `shader(props)` (RoundedWithBorder); `slot(node, alpha, onState)`
  * (imageSlot); `tween`, `settle`; `colors`; `fade` (motion settings or null). The block stays
- * hidden until every text of the current hero has reported its size, then fades in.
+ * hidden until every text of the current hero has reported its size, then fades in. `x`: left
+ * edge (the rails' content start), HERO_COPY.x by default.
  */
 export function createHeroCopy(deps) {
   const { node, colors } = deps;
   const C = HERO_COPY;
   const measured = new WeakMap();
-  const block = node({ parent: deps.parent, x: C.x, color: 0, alpha: 0 });
+  const block = node({ parent: deps.parent, x: deps.x ?? C.x, color: 0, alpha: 0 });
   const logo = node({ parent: block, w: C.logo.w, h: C.logo.h });
   let logoReady = false;
   let logoUrl = "";

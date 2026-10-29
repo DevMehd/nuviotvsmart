@@ -20,6 +20,7 @@ import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ProviderCredentialSyncService } from "./core/profile/providerCredentialSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
+import { preloadWebglHome } from "./ui/tv2/render/lightning/lightningHomeRenderer.js";
 import { TvHandoffReceiver } from "./core/perso/tvHandoffReceiver.js";
 import { TvRemoteReceiver } from "./core/perso/tvRemoteReceiver.js";
 import { TitleRatings } from "./core/perso/titleRatings.js";
@@ -622,6 +623,8 @@ async function bootstrapApp() {
 
   markBootStage("Initializing navigation");
   Router.init();
+  // New Home in WebGL mode: its library downloads and parses during startup (lot W6).
+  preloadWebglHome();
   PlayerController.init();
 
   installCustomPosterFallback();
