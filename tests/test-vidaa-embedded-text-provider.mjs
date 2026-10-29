@@ -181,7 +181,13 @@ for (const [name, change, code] of [
     const p = createVidaaEmbeddedTextProvider(h);
     assert.deepEqual(await p.getTracks(url), []);
     assert.equal(p.diagnostics().errorCode, code);
-    assert.equal(h.calls.length, 1);
+    // A refused redirect is retried once by the audio header read, which follows redirects.
+    const refused = code === "TRANSPORT_UNAVAILABLE";
+    assert.equal(h.calls.length, refused ? 2 : 1);
+    assert.deepEqual(
+      h.calls.map((call) => call.options.redirect),
+      refused ? ["error", "follow"] : ["error"]
+    );
     assert.equal(h.calls[0].options.signal.aborted, true);
     assert.equal(JSON.stringify(p.diagnostics()).includes("secret"), false);
     p.dispose();

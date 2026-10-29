@@ -695,7 +695,8 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
         errors: 0,
         width: null,
         height: null,
-        bufferAheadSeconds: null
+        bufferAheadSeconds: null,
+        audioNames: null
       },
       routes: {},
       network: {},
@@ -803,6 +804,22 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
       report.steps.push({ id: "video", status: "skipped" });
       save();
       notify();
+    },
+    // VIDAA audio-name evidence of the video step: categories and counts only, no URL.
+    noteAudioNames(status) {
+      if (!running || running.id !== "video" || !status) return;
+      const count = (value) =>
+        Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 999) : 0;
+      running.video.audioNames = {
+        result: /^[a-z0-9-]{1,32}$/.test(status.result) ? status.result : "other",
+        probeStarted: status.probeStarted === true,
+        headerCount: count(status.headerCount),
+        nativeCount: count(status.nativeCount),
+        namedCount: count(status.namedCount),
+        mapped: status.mapped === true,
+        redirected: status.redirected === true,
+        elapsedMs: Number.isFinite(status.elapsedMs) ? Math.round(status.elapsedMs) : null
+      };
     },
     isRunning(id) {
       return Boolean(running) && (id === undefined || running.id === id);

@@ -153,6 +153,118 @@ test("dispose aborts a pending header read", async () => {
   assert.equal(signal.aborted, true);
 });
 
+// Addon/debrid links are usually redirect endpoints (302 to the file host). The subtitle
+// reader refuses redirects; the audio header read follows them when no custom header
+// would be forwarded to another host.
+function redirectingTransport(buffer) {
+  const h = rangeTransport(buffer);
+  const urls = [];
+  const fetchImpl = async (target, options) => {
+    urls.push({ target, redirect: options.redirect });
+    if (target === "https://cdn.invalid/file") return h.fetchImpl(target, options);
+    if (options.redirect !== "follow") throw new TypeError("redirect refused");
+    const response = await h.fetchImpl(target, options);
+    Object.defineProperty(response, "redirected", { value: true });
+    Object.defineProperty(response, "url", { value: "https://cdn.invalid/file" });
+    return response;
+  };
+  return { ...h, urls, fetchImpl };
+}
+
+test("a redirecting stream link is followed once for the audio header read", async () => {
+  const h = redirectingTransport(createMkvAudioFixture({ tracksOffset: 200 * 1024 }));
+  const p = createVidaaEmbeddedTextProvider(h);
+  const tracks = await p.getTracks(`${url}.mkv`, { audioOnly: true });
+  assert.deepEqual(summary(tracks), withOrder(expected));
+  assert.equal(h.urls[0].redirect, "follow");
+  // Later pages of the same read go straight to the resolved file.
+  assert.ok(h.urls.slice(1).every((call) => call.target === "https://cdn.invalid/file"));
+  assert.equal(p.diagnostics().audio.redirected, true);
+  p.dispose();
+});
+
+test("a redirect refused by the subtitle discovery still gets the audio names", async () => {
+  const h = redirectingTransport(createMkvAudioFixture());
+  const p = createVidaaEmbeddedTextProvider(h);
+  const tracks = await p.getTracks(`${url}.mkv`);
+  assert.equal(p.diagnostics().errorCode, "TRANSPORT_UNAVAILABLE");
+  assert.deepEqual(summary(tracks), withOrder(expected));
+  assert.equal(h.urls[0].redirect, "error", "the subtitle reader keeps refusing redirects");
+  p.dispose();
+});
+
+test("custom request headers are never sent through a redirect", async () => {
+  const h = redirectingTransport(createMkvAudioFixture());
+  const p = createVidaaEmbeddedTextProvider(h);
+  const headers = { "X-Private": "value" };
+  assert.deepEqual(await p.getTracks(`${url}.mkv`, { headers, audioOnly: true }), []);
+  assert.ok(h.urls.every((call) => call.redirect === "error"));
+  assert.equal(p.diagnostics().audio.result, "cors");
+  p.dispose();
+});
+
+for (const [name, change, result] of [
+  ["ok", () => {}, "ok"],
+  ["range refused (200 with the whole file)", () => ({ status: 200 }), "range-refused"],
+  ["Content-Range hidden by CORS", () => ({ hideRange: true }), "cors-headers"],
+  ["HTTP 404", () => ({ status: 404 }), "http-4xx"],
+  ["HTTP 403", () => ({ status: 403 }), "http-4xx"],
+  ["HTTP 503", () => ({ status: 503 }), "http-5xx"],
+  ["fetch rejected (CORS, DNS, refused redirect)", () => ({ reject: true }), "cors"]
+]) {
+  test(`audio status category: ${name}`, async () => {
+    const buffer = createMkvAudioFixture();
+    const h = rangeTransport(buffer);
+    const config = change() || {};
+    const fetchImpl = async (target, options) => {
+      if (config.reject) throw new TypeError("https://secret.invalid/token");
+      const response = await h.fetchImpl(target, options);
+      if (!config.status && !config.hideRange) return response;
+      const headers = new Headers(response.headers);
+      if (config.hideRange) headers.delete("Content-Range");
+      return new Response(new Uint8Array(buffer), { status: config.status || 206, headers });
+    };
+    const p = createVidaaEmbeddedTextProvider({ fetchImpl, now: h.now });
+    await p.getTracks(`${url}.mkv`, { audioOnly: true });
+    const audio = p.diagnostics().audio;
+    assert.equal(audio.result, result);
+    assert.equal(audio.started, true);
+    assert.equal(audio.headerCount, result === "ok" ? 3 : 0);
+    assert.equal(typeof audio.elapsedMs, "number");
+    assert.equal(JSON.stringify(audio).includes("secret"), false);
+    assert.equal(JSON.stringify(audio).includes("invalid"), false);
+    p.dispose();
+  });
+}
+
+test("audio status: unknown container, timeout and a pending read", async () => {
+  const unknown = createVidaaEmbeddedTextProvider(rangeTransport(Buffer.alloc(300 * 1024, 7)));
+  await unknown.getTracks(`${url}.mkv`, { audioOnly: true });
+  assert.equal(unknown.diagnostics().audio.result, "not-matroska-or-mp4");
+  unknown.dispose();
+
+  const h = rangeTransport(createMkvAudioFixture({ tracksOffset: 200 * 1024 }));
+  const late = createVidaaEmbeddedTextProvider({
+    // The header page arrives after the whole read's deadline: the Tracks page is not asked.
+    fetchImpl: (...args) => {
+      h.advance(VIDAA_EMBEDDED_TEXT_LIMITS.operationTimeoutMs);
+      return h.fetchImpl(...args);
+    },
+    now: h.now
+  });
+  await late.getTracks(`${url}.mkv`, { audioOnly: true });
+  assert.equal(late.diagnostics().audio.result, "timeout");
+  late.dispose();
+
+  const hanging = createVidaaEmbeddedTextProvider({ fetchImpl: () => new Promise(() => {}) });
+  const pending = hanging.getTracks(`${url}.mkv`, { audioOnly: true });
+  await Promise.resolve();
+  assert.equal(hanging.diagnostics().audio.result, "pending");
+  assert.equal(hanging.diagnostics().audio.started, true);
+  hanging.dispose();
+  await pending;
+});
+
 for (const { name, run } of tests) {
   await run();
   console.log(`PASS ${name}`);

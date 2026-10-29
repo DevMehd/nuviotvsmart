@@ -21,6 +21,11 @@ const mb = (value) =>
 const row = (label, value) =>
   `<div class="benchmark-row"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`;
 const bool = (value) => (value ? "oui" : "non disponible");
+// Escaped by row(); categories and counts only (see vidaaAudioNamesStatus.js).
+const describeAudioNames = (audio) =>
+  audio
+    ? `${audio.result} · ${audio.namedCount}/${audio.nativeCount} nommées · en-tête ${audio.headerCount}${audio.redirected ? " · redirection suivie" : ""}${audio.elapsedMs === null ? "" : ` · ${audio.elapsedMs} ms`}`
+    : "non relevé";
 const labelFor = (id) =>
   BENCHMARK_STEPS.find((step) => step.id === id)?.title || "Démarrage instrumenté";
 const PAGES = [
@@ -275,6 +280,7 @@ export function renderBenchmarkPage(state, page, selected, driverState = {}) {
     ) +
     row("Avances/reculs / erreurs du lecteur", `${video.seekEvents} / ${video.errors}`) +
     row("Tampon disponible : dernier relevé", number(video.bufferAheadSeconds, " s")) +
+    row("Noms des pistes audio", describeAudioNames(video.audioNames)) +
     `<p class="benchmark-note">Les attentes peuvent inclure le démarrage et les déplacements dans la vidéo. Le délai depuis l’étape inclut votre navigation. Son, synchro et sous-titres sont à juger à l’œil et à l’oreille.</p><p class="benchmark-note">${escape(report.limitations.join(". "))}. Aucun identifiant, titre, URL, touche saisie ou jeton conservé. Le bilan reste sur cet appareil.</p>`
   );
 }

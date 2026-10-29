@@ -53,6 +53,33 @@ export function vidaaMp4AudioCodecName(fourcc = "") {
   return id.toLowerCase();
 }
 
+/**
+ * Privacy-safe category of a failed audio-name header read (no URL, host or token):
+ * shown on the TV and kept in the diagnostic report.
+ */
+export function vidaaAudioNameCategory(code = "", httpStatus = 0) {
+  const status = Number(httpStatus) || 0;
+  if (code === "AUTH_DENIED" || (code === "RANGE_UNAVAILABLE" && status >= 400 && status < 500))
+    return "http-4xx";
+  if (code === "RANGE_UNAVAILABLE" && status >= 500) return "http-5xx";
+  if (code === "RANGE_UNAVAILABLE" || code === "WHOLE_FILE_REFUSED") return "range-refused";
+  // Content-Range is not a CORS-safelisted response header: hidden without Expose-Headers.
+  if (code === "CONTENT_RANGE_UNREADABLE") return "cors-headers";
+  // fetch() rejected: missing CORS headers, a refused redirect, DNS or network.
+  if (code === "TRANSPORT_UNAVAILABLE") return "cors";
+  if (code === "RANGE_TIMEOUT") return "timeout";
+  if (code === "INVALID_MATROSKA" || code === "INVALID_MP4") return "not-matroska-or-mp4";
+  if (code === "REQUEST_SUPERSEDED") return "superseded";
+  if (/BUDGET/.test(code)) return "budget";
+  if (
+    /CONTENT_RANGE_MISMATCH|RANGE_TOO_LARGE|TRUNCATED_RANGE|ENCODED|SOURCE_CHANGED|READER/.test(
+      code
+    )
+  )
+    return "bad-response";
+  return "parse";
+}
+
 /** Audio tracks of the container, in order: the TV exposes them in the same order. */
 function audioTrackEntries(tracks = [], identity = "") {
   return tracks
@@ -126,9 +153,17 @@ export function createVidaaEmbeddedTextProvider({
       residentBytes: 0,
       peakResidentBytes: 0,
       errorCode: "",
-      accessVerified: false
+      accessVerified: false,
+      startedAt: now(),
+      httpStatus: 0,
+      audio: null
     };
     return current;
+  }
+  // Custom request headers must never reach a redirect target on another host.
+  const hasCustomHeaders = (s) => [...s.headers.keys()].length > 0;
+  function noteAudio(s, result, headerCount = 0, redirected = false) {
+    s.audio = { started: true, result, headerCount, elapsedMs: now() - s.startedAt, redirected };
   }
   const check = (s, signal) => {
     if (s !== current || signal.aborted) throw fail("REQUEST_SUPERSEDED");
@@ -200,24 +235,32 @@ export function createVidaaEmbeddedTextProvider({
     try {
       const headers = new Headers(s.headers);
       headers.set("Range", `bytes=${start}-${end}`);
+      // Only the audio header read follows addon/debrid redirects (302 to the file host).
+      const follow = operation.followRedirects === true && !hasCustomHeaders(s);
       const response = await bounded(
-        fetchImpl(s.url, {
+        fetchImpl(operation.url || s.url, {
           headers,
           signal: controller.signal,
           mode: "cors",
           credentials: "omit",
-          redirect: "error",
+          redirect: follow ? "follow" : "error",
           cache: "no-store"
         })
       );
       check(s, signal);
+      s.httpStatus = response.status;
       if (response.status === 401 || response.status === 403) throw fail("AUTH_DENIED");
       if (
         response.status !== 206 ||
-        response.redirected ||
+        (response.redirected && !follow) ||
         ["opaque", "opaqueredirect"].includes(response.type)
       )
         throw fail("RANGE_UNAVAILABLE");
+      if (response.redirected && response.url) {
+        // Later pages of the same read go straight to the file, not through the resolver.
+        operation.url = response.url;
+        operation.redirected = true;
+      }
       const match = /^bytes (\d+)-(\d+)\/(\d+)$/i.exec(response.headers.get("Content-Range") || "");
       if (!match) throw fail("CONTENT_RANGE_UNREADABLE");
       const totalSize = Number(match[3]);
@@ -699,7 +742,10 @@ export function createVidaaEmbeddedTextProvider({
         )
       );
     // Name the TV's audio tracks even when the subtitle index below is missing or too large.
-    if (metadata.tracks.length) s.audioTracks = audioTrackEntries(metadata.tracks, s.identity);
+    if (metadata.tracks.length) {
+      s.audioTracks = audioTrackEntries(metadata.tracks, s.identity);
+      noteAudio(s, s.audioTracks.length ? "ok" : "no-audio", s.audioTracks.length);
+    }
     if (metadata.positions[0x1549a966] !== undefined && !metadata.infoParsed) {
       const info = await indexedElement(
         s,
@@ -962,7 +1008,14 @@ export function createVidaaEmbeddedTextProvider({
     const controller = new AbortController();
     s.audioController = controller;
     const signal = controller.signal;
-    const operation = budget("discovery");
+    const operation = { ...budget("discovery"), followRedirects: true };
+    s.audio = {
+      started: true,
+      result: "pending",
+      headerCount: 0,
+      elapsedMs: null,
+      redirected: false
+    };
     try {
       const head = await range(s, 0, limits.headerBytes, operation, signal);
       let tracks;
@@ -979,8 +1032,15 @@ export function createVidaaEmbeddedTextProvider({
       }
       check(s, signal);
       s.audioTracks = audioTrackEntries(tracks, s.identity);
+      noteAudio(
+        s,
+        s.audioTracks.length ? "ok" : "no-audio",
+        s.audioTracks.length,
+        operation.redirected
+      );
     } catch (error) {
       if (s !== current) return;
+      noteAudio(s, vidaaAudioNameCategory(error?.code, s.httpStatus), 0, operation.redirected);
       // Transient failures retry later; an unreadable container stays unnamed.
       if (/TIMEOUT|BUDGET|SUPERSEDED|TRANSPORT/.test(error.code || ""))
         s.audioRetryAt = now() + 5000;
@@ -1003,11 +1063,14 @@ export function createVidaaEmbeddedTextProvider({
         /* Subtitles stay unavailable; audio names may still come from the header below. */
       }
     }
-    // Audio-only requests, and a discovery that found another container (MP4). A failed
-    // transport is not retried here: the same header request would fail again.
+    // Audio-only requests, and a discovery that found another container (MP4) or refused a
+    // redirect. Other transport failures are not retried here: the same request would fail.
     if (
       s === current &&
-      (audioOnly || !s.errorCode || s.errorCode === "INVALID_MATROSKA") &&
+      (audioOnly ||
+        !s.errorCode ||
+        s.errorCode === "INVALID_MATROSKA" ||
+        (s.errorCode === "TRANSPORT_UNAVAILABLE" && !hasCustomHeaders(s))) &&
       !Array.isArray(s.audioTracks) &&
       !(s.audioRetryAt > now())
     ) {
@@ -1193,7 +1256,10 @@ export function createVidaaEmbeddedTextProvider({
       residentBytes,
       peakResidentBytes,
       errorCode,
-      accessVerified
+      accessVerified,
+      httpStatus,
+      audio,
+      startedAt
     } = current;
     return {
       active: true,
@@ -1205,6 +1271,20 @@ export function createVidaaEmbeddedTextProvider({
       peakResidentBytes,
       errorCode,
       accessVerified,
+      // Audio-name evidence: categories and counts only, never the stream URL.
+      audio:
+        audio ||
+        (current.pending
+          ? { started: true, result: "pending", headerCount: 0, elapsedMs: null, redirected: false }
+          : errorCode
+            ? {
+                started: true,
+                result: vidaaAudioNameCategory(errorCode, httpStatus),
+                headerCount: 0,
+                elapsedMs: now() - startedAt,
+                redirected: false
+              }
+            : { started: false, result: "", headerCount: 0, elapsedMs: null, redirected: false }),
       limits
     };
   }

@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { reportVidaaAudioNamesStatus } from "./vidaaAudioNamesStatus.js";
 
 export function createPlayerScreenMethods39() {
   const {
@@ -43,6 +44,13 @@ export function createPlayerScreenMethods39() {
       }
       this.refreshSubtitleCueStyles();
       this.renderControlButtons();
+      if (Environment.isVidaa()) {
+        try {
+          reportVidaaAudioNamesStatus(this);
+        } catch (_) {
+          // Evidence only: never let it affect playback or the dialogs.
+        }
+      }
       if (this.subtitleDialogVisible) {
         this.restoreSubtitleDialogFocus();
         this.renderSubtitleDialog();

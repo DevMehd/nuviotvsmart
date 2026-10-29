@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { describeVidaaAudioNamesStatus, readVidaaAudioNamesStatus } from "./vidaaAudioNamesStatus.js";
 
 export function createPlayerScreenMethods12() {
   const {
@@ -101,9 +102,14 @@ export function createPlayerScreenMethods12() {
       );
     },
     getAudioDialogSupportNotice() {
-      return this.isTizenDashAudioSwitchingUnsupported()
-        ? t("player_audio_tizen_dash_unsupported", {}, "Changing DASH audio tracks is not supported on this TV.")
-        : "";
+      if (this.isTizenDashAudioSwitchingUnsupported())
+        return t("player_audio_tizen_dash_unsupported", {}, "Changing DASH audio tracks is not supported on this TV.");
+      if (!Environment.isVidaa()) return "";
+      try {
+        return describeVidaaAudioNamesStatus(readVidaaAudioNamesStatus(this));
+      } catch (_) {
+        return "";
+      }
     },
     getSubtitleDialogSupportNotice() {
       const notices = [];

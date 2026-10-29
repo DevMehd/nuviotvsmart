@@ -280,6 +280,55 @@ function harness({ stored = new Map(), observer = true } = {}) {
   assert.equal(s.seekEvents, 1);
 }
 {
+  // VIDAA audio-name evidence: kept in the video step, categories and counts only.
+  const h = harness();
+  h.enable();
+  h.setRoute("player");
+  h.service.noteAudioNames({ result: "cors", nativeCount: 9 });
+  h.service.start("video", { auto: true });
+  assert.equal(h.service.getState().current.video.audioNames, null);
+  h.service.noteAudioNames({
+    result: "https://secret.invalid/token",
+    probeStarted: true,
+    headerCount: 0,
+    nativeCount: 9,
+    namedCount: 0,
+    mapped: false,
+    redirected: "yes",
+    elapsedMs: 812.4,
+    url: "https://secret.invalid/token"
+  });
+  assert.equal(h.service.getState().current.video.audioNames.result, "other");
+  h.service.noteAudioNames({
+    result: "range-refused",
+    probeStarted: true,
+    headerCount: 0,
+    nativeCount: 9,
+    namedCount: 0,
+    mapped: false,
+    redirected: false,
+    elapsedMs: 812.4
+  });
+  h.service.stop();
+  const step = h.service.getState().report.steps.find((item) => item.id === "video");
+  assert.deepEqual(step.video.audioNames, {
+    result: "range-refused",
+    probeStarted: true,
+    headerCount: 0,
+    nativeCount: 9,
+    namedCount: 0,
+    mapped: false,
+    redirected: false,
+    elapsedMs: 812
+  });
+  assert.equal(JSON.stringify(h.service.getState().report).includes("secret"), false);
+  const page = renderBenchmarkPage(h.service.getState(), 5, "video");
+  assert.match(
+    page,
+    /Noms des pistes audio<\/span><strong>range-refused · 0\/9 nommées · en-tête 0 · 812 ms/
+  );
+}
+{
   const env = readBenchmarkEnvironment(
     { navigator: { userAgent: "secret" }, Hisense_GetModelName: () => "serial/private-token" },
     "bad<>version"
