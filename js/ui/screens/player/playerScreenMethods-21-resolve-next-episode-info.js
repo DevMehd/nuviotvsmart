@@ -185,14 +185,18 @@ export function createPlayerScreenMethods21() {
       const derivedParams = this.buildStreamRouteParamsFromPlayer();
       const originalParams =
         this.params?.streamRouteParams && typeof this.params.streamRouteParams === "object" ? { ...this.params.streamRouteParams } : null;
+      // The source playing now, even after a change in the player: the new Sources screen focuses
+      // it on return. A separate field, so preferredStreamId and the current Sources screen are unchanged.
+      const playedStreamId = String(this.getCurrentStreamCandidate()?.id || "").trim() || null;
       if (!originalParams) {
-        return derivedParams;
+        return { ...derivedParams, playedStreamId };
       }
       return {
         ...derivedParams,
         ...originalParams,
         resumePositionMs: derivedParams.resumePositionMs,
-        startFromBeginning: false
+        startFromBeginning: false,
+        playedStreamId
       };
     },
     shouldReturnToStreamOnBack() {

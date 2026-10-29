@@ -541,6 +541,90 @@ const capturable = { contains: () => true, querySelector: () => null };
   assert.equal(focusedId(evicted), "s9", "the source played first is focused");
 }
 
+// T7: after a source change in the player, the return focuses the source actually played.
+{
+  const { createPlayerScreenMethods21 } =
+    await import("../js/ui/screens/player/playerScreenMethods-21-resolve-next-episode-info.js");
+  const sourcesParams = { itemId: "tt1", itemType: "movie", preferredStreamId: "s3" };
+  const player = {
+    ...createPlayerScreenMethods21(),
+    params: {
+      itemId: "tt1",
+      itemType: "movie",
+      preferredStreamId: "s8",
+      streamRouteParams: { ...sourcesParams, playedStreamId: "stale" }
+    },
+    streamCandidates: streams.map((stream) => ({ ...stream })),
+    currentStreamIndex: 8,
+    getPlaybackCurrentSeconds: () => 42,
+    getCurrentStreamCandidate() {
+      return this.streamCandidates[this.currentStreamIndex] || null;
+    }
+  };
+  const unchanged = player.buildReturnStreamRouteParamsFromPlayer();
+  assert.equal(unchanged.playedStreamId, "s8", "the source chosen in Sources is the one played");
+  player.currentStreamIndex = 9; // source changed in the player panel
+  const returned = player.buildReturnStreamRouteParamsFromPlayer();
+  assert.equal(returned.playedStreamId, "s9", "the stale value of an earlier return is replaced");
+  assert.equal(
+    returned.preferredStreamId,
+    "s3",
+    "the Sources params are kept: StreamScreen unchanged"
+  );
+  assert.equal(returned.resumePositionMs, 42000);
+  assert.equal(returned.startFromBeginning, false);
+  const direct = { ...player, params: { itemId: "tt1", itemType: "movie" } };
+  assert.equal(
+    direct.buildReturnStreamRouteParamsFromPlayer().playedStreamId,
+    "s9",
+    "no Sources params"
+  );
+  assert.equal(
+    { ...player, streamCandidates: [] }.buildReturnStreamRouteParamsFromPlayer().playedStreamId,
+    null,
+    "no candidate, no played source"
+  );
+
+  // The Sources snapshot was on s8 (all filter).
+  const screen = createScreen({ container: capturable });
+  for (let i = 0; i < 8; i += 1) screen.onKeyDown(key("ArrowDown"));
+  const state = screen.captureRouteState();
+  const lateFirst = [early("e1"), ...state.streams];
+  const back = restoreScreen(state, { params: returned, streams: lateFirst });
+  assert.equal(focusedId(back), "s9", "the source played after the change is focused");
+  back.onKeyDown(key("ArrowDown"));
+  assert.equal(focusedId(back), "s10", "navigation continues from it");
+  // Without a change, the key keeps the exact row (same-id duplicates included).
+  const same = restoreScreen(state, { params: unchanged, streams: lateFirst });
+  assert.equal(same.calls.focus.at(-1).row, 9, "unchanged return: row by key");
+  // A played source absent from the list or from the restored filter keeps the saved source.
+  const absent = restoreScreen(state, {
+    params: { ...returned, playedStreamId: "stream-0-https://synthetic" },
+    streams: lateFirst
+  });
+  assert.equal(focusedId(absent), "s8", "unknown played source: saved source");
+  const filtered = createScreen({ container: capturable });
+  filtered.onKeyDown(key("ArrowRight"));
+  filtered.onKeyDown(key("ArrowRight"));
+  filtered.onKeyDown(key("ArrowDown"));
+  const filteredState = filtered.captureRouteState();
+  assert.equal(focusedId(filtered), "s7");
+  const otherFilter = restoreScreen(filteredState, {
+    params: { ...returned, playedStreamId: "s2" }
+  });
+  assert.equal(focusedId(otherFilter), "s7", "played source outside the filter: saved source");
+  // Evicted snapshot: the played source wins over preferredStreamId, an unknown one falls back.
+  const evicted = createScreen({ params: returned, streams: streams.slice(0, 3) });
+  evicted.streams = streams;
+  evicted.render();
+  assert.equal(focusedId(evicted), "s9", "evicted snapshot: the played source");
+  const evictedUnknown = createScreen({
+    params: { ...returned, playedStreamId: "gone" },
+    streams
+  });
+  assert.equal(focusedId(evictedUnknown), "s3", "unknown played source: preferredStreamId");
+}
+
 // T6: watch party link, Continue Watching resume overlay.
 {
   // The host's link is item 0 with the stable key partyShared: the same source of an addon keeps

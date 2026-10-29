@@ -66,12 +66,15 @@ export const NewSourcesScreen = {
     const keys = rowKeys(items);
     const row = Number(this.focusState?.row);
     // StreamScreen focuses preferredStreamId at the end of the search; here as soon as it arrives.
-    const preferredId = String(this.params?.preferredStreamId || "").trim();
+    // The source played in the player (playedStreamId, only on its return) comes first.
+    const rowOf = (id) =>
+      id ? items.findIndex((stream) => String(stream?.id || "") === String(id).trim()) : -1;
     // A party link shown first keeps the focus (StreamScreen bindStreamParty), as for a user move.
-    const preferredRow =
-      preferredId && !this.streamUserMovedFocus && !items[0]?.partyShared
-        ? items.findIndex((stream) => String(stream?.id || "") === preferredId)
-        : -1;
+    let preferredRow = -1;
+    if (!this.streamUserMovedFocus && !items[0]?.partyShared) {
+      preferredRow = rowOf(this.params?.playedStreamId);
+      if (preferredRow < 0) preferredRow = rowOf(this.params?.preferredStreamId);
+    }
     // New earlier sources replace the initial first result; once the user moved, keep the source.
     const holdFirstResult =
       this.focusState?.zone === "card" && row === 0 && !this.streamUserMovedFocus;
@@ -83,7 +86,10 @@ export const NewSourcesScreen = {
     if (preferredRow >= 0 && !this.streamVirtualFocusReset) {
       this.focusState = { zone: "card", row: preferredRow, index: preferredRow, action: "play" };
     } else if (card && !holdFirstResult && !this.streamVirtualFocusReset) {
-      const index = findSourceRow(items, keys, focusedKey, focusedId);
+      // Restored snapshot (its card carries the key once): a source changed in the player wins.
+      const playedId = card.key ? String(this.params?.playedStreamId || "").trim() : "";
+      const played = playedId && playedId !== focusedId ? rowOf(playedId) : -1;
+      const index = played >= 0 ? played : findSourceRow(items, keys, focusedKey, focusedId);
       if (index >= 0) this.focusState = { ...this.focusState, row: index, index };
     }
     const pending = this.hasPendingSourceLoads();

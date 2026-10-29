@@ -270,6 +270,17 @@
         const returnCard = focused().getBoundingClientRect();
         const returnList = route.container.querySelector(".stream-route-list").getBoundingClientRect();
         assert(returnCard.top >= returnList.top + 8 && returnCard.bottom <= returnList.bottom - 8, "the returned row is visible");
+        // T7: the source was changed in the player to row 400; the return focuses that one instead.
+        route.cleanup();
+        counts.reads = counts.observers = 0;
+        const changedId = restoredState.streams[400].id;
+        await route.mount({ ...restoredState.params, playedStreamId: changedId }, { ...backContext, restoredState: lateState });
+        assert(focused()?.dataset.streamId === changedId && focused().dataset.streamRow === "402", "the source played after the change is focused, row 402");
+        assert(counts.reads === 0 && counts.observers === 0, `no layout read on the changed return (${counts.reads}, ${counts.observers})`);
+        const changedCard = focused().getBoundingClientRect();
+        assert(changedCard.top >= returnList.top + 8 && changedCard.bottom <= returnList.bottom - 8, "the changed source is visible");
+        press("ArrowDown", 40);
+        assert(route.sourcesView.items[route.focusState.row].id === restoredState.streams[401].id, "navigation continues from the played source");
         // Evicted snapshot: a fresh search focuses the source named by the route.
         route.cleanup();
         const evictedId = restoredState.streams.at(-1).id;
