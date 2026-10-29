@@ -62,3 +62,46 @@ export function homeEngine() {
 export function homeEngineFallback() {
   return webglFailure || mountedEngine.split(":")[1] || null;
 }
+
+// Diagnostic A/B variant of the WebGL engine (lot W1a: hero stripes on the TV), one at a time,
+// read when the engine is created: it applies from the next app launch.
+const WEBGL_VARIANT_KEY = "tvWebglVariant";
+export const WEBGL_VARIANTS = Object.freeze([
+  "standard",
+  "bitmap-basic",
+  "platform-legacy",
+  "hero-780"
+]);
+
+export function getWebglVariant() {
+  try {
+    const raw = String(LocalStore.get(WEBGL_VARIANT_KEY, "") || "");
+    return WEBGL_VARIANTS.includes(raw) ? raw : "standard";
+  } catch (_) {
+    return "standard";
+  }
+}
+
+export function cycleWebglVariant() {
+  const next =
+    WEBGL_VARIANTS[(WEBGL_VARIANTS.indexOf(getWebglVariant()) + 1) % WEBGL_VARIANTS.length];
+  try {
+    if (next === "standard") LocalStore.remove(WEBGL_VARIANT_KEY);
+    else LocalStore.set(WEBGL_VARIANT_KEY, next);
+  } catch (_) {}
+  return getWebglVariant();
+}
+
+let glInfoSource = null;
+/** The WebGL engine registers its glInfo here, so the Diagnostic never imports the engine. */
+export function setWebglInfoSource(source) {
+  glInfoSource = source;
+}
+
+export function webglInfo() {
+  try {
+    return glInfoSource?.() ?? null;
+  } catch (_) {
+    return null;
+  }
+}

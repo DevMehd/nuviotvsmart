@@ -125,9 +125,13 @@ async function packageVidaa() {
     `  ${iifeAssets[1]},\n`,
     `  ${moduleAssets.join(",\n  ")},\n`
   );
+  // Public Cloudinary cloud name for the WebGL Home's no-CORS posters (glImageUrl); empty = off.
+  const cloudinaryCloud = process.env.NUVIO_CLOUDINARY_CLOUD || "";
+  if (!/^[a-z0-9_-]{0,64}$/i.test(cloudinaryCloud))
+    throw new Error("NUVIO_CLOUDINARY_CLOUD must be a Cloudinary cloud name");
   let vidaaEntry = versionedIndex.replace(
     "<head>",
-    `<head>\n    <meta name="nuvio-build" content="${buildId}" />\n    <script>window.__NUVIO_PLATFORM__ = "vidaa";window.__NUVIO_IMAGE_OPTIMIZATION__ = ${process.env.VERCEL === "1"};window.__NUVIO_ADDON_DATA_SERVICE__ = ${process.env.VERCEL === "1"};</script>`
+    `<head>\n    <meta name="nuvio-build" content="${buildId}" />\n    <script>window.__NUVIO_PLATFORM__ = "vidaa";window.__NUVIO_IMAGE_OPTIMIZATION__ = ${process.env.VERCEL === "1"};window.__NUVIO_ADDON_DATA_SERVICE__ = ${process.env.VERCEL === "1"};window.__NUVIO_CLOUDINARY_CLOUD__ = ${JSON.stringify(cloudinaryCloud)};</script>`
   );
   vidaaEntry = replaceOnce(
     vidaaEntry,

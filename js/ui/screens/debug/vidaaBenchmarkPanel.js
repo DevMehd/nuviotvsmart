@@ -5,6 +5,7 @@ import {
 } from "../../../core/diagnostics/vidaaBenchmark.js";
 import { createVidaaBenchmarkDriver } from "../../../core/diagnostics/vidaaBenchmarkDriver.js";
 import { QrCodeGenerator } from "../../../core/qr/qrCodeGenerator.js";
+import { cycleWebglVariant, getWebglVariant } from "../../tv2/newHomeSetting.js";
 
 const escape = (value) =>
   String(value ?? "—").replace(
@@ -132,6 +133,18 @@ export function renderBenchmarkPage(state, page, selected, driverState = {}) {
         `${ms(boot.documentMs)} / ${ms(boot.domInteractiveMs)}`
       ) +
       row("Premier montage de l’accueil", ms(boot.firstHomeMountedMs)) +
+      row(
+        "Accueil WebGL : GPU / précision haute",
+        report.webgl
+          ? `${report.webgl.renderer || "?"} / ${report.webgl.highFloat?.precision ?? "aucune"}`
+          : "non mesuré"
+      ) +
+      row(
+        "Accueil WebGL : variante / échecs / URL proxy / mémoire crête",
+        report.webgl
+          ? `${report.webgl.variant} / ${Object.values(report.webgl.failed).reduce((a, b) => a + b, 0)} / ${report.webgl.proxiedUrls} / ${mb(report.webgl.peakTextureBytes)}`
+          : `${env.webglVariant || "standard"} / non mesuré`
+      ) +
       row(
         "Premier contenu peint / chargement document",
         `${ms(boot.firstContentfulPaintMs)} / ${ms(boot.loadMs)}`
@@ -368,7 +381,7 @@ export function createVidaaBenchmarkPanel({
     const actions =
       view === "qr"
         ? `<nav class="benchmark-actions">${button("close-export", "Fermer")}${button("export", "Nouveau lien")}</nav>`
-        : `<nav class="benchmark-actions">${button("back", "Retour")}${button("auto", driverState.active ? "Arrêter le parcours" : next ? "Parcours automatique" : "Refaire le parcours automatique")}${button("next", state.active ? "Arrêter l’étape" : next ? `Étape manuelle : ${next.title}` : "Refaire en manuel")}${button("boot", "Mesurer le prochain démarrage")}${button("skip", "Passer la vidéo")}${button("logs", "Journal")}</nav><nav class="benchmark-actions">${button("previous-page", "← Page")}${button("next-page", "Page →")}${button("step", "Changer l’étape affichée")}${button("comparison", "Comparer les moteurs")}${button("export", "Exporter JSON (code QR)")}</nav>`;
+        : `<nav class="benchmark-actions">${button("back", "Retour")}${button("auto", driverState.active ? "Arrêter le parcours" : next ? "Parcours automatique" : "Refaire le parcours automatique")}${button("next", state.active ? "Arrêter l’étape" : next ? `Étape manuelle : ${next.title}` : "Refaire en manuel")}${button("boot", "Mesurer le prochain démarrage")}${button("skip", "Passer la vidéo")}${button("logs", "Journal")}</nav><nav class="benchmark-actions">${button("previous-page", "← Page")}${button("next-page", "Page →")}${button("step", "Changer l’étape affichée")}${button("comparison", "Comparer les moteurs")}${button("webgl-variant", `Variante WebGL : ${getWebglVariant()} (au prochain lancement)`)}${button("export", "Exporter JSON (code QR)")}</nav>`;
     const main =
       view === "qr"
         ? renderExportView(exportState)
@@ -488,6 +501,7 @@ export function createVidaaBenchmarkPanel({
         }
       }
     }
+    if (action === "webgl-variant") cycleWebglVariant();
     if (action === "skip") service.skipVideo();
     if (action === "boot") service.armStartup();
     if (action === "previous-page") page = (page + PAGES.length - 1) % PAGES.length;

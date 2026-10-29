@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv vidaa-balanced-motion">
+  <meta charset="utf-8" />
+  <title>VIDAA new Home WebGL images</title>
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <style>
+    #result {
+      position: fixed;
+      left: 0;
+      bottom: 0;
+      z-index: -1;
+      margin: 0;
+      white-space: pre-wrap;
+      opacity: 0;
+    }
+  </style>
+  <body class="vidaa-tv">
+    <div id="home" style="display: block"></div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot W1a: the WebGL Home (real Lightning, SwiftShader) shows a same-origin poster, the text
+      // tile for a cross-origin poster without CORS (the "lavender" cards), and a hero cropped as
+      // cover, read back with gl.readPixels. Desktop software GPU: not a TV measure.
+      const result = (window === top ? document : parent.document).getElementById("result");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const params = new URLSearchParams(location.search);
+      if (window === top) {
+        const frame = document.createElement("iframe");
+        frame.src = `${location.pathname}?frame&xorigin=${params.get("xorigin") || ""}`;
+        frame.style.cssText = "position:absolute;top:0;left:0;width:1920px;height:1080px;border:0";
+        document.body.prepend(frame);
+      } else
+        try {
+          assert(params.get("xorigin"), "the runner passes a second origin");
+          globalThis.__NUVIO_PLATFORM__ = "vidaa";
+          const { Platform } = await import("/js/platform/index.js");
+          Platform.current = null;
+          const { Router } = await import("/js/ui/navigation/routerState.js");
+          Router.getCurrent = () => "home";
+          const lib = "/node_modules/@lightningjs/renderer/dist/exports";
+          const { RendererMain } = await import(`${lib}/index.js`);
+          const { WebGlCoreRenderer, SdfTextRenderer } = await import(`${lib}/webgl.js`);
+          const { WebPlatform, WebPlatformLegacy } = await import(`${lib}/platform.js`);
+          let lightning = null;
+          // Same modules as lightningLib.js; the subclass only exposes the instance to this page.
+          class Captured extends RendererMain {
+            constructor(...args) {
+              super(...args);
+              lightning = this;
+            }
+          }
+          globalThis.NuvioLightning = {
+            RendererMain: Captured,
+            WebGlCoreRenderer,
+            SdfTextRenderer,
+            WebPlatform,
+            WebPlatformLegacy
+          };
+          const { createLightningHomeRenderer, glInfo } =
+            await import("/js/ui/tv2/render/lightning/lightningHomeRenderer.js");
+          const { createImageQueue } = await import("/js/ui/tv2/imagePipeline.js");
+          const { cardGeometry, railWindow, rowsOffset, ROW_TITLE_HEIGHT, RAIL_VIEWPORT } =
+            await import("/js/ui/tv2/railEngine.js");
+          await document.fonts?.ready;
+
+          const blobUrl = (w, h, paint) =>
+            new Promise((resolve) => {
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              paint(canvas.getContext("2d"));
+              canvas.toBlob((blob) => resolve(URL.createObjectURL(blob)), "image/png");
+            });
+          const red = await blobUrl(200, 300, (ctx) => {
+            ctx.fillStyle = "#ff0000";
+            ctx.fillRect(0, 0, 200, 300);
+          });
+          // 80 px checkerboard, 16:9: squares stay square only if the hero keeps the aspect.
+          const SQUARE = 80;
+          const checker = await blobUrl(1280, 720, (ctx) => {
+            for (let y = 0; y < 720; y += SQUARE)
+              for (let x = 0; x < 1280; x += SQUARE) {
+                ctx.fillStyle = (x + y) / SQUARE % 2 ? "#000000" : "#ffffff";
+                ctx.fillRect(x, y, SQUARE, SQUARE);
+              }
+          });
+          const noCors = `http://127.0.0.1:${params.get("xorigin")}/assets/avatars/avatar_aang_1772809370453.png`;
+          const items = [red, noCors, red].map((poster, n) => ({
+            id: `tt000000${n}`,
+            type: "movie",
+            name: `Fixture title ${n}`,
+            poster
+          }));
+          const row = {
+            key: "a",
+            kind: "poster",
+            title: "Fixture row",
+            items,
+            status: "success",
+            entry: { type: "movie", addonName: "Fixture addon" }
+          };
+          const geometry = cardGeometry({ homeLayout: "modern" });
+          const failures = [];
+          const view = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern" },
+            onFailure: (reason) => failures.push(reason)
+          });
+          const focus = { row: 0, columns: { a: 0 } };
+          view.setRows([row]);
+          view.update([row], focus, { sidebarIndex: -1 });
+          view.setHero({ id: "tt9", type: "movie", name: "Hero", background: checker, poster: red });
+
+          const pixelsAt = (x, y, w = 1, h = 1) => {
+            const canvas = document.querySelector(".tv2-gl-canvas");
+            const gl = canvas.getContext("webgl");
+            const out = new Uint8Array(w * h * 4);
+            gl.readPixels(x, canvas.height - y - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+            return out;
+          };
+          const { width, height } = geometry.poster;
+          const pitch = width + geometry.gap;
+          const win = railWindow({ count: 3, focusIndex: 0, pitch, viewport: RAIL_VIEWPORT });
+          const top = 560 + rowsOffset([height + ROW_TITLE_HEIGHT + geometry.gap], 0) + ROW_TITLE_HEIGHT;
+          const cardX = (i) => 220 + win.offset + i * pitch;
+          // Horizontal (or vertical) run lengths between black/white transitions.
+          const runs = (values) => {
+            const edges = [];
+            for (let i = 1; i < values.length; i += 1)
+              if (values[i - 1] > 110 !== values[i] > 110) edges.push(i);
+            return edges.slice(1).map((edge, i) => edge - edges[i]);
+          };
+          let state = null;
+          const deadline = performance.now() + 15000;
+          for (;;) {
+            assert(!failures.length, `WebGL fell back to DOM: ${failures.join(",")}`);
+            if (lightning && document.querySelector(".tv2-gl-canvas")) {
+              lightning.stage.drawFrame();
+              const image = pixelsAt(cardX(0) + width / 2, top + height / 2);
+              const tileCorner = pixelsAt(cardX(1) + 6, top + 6);
+              const tileBand = pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80);
+              const row = pixelsAt(1240, 120, 670, 1);
+              const column = pixelsAt(1600, 0, 1, 340);
+              const lum = (data) => Array.from({ length: data.length / 4 }, (_, i) => data[i * 4]);
+              state = {
+                image: [...image.slice(0, 3)],
+                tileCorner: [...tileCorner.slice(0, 3)],
+                tileText: Math.max(...lum(tileBand)),
+                across: runs(lum(row)),
+                down: runs(lum(column).reverse())
+              };
+              if (
+                state.image[0] > 230 &&
+                state.image[1] < 30 &&
+                state.tileText > state.tileCorner[0] + 40 &&
+                state.across.length >= 3 &&
+                state.down.length >= 1
+              )
+                break;
+            }
+            if (performance.now() > deadline)
+              throw Error(`WebGL Home never settled: ${JSON.stringify(state)}`);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          const [r, g, b] = state.tileCorner;
+          assert(r < 80 && g < 80 && b < 80, `no-CORS card shows the dark tile, not white: ${state.tileCorner}`);
+          const median = (list) => [...list].sort((x, y) => x - y)[list.length >> 1];
+          const across = median(state.across);
+          const down = median(state.down);
+          // Cover in 1382×650: 80 × 1382/1280 ≈ 86 px both ways; stretched would be 86 × 72.
+          assert(Math.abs(across - 86) <= 3, `hero square width ${across}`);
+          assert(Math.abs(down / across - 1) < 0.06, `hero squares ${across}×${down}: not distorted`);
+          const info = glInfo();
+          assert(info?.renderer && info.maxTextureSize > 0, "Diagnostic WebGL facts");
+          assert(info.failed.autre >= 1 && info.failed.tmdb === 0, JSON.stringify(info.failed));
+          assert(info.heroBand?.w === 1382, JSON.stringify(info.heroBand));
+          view.destroy();
+          result.dataset.status = "passed";
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile and hero cover (${info.renderer}; SwiftShader, not a TV measure)`;
+        } catch (error) {
+          result.dataset.status = "failed";
+          result.textContent = `FAIL: ${error?.stack || error}`;
+        }
+    </script>
+  </body>
+</html>

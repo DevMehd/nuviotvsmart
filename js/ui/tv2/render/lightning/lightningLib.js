@@ -3,6 +3,12 @@
 // as benchmarks/vidaa-comparison/adapters/lightning.js; SDF text instead of canvas text.
 import { RendererMain } from "@lightningjs/renderer";
 import { WebGlCoreRenderer, SdfTextRenderer } from "@lightningjs/renderer/webgl";
-import { WebPlatform } from "@lightningjs/renderer/platforms";
+import { WebPlatform, WebPlatformLegacy } from "@lightningjs/renderer/platforms";
 
-globalThis.NuvioLightning = { RendererMain, WebGlCoreRenderer, SdfTextRenderer, WebPlatform };
+globalThis.NuvioLightning = {
+  RendererMain,
+  WebGlCoreRenderer,
+  SdfTextRenderer,
+  WebPlatform,
+  WebPlatformLegacy
+};

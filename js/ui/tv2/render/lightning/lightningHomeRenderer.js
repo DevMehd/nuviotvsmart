@@ -9,9 +9,10 @@ import {
 } from "../../railEngine.js";
 import { t } from "../../../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import { focusedIndex } from "../../focusModel.js";
-import { sizedImageUrl } from "../../imagePipeline.js";
-import { cardImageUrl, fillCard, navRowOf, setNavPosition } from "../../renderer.js";
-import { markWebglFailed } from "../../newHomeSetting.js";
+import { createImageQueue, glImageUrl } from "../../imagePipeline.js";
+import { cardImage, fillCard, navRowOf, setNavPosition } from "../../renderer.js";
+import { getWebglVariant, markWebglFailed, setWebglInfoSource } from "../../newHomeSetting.js";
+import { buildModernHeroPresentation } from "../../../screens/home/homeScreenHelpers-11-build-hero-display-model.js";
 import { buildSdfAtlas } from "./sdfAtlas.js";
 
 // New TV Home (nuv-091, lot B2), 100 % WebGL prototype on Lightning: hero, rails, text (SDF
@@ -27,12 +28,101 @@ const APP_WIDTH = 1920;
 const APP_HEIGHT = 1080;
 // Same layout as css/tv2-home.css.
 const RAIL_LEFT = 220;
-const HERO_HEIGHT = 620;
 const MAIN_TOP = 560;
 const FOCUS_RING = 4;
 // Fixed GPU budget: the image windows of renderer.js need about 45 MB (poster ~0.7 MB, hero
 // 3.7 MB). Still above it after Lightning's own cleanup means the TV cannot hold the scene.
 export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
+// Memory outside the image textures: the SDF font atlas (1024 px wide, RGBA). Lightning assumes
+// 26 MB by default, which would leave a 40-card window too little room before criticalCleanup.
+const BASELINE_BYTES = 4 * 1024 * 1024;
+// Mobile text fallback of a failed image (ShelfComponents.kt:194-203): textMuted, 16 sp → 28 px.
+const FALLBACK_TEXT = 0x969ca3ff;
+const COVER = { resizeMode: { type: "cover" } };
+
+/**
+ * Modern hero media node: components-16.css draws it 72 % wide, 56 px past the right edge and
+ * (48 % + 132 px) tall, i.e. 594/0/1382×650 at 1080p, or the full screen with
+ * modernHeroFullScreenBackdropEnabled; cropped as cover from the top right (object-position 100% 0).
+ */
+export function heroNodeProps(layout = {}) {
+  const rect = layout.modernHeroFullScreenBackdropEnabled
+    ? { x: 0, y: 0, w: APP_WIDTH, h: APP_HEIGHT }
+    : { x: 594, y: 0, w: 1382, h: 650 };
+  return { ...rect, textureOptions: { resizeMode: { type: "cover", clipX: 1, clipY: 0 } } };
+}
+
+// Diagnostic WebGL (lot W1a): failures per host class (never a URL or an addon host), distinct
+// proxied URLs and peak texture memory of this run.
+const glStats = {
+  failed: { tmdb: 0, metahub: 0, proxy: 0, autre: 0 },
+  proxied: new Set(),
+  peakTextureBytes: 0
+};
+let liveEngine = null;
+
+function hostClass(url) {
+  if (/^(?:\/_vercel\/image\?|https:\/\/res\.cloudinary\.com\/)/.test(url)) return "proxy";
+  if (/^https?:\/\/image\.tmdb\.org\//.test(url)) return "tmdb";
+  if (/^https:\/\/[a-z]+\.metahub\.space\//.test(url)) return "metahub";
+  return "autre";
+}
+
+function samplePeak() {
+  const used = liveEngine?.renderer.stage.txMemManager.getMemoryInfo().memUsed || 0;
+  glStats.peakTextureBytes = Math.max(glStats.peakTextureBytes, used);
+}
+
+/**
+ * GPU facts for the Diagnostic, to tell where the hero stripes come from: renderer string,
+ * high-precision fragment support, limits, peak texture memory, failures, and a checksum of a
+ * hero band read back after drawing a frame (stripes in it come from WebGL, not the compositor).
+ */
+export function glInfo() {
+  const engine = liveEngine;
+  if (!engine) return null;
+  samplePeak();
+  const gl = engine.canvas.getContext("webgl");
+  const info = {
+    variant: engine.variant,
+    renderer: null,
+    highFloat: null,
+    maxTextureSize: null,
+    innerWidth: globalThis.innerWidth ?? null,
+    devicePixelRatio: globalThis.devicePixelRatio ?? null,
+    peakTextureBytes: glStats.peakTextureBytes,
+    failed: { ...glStats.failed },
+    proxiedUrls: glStats.proxied.size,
+    heroBand: null
+  };
+  if (!gl) return info;
+  const debug = gl.getExtension("WEBGL_debug_renderer_info");
+  info.renderer = String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  const high = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  info.highFloat = high ? { precision: high.precision, rangeMax: high.rangeMax } : null;
+  info.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  // preserveDrawingBuffer is off: draw now and read in the same task.
+  engine.renderer.stage.drawFrame();
+  const scale = engine.canvas.width / APP_WIDTH;
+  const hero = heroNodeProps();
+  const w = Math.max(1, Math.round(hero.w * scale));
+  const h = Math.max(1, Math.round(8 * scale));
+  const pixels = new Uint8Array(w * h * 4);
+  gl.readPixels(
+    Math.round(hero.x * scale),
+    engine.canvas.height - Math.round(208 * scale),
+    w,
+    h,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    pixels
+  );
+  let sum = 0;
+  for (let i = 0; i < pixels.length; i += 1) sum = (sum * 31 + pixels[i]) >>> 0;
+  info.heroBand = { w, h, checksum: sum };
+  return info;
+}
+setWebglInfoSource(glInfo);
 
 /**
  * One engine (GL context, shaders, font atlas) per run, reused across Home mounts. `create`
@@ -101,6 +191,7 @@ async function createEngine(report) {
   const L = globalThis.NuvioLightning;
   if (!L) throw new Error("lightning-missing");
   const urls = await fontUrls();
+  const variant = getWebglVariant();
   // Lightning keeps SDF fonts in a module cache: a rebuilt engine needs its own family name.
   engineCount += 1;
   const font = `${FONT}${engineCount}`;
@@ -114,12 +205,22 @@ async function createEngine(report) {
         devicePhysicalPixelRatio: 1,
         renderEngine: L.WebGlCoreRenderer,
         fontEngines: [L.SdfTextRenderer],
-        platform: L.WebPlatform,
+        platform:
+          variant === "platform-legacy" && L.WebPlatformLegacy
+            ? L.WebPlatformLegacy
+            : L.WebPlatform,
+        createImageBitmapSupport: variant === "bitmap-basic" ? "basic" : "full",
         numImageWorkers: 0,
+        // A failed URL fails at once: the card's fallbacks, then its text tile, replace retries.
+        maxRetryCount: 0,
         clearColor: 0x00000000,
         // Preload about one card or row beyond the clip, like the DOM renderer's margins.
         boundsMargin: 480,
-        textureMemory: { criticalThreshold: TEXTURE_BUDGET_BYTES, targetThresholdLevel: 0.5 },
+        textureMemory: {
+          criticalThreshold: TEXTURE_BUDGET_BYTES,
+          targetThresholdLevel: 0.5,
+          baselineMemoryAllocation: BASELINE_BYTES
+        },
         enableContextSpy: false
       },
       document.createElement("div")
@@ -132,6 +233,7 @@ async function createEngine(report) {
   canvas.addEventListener("webglcontextlost", () => report("context-lost"));
   renderer.on("criticalCleanupFailed", () => report("texture-budget"));
   const dispose = () => {
+    if (liveEngine?.renderer === renderer) liveEngine = null;
     try {
       L.SdfTextRenderer.font.unloadFont(font);
       renderer.close();
@@ -148,7 +250,8 @@ async function createEngine(report) {
     dispose();
     throw new Error("font-atlas");
   }
-  return { renderer, canvas, dispose, font };
+  liveEngine = { renderer, canvas, dispose, font, variant };
+  return liveEngine;
 }
 
 const keeper = createEngineKeeper(createEngine);
@@ -171,31 +274,63 @@ function themeColor(element, name, fallback, alpha = 1) {
 }
 
 /**
- * Lightning image node behind the element-like surface imagePipeline's queue drives. Lightning
- * paints a node without texture as a white rectangle, so it stays transparent without a URL.
- * The queue slot is released at once: Lightning only loads nodes inside the preload bounds and
- * paces uploads itself, so a node scrolled away would otherwise hold its slot forever. The
- * queue keeps its navigation-busy gate and its latest-URL-per-card rule.
+ * Lightning image node behind the element-like surface imagePipeline's queue drives. The queue
+ * slot is held until Lightning reports `loaded` or `failed`; `failed` lets the queue try the next
+ * fallback, and `onState("failed")` follows the last one. Lightning only uploads a texture for a
+ * visible node (alpha > 0, inside the preload bounds) and never draws it before it is loaded, so
+ * the node shows `alpha` as soon as it has a URL; without one it stays at 0, since a node without
+ * texture is painted white. A node leaving the bounds (or whose texture is freed) before loading
+ * gives its slot back and is requested again by the next update.
  */
-function imageSlot(node, alpha = 1) {
+export function imageSlot(node, alpha = 1, onState = () => {}) {
   node.alpha = 0;
   const slot = {
     url: "",
+    loading: false,
     onload: null,
     onerror: null,
     getAttribute: (name) => (name === "src" && slot.url) || null,
-    removeAttribute() {
-      slot.url = "";
-      node.src = null;
-      node.alpha = 0;
-    },
+    removeAttribute: () => set(""),
     set src(url) {
-      slot.url = url;
-      node.src = url;
-      node.alpha = alpha;
-      Promise.resolve().then(() => slot.onload?.());
+      set(url);
     }
   };
+  function set(url) {
+    slot.url = url || "";
+    slot.loading = Boolean(url);
+    // Lightning ignores the same src again: reattach so its texture reports loaded/failed anew.
+    if (url && node.src === url) node.src = null;
+    node.src = url || null;
+    node.alpha = url ? alpha : 0;
+    onState(url ? "loading" : "empty");
+    if (url && hostClass(url) === "proxy") glStats.proxied.add(url);
+    // Already outside the bounds: no event would come until it scrolls back.
+    if (url) Promise.resolve().then(() => slot.url === url && node.renderState === 2 && giveBack());
+  }
+  function giveBack() {
+    if (!slot.loading) return;
+    const done = slot.onload;
+    set("");
+    done?.();
+  }
+  // shortcut: Lightning never reports a 1×1 image as loaded, so it holds its slot until it leaves
+  // the bounds; time the slot out if such placeholders show up in real catalogs.
+  node.on("loaded", () => {
+    if (!slot.loading) return;
+    slot.loading = false;
+    onState("loaded");
+    slot.onload?.();
+  });
+  node.on("failed", () => {
+    if (!slot.loading) return;
+    const url = slot.url;
+    slot.loading = false;
+    glStats.failed[hostClass(url)] += 1;
+    slot.onerror?.();
+    if (slot.url === url) onState("failed");
+  });
+  node.on("outOfBounds", giveBack);
+  node.on("freed", giveBack);
   return slot;
 }
 
@@ -214,6 +349,8 @@ export function createLightningHomeRenderer(
   const proxy = container.querySelector(".tv2-gl-proxy .tv2-card");
   const views = new Map();
   const last = { rows: [], focus: null, options: {}, hero: null };
+  // The hero image stays out of the card queue, as in the DOM renderer.
+  const heroQueue = createImageQueue({ concurrency: 1 });
   let engine = null;
   let scene = null;
   let closed = false;
@@ -237,7 +374,6 @@ export function createLightningHomeRenderer(
     const colors = {
       bg: themeColor(root, "--bg-color", "#0d0d0d"),
       bgClear: themeColor(root, "--bg-color", "#0d0d0d", 0),
-      bgSide: themeColor(root, "--bg-color", "#0d0d0d", 0.9),
       text: themeColor(root, "--text-color", "#ffffff"),
       secondary: themeColor(root, "--text-secondary", "#b3b3b3"),
       tertiary: themeColor(root, "--text-tertiary", "#808080"),
@@ -262,19 +398,23 @@ export function createLightningHomeRenderer(
       h: APP_HEIGHT,
       color: colors.bg
     });
-    const heroImage = node({ parent: sceneRoot, w: APP_WIDTH, h: HERO_HEIGHT });
+    const hero = heroNodeProps(layout);
+    const heroImage = node({ parent: sceneRoot, ...hero });
+    // Left and bottom fades of the hero media (components-16.css ::before/::after), two stops.
     node({
       parent: sceneRoot,
-      w: APP_WIDTH * 0.6,
-      h: HERO_HEIGHT,
-      colorLeft: colors.bgSide,
+      x: hero.x,
+      w: hero.w * 0.45,
+      h: hero.h,
+      colorLeft: colors.bg,
       colorRight: colors.bgClear
     });
     node({
       parent: sceneRoot,
-      y: HERO_HEIGHT * 0.4,
-      w: APP_WIDTH,
-      h: HERO_HEIGHT * 0.6,
+      x: hero.x,
+      y: hero.h * 0.4,
+      w: hero.w,
+      h: hero.h * 0.6,
       colorTop: colors.bgClear,
       colorBottom: colors.bg
     });
@@ -292,7 +432,7 @@ export function createLightningHomeRenderer(
       group,
       text,
       root: sceneRoot,
-      heroSlot: imageSlot(heroImage, 0.55),
+      heroSlot: imageSlot(heroImage),
       heroTitle: text({ parent: sceneRoot, x: RAIL_LEFT, y: 300, fontSize: 64, maxWidth: 900 }),
       heroDescription: text({
         parent: sceneRoot,
@@ -364,14 +504,9 @@ export function createLightningHomeRenderer(
         color: scene.colors.card,
         zIndex: 1
       });
-      card = {
-        node: cardNode,
-        image: imageSlot(scene.node({ parent: cardNode, w: width, h: height })),
-        title: null,
-        index: -1,
-        rowKey: ""
-      };
-      scene.node({
+      const image = scene.node({ parent: cardNode, w: width, h: height, textureOptions: COVER });
+      card = { node: cardNode, image: null, title: null, index: -1, rowKey: "" };
+      const scrim = scene.node({
         parent: cardNode,
         y: height - 80,
         w: width,
@@ -385,6 +520,25 @@ export function createLightningHomeRenderer(
         y: height - 40,
         fontSize: 22,
         maxWidth: width - 24
+      });
+      // Failed image: the card background with the title centered (mobile text fallback).
+      card.fallback = scene.text({
+        parent: cardNode,
+        x: 28,
+        y: height / 2,
+        mountY: 0.5,
+        fontSize: 28,
+        lineHeight: 34,
+        maxWidth: width - 56,
+        maxLines: 3,
+        textAlign: "center",
+        color: FALLBACK_TEXT,
+        alpha: 0
+      });
+      card.image = imageSlot(image, 1, (state) => {
+        const failed = state === "failed";
+        card.fallback.alpha = failed ? 1 : 0;
+        scrim.alpha = card.title.alpha = failed ? 0 : 1;
       });
       view.slots[slot] = card;
     }
@@ -418,6 +572,8 @@ export function createLightningHomeRenderer(
     const heights = [];
     let top = 0;
     let ringCard = null;
+    const focusIndex = focusedIndex(focus, rows);
+    samplePeak();
     rows.forEach((row, rowIndex) => {
       const size = sizeFor(row.kind);
       const height = size.height + ROW_TITLE_HEIGHT + geometry.gap;
@@ -443,13 +599,17 @@ export function createLightningHomeRenderer(
           card.item = item;
           card.index = i;
           card.rowKey = row.key;
-          card.title.text = String(item.name || item.title || "");
-          card.url = cardImageUrl(row, item, size, layout);
+          card.title.text = card.fallback.text = String(item.name || item.title || "");
+          card.source = cardImage(row, item, size, layout, glImageUrl);
         }
         card.node.alpha = 1;
         card.node.x = i * pitch;
-        imageQueue.request(card.image, loadImages ? card.url : "");
-        if (rowIndex === focus.row && i === focusedIndex(focus, rows)) ringCard = card;
+        const focused = rowIndex === focus.row && i === focusIndex;
+        imageQueue.request(card.image, loadImages ? card.source.url : "", {
+          fallbacks: card.source.fallbacks,
+          priority: focused
+        });
+        if (focused) ringCard = card;
       }
       view.track.x = RAIL_LEFT + win.offset;
     });
@@ -473,10 +633,17 @@ export function createLightningHomeRenderer(
     if (!scene) return;
     scene.heroTitle.text = item?.name || item?.title || "";
     scene.heroDescription.text = item?.description || "";
-    imageQueue.request(
-      scene.heroSlot,
-      sizedImageUrl(item?.background || item?.backdrop || item?.poster, 1280)
-    );
+    // DOM backdrop order (buildHeroBackdropSources), without the poster: cover would crop it to a strip.
+    const display = item ? buildModernHeroPresentation(item) : null;
+    const width = engine.variant === "hero-780" ? 780 : 1280;
+    const [url = "", ...fallbacks] = [
+      ...new Set(
+        [display?.backdrop, ...(display?.backdropFallbacks || [])]
+          .filter((source) => source && source !== item.poster)
+          .map((source) => glImageUrl(source, width))
+      )
+    ];
+    heroQueue.request(scene.heroSlot, url, { fallbacks });
   }
 
   function setProfile(profile) {
@@ -515,6 +682,7 @@ export function createLightningHomeRenderer(
     focusedNode: () => sidebarFocused || (proxyFocused ? proxy : null),
     destroy() {
       closed = true;
+      heroQueue.clear();
       if (scene) {
         scene.root.destroy();
         // Leaving Home (often for the player): free every texture the scene held.

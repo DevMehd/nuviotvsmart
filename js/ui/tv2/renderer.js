@@ -67,27 +67,28 @@ import { sizedImageUrl } from "./imagePipeline.js";
  * catalog cards, cover for folders) and fallbacks: the custom poster's original, then the
  * unoptimized nuvio-art source. `model` is the catalog card model and `cw` the Continue Watching
  * one (continueCardModel, its own source order and fallbacks), both used by the DOM card.
+ * The WebGL layer passes glImageUrl as `urlFor`.
  */
-export function cardImage(row, item, size, settings) {
+export function cardImage(row, item, size, settings, urlFor = sizedImageUrl) {
   if (row.kind === "continue") {
     const cw = continueCardModel(item, {
       cardStyle: settings?.continueWatchingCardStyle || "card",
       useEpisodeThumbnails: settings?.useEpisodeThumbnailsInCw !== false,
       blurNextUp: resolveContinueWatchingBlurNextUp(settings)
     });
-    const url = sizedImageUrl(cw.image, size.width);
+    const url = urlFor(cw.image, size.width);
     // Current Home order: custom poster original, nuvio-art original (unsized, sizing would
     // re-optimize it), then data-fallback-srcs.
     const fallbacks = [
-      sizedImageUrl(cw.rawImage, size.width),
+      urlFor(cw.rawImage, size.width),
       getVidaaArtworkOriginal(url),
-      ...cw.fallbacks.map((source) => sizedImageUrl(source, size.width))
+      ...cw.fallbacks.map((source) => urlFor(source, size.width))
     ].filter(Boolean);
     return { url, fallbacks: [...new Set(fallbacks)].filter((value) => value !== url), cw };
   }
   if (row.kind === "collection")
     return {
-      url: sizedImageUrl(firstNonEmpty(item.poster, item.coverImageUrl, item.backdrop), size.width),
+      url: urlFor(firstNonEmpty(item.poster, item.coverImageUrl, item.backdrop), size.width),
       fallbacks: []
     };
   // Landscape catalog sizes only exist in the modern layout (cardGeometry).
@@ -98,16 +99,11 @@ export function cardImage(row, item, size, settings) {
     preferLandscapePoster: landscape,
     settings
   });
-  const url = sizedImageUrl(model.posterSrc, size.width);
+  const url = urlFor(model.posterSrc, size.width);
   const raw = landscape ? model.normalized.rawLandscapePosterUrl : model.normalized.rawPosterUrl;
-  const fallbacks = [
-    ...new Set([raw && sizedImageUrl(raw, size.width), getVidaaArtworkOriginal(url)])
-  ];
+  const fallbacks = [...new Set([raw && urlFor(raw, size.width), getVidaaArtworkOriginal(url)])];
   return { url, fallbacks: fallbacks.filter((value) => value && value !== url), model };
 }
-
-/** Card image URL alone; the WebGL layer asks for the very same URL. */
-export const cardImageUrl = (row, item, size, settings) => cardImage(row, item, size, settings).url;
 
 const esc = (value) =>
   String(value ?? "").replace(
