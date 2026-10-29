@@ -169,7 +169,9 @@ function setup(options = {}) {
   video.emit("timeupdate");
   assert.equal(session.state, "playing");
   assert.equal(session.firstFrame, true);
-  assert.equal(clock.timers.size, 0, "zero timers while playing");
+  assert.equal(clock.timers.size, 1, "only the freeze sentinel while playing");
+  video.emit("pause");
+  assert.equal(clock.timers.size, 0, "zero timers while paused");
 }
 
 // 2b. A playing that never shows an image after a late recovery still ends in an error.
@@ -364,12 +366,99 @@ function setup(options = {}) {
   assert.equal(late.video.currentTime, 97);
 }
 
+// 10c. Freeze sentinel (P3, C4): same link, same position; a frame counter that never moves
+// proves nothing; a seek or a pause is not a freeze; repeated freezes end in an error.
+{
+  const notes = [];
+  const { clock, video, session } = setup({ note: (name) => notes.push(name) });
+  session.attach(URL_A);
+  video.emit("loadedmetadata");
+  video.emit("playing");
+  video.currentTime = 30.2;
+  video.emit("timeupdate");
+  assert.equal(session.state, "playing");
+  video.readyState = 4;
+  let frames = 0;
+  video.getVideoPlaybackQuality = () => ({ totalVideoFrames: frames });
+  // Hardware plane: time advances, the frame counter stays at 0 for minutes.
+  for (let i = 0; i < 60; i += 1) {
+    clock.advance(2000);
+    video.currentTime += 2;
+    video.emit("timeupdate");
+  }
+  assert.equal(session.attaches, 1, "a counter that never moves is not a freeze");
+  // A long seek stands still without a waiting event.
+  video.seeking = true;
+  clock.advance(20000);
+  video.seeking = false;
+  assert.equal(session.attaches, 1, "a seek is not a freeze");
+  video.paused = true;
+  clock.advance(20000);
+  video.paused = false;
+  assert.equal(session.attaches, 1, "a pause the session did not see is not a freeze");
+  // The time stands still with data: reload of the same link at the same position.
+  clock.advance(10000);
+  assert.equal(session.attaches, 2, "frozen time: one reload");
+  assert.equal(session.url, URL_A, "same link");
+  assert.deepEqual(notes, ["freezeTime", "freezeReload"]);
+  clock.advance(0);
+  video.emit("loadedmetadata");
+  assert.ok(Math.abs(video.currentTime - session.currentSeconds()) < 0.01);
+  assert.ok(video.currentTime > 140, `same position (${video.currentTime})`);
+  // Frames seen moving, then stuck while the time still advances.
+  video.emit("playing");
+  video.currentTime += 0.5;
+  video.emit("timeupdate");
+  assert.equal(session.state, "playing");
+  for (let i = 0; i < 3; i += 1) {
+    clock.advance(2000);
+    frames += 50;
+    video.currentTime += 2;
+  }
+  for (let i = 0; i < 5; i += 1) {
+    clock.advance(2000);
+    video.currentTime += 2;
+  }
+  assert.equal(session.attaches, 3, "stuck frames: a second reload");
+  assert.equal(notes.at(-2), "freezeFrames");
+  clock.advance(0);
+  video.emit("playing");
+  video.currentTime += 0.5;
+  video.emit("timeupdate");
+  frames += 1;
+  clock.advance(12000);
+  assert.equal(session.state, "error", "a third freeze is an explicit error, never a loop");
+  assert.equal(session.error.kind, "stalled");
+  assert.equal(clock.timers.size, 0);
+  // Retry starts a fresh budget on the same link.
+  session.retry();
+  assert.equal(session.url, URL_A);
+}
+
+// 10d. Resume after a user pause plays again, never before the first image.
+{
+  const { video, session } = setup();
+  session.attach(URL_A);
+  video.calls.length = 0;
+  session.resume();
+  assert.deepEqual(video.calls, [], "no play() before the first image");
+  video.emit("playing");
+  video.currentTime = 0.3;
+  video.emit("timeupdate");
+  session.pause();
+  video.emit("pause");
+  assert.equal(session.state, "paused");
+  session.resume();
+  assert.equal(video.calls.at(-1), "play");
+}
+
 // 11. The new player never switches source by itself and never uses the forbidden paths.
 for (const file of [
   "js/ui/tv2/player/videoSession.js",
   "js/ui/tv2/player/newPlayerScreen.js",
   "js/ui/tv2/player/resolvePlayableCandidate.js",
-  "js/ui/tv2/player/playerProgress.js"
+  "js/ui/tv2/player/playerProgress.js",
+  "js/ui/tv2/player/playerOsd.js"
 ]) {
   // Code only: the comments name the old paths they replace.
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))

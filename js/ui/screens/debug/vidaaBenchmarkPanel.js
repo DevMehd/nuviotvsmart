@@ -274,6 +274,12 @@ export function renderBenchmarkPage(state, page, selected, driverState = {}) {
             .map((entry) => row(String(entry.at || "").slice(11, 19), describeStartup(entry)))
             .join("")
         : "<p>Aucun démarrage relevé : lancez une vidéo ou une lecture brute.</p>") +
+      row(
+        "Événements du nouveau lecteur",
+        Object.entries(report.playerEvents || {})
+          .map(([name, total]) => `${name} ×${total}`)
+          .join(", ") || "aucun"
+      ) +
       (raw ? renderRawProbe(raw) : "") +
       `<p class="benchmark-note">Lecture brute : la dernière source sur une balise vidéo nue, sans les couches du lecteur. Une lecture brute lente ou en échec montre une limite de la télé ou de la source, pas du lecteur. Aucun lien, hôte ni jeton conservé.</p>`
     );

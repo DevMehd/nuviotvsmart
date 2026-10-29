@@ -16,17 +16,26 @@ import { saveReusableStreamLink } from "../../../core/streams/streamLinkReuse.js
 import { activeStreamLinkProfile } from "../../../data/local/streamLinkCacheStore.js";
 import { WatchJournal } from "../../../core/perso/watchJournal.js";
 import { maybeOfferRatingAfterPlayback } from "../../screens/player/persoRatingOffer.js";
+import { StreamInfoMethods, isStreamInfoKey } from "../../screens/player/streamInfoOverlay.js";
+import { deltaMsForKeyRepeat } from "../../../core/player/playerScrubRates.js";
+import { VidaaBenchmark } from "../../../core/diagnostics/vidaaBenchmark.js";
+import { OSD_HIDE_MS, OSD_HTML, createPlayerOsd, resolveMediaAction } from "./playerOsd.js";
 
 // New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
-// switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js). Same route "player",
-// params and screen contract as the old player (router facade). Never imports
-// playerScreenMethods-* or playerScreenContext (asserted by the VIDAA build).
-// Deferred to later slices: OSD/seek/media keys (P3), tracks (P4), in-player Sources (P5),
-// next episode (P6), Watch Party (P7, whose restore will take priority over the route's).
+// switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js); OSD, seek preview,
+// media keys, buffering and the Back order (P3, playerOsd.js). Same route "player", params and
+// screen contract as the old player (router facade). Never imports playerScreenMethods-* or
+// playerScreenContext (asserted by the VIDAA build).
+// Deferred to later slices: tracks (P4), in-player Sources (P5), next episode and skip intro
+// (P6), Watch Party (P7, whose restore will take priority over the route's).
 
 const t = (key, params = [], fallback = key) => I18n.t(key, params, { fallback });
 const ERROR_ACTIONS = ["sources", "retry", "back"];
-const SELECT_KEY = 13;
+const isSelectKey = (keyCode) => keyCode === 13 || keyCode === 23;
+const BUFFERING_DELAY_MS = 600;
+const SEEK_COMMIT_FALLBACK_MS = 1000;
+// Real media key codes of the remote, written once each to the Diagnostic (P3 risk).
+const notedMediaKeys = new Set();
 
 function normalizeItemType(value) {
   return (
@@ -112,9 +121,12 @@ const ROOT_HTML = `
         <button type="button" class="p2-error-button" data-p2-action="back"></button>
       </div>
     </div>
-  </div>`;
+  </div>${OSD_HTML}`;
 
 export const NewPlayerScreen = {
+  // Stream info (i) overlay of the old player, shared as is; it drives the OSD through the
+  // setControlsVisible / resetControlsAutoHide / clearControlsAutoHide names below.
+  ...StreamInfoMethods,
   container: null,
   params: {},
   video: null,
@@ -137,6 +149,21 @@ export const NewPlayerScreen = {
   streamLinkCacheProfileId: null,
   initialFilenameStreamCandidate: null,
   videoAutoplay: false,
+  osd: null,
+  controlsVisible: false,
+  controlFocusZone: "",
+  controlFocusIndex: 0,
+  streamInfoVisible: false,
+  streamInfoOverlay: null,
+  seekPreviewSeconds: null,
+  seekPreviewDirection: 0,
+  seekRepeatCount: 0,
+  seekOpenedOsd: false,
+  osdHideTimer: null,
+  osdTickTimer: null,
+  seekCommitTimer: null,
+  bufferingTimer: null,
+  bufferingShown: false,
 
   get paused() {
     return this.session?.state === "paused";
@@ -160,10 +187,12 @@ export const NewPlayerScreen = {
     this.videoAutoplay = this.video.hasAttribute("autoplay");
     this.video.removeAttribute("autoplay");
     this.video.muted = false;
+    this.resetOsdState();
     this.buildRoot();
     this.session = createVideoSession(this.video, {
       prepare: (url) => Platform.prepareMediaRequest(url),
-      onChange: () => token === this.playerMountToken && this.render()
+      onChange: () => token === this.playerMountToken && this.render(),
+      note: (name) => VidaaBenchmark.notePlayerEvent?.(name)
     });
     this.candidate = pickInitialCandidate(this.params);
     this.initialFilenameStreamCandidate = this.candidate;
@@ -273,6 +302,20 @@ export const NewPlayerScreen = {
       back: t("player_go_back", [], "Go Back")
     };
     for (const button of this.refs.buttons) button.textContent = labels[button.dataset.p2Action];
+    const series = isSeriesItemType(params.itemType);
+    const episode =
+      series && params.season != null && params.episode != null
+        ? `S${params.season} E${params.episode}`
+        : "";
+    this.osd = createPlayerOsd(root, {
+      title: params.playerTitle || params.itemTitle || "",
+      subtitle:
+        [episode, series ? params.playerEpisodeTitle || params.episodeTitle || "" : ""]
+          .filter(Boolean)
+          .join(" · ") ||
+        params.playerSubtitle ||
+        ""
+    });
     this.container.appendChild(root);
     this.root = root;
   },
@@ -301,8 +344,23 @@ export const NewPlayerScreen = {
         ? t("player2_opening", [seconds], `Opening… ${seconds} s`)
         : t("player_loading_preparing", [], "Preparing stream…");
     }
-    refs.buffering.hidden = Boolean(error) || session.state !== "buffering";
+    // The spinner waits 600 ms of waiting without a new playing: short refills stay invisible.
+    if (error || session.state !== "buffering") {
+      if (this.bufferingTimer !== null) clearTimeout(this.bufferingTimer);
+      this.bufferingTimer = null;
+      this.bufferingShown = false;
+    } else if (!this.bufferingShown && this.bufferingTimer === null) {
+      this.bufferingTimer = setTimeout(() => {
+        this.bufferingTimer = null;
+        this.bufferingShown = true;
+        this.render();
+      }, BUFFERING_DELAY_MS);
+    }
+    refs.buffering.hidden = !this.bufferingShown;
     refs.error.hidden = !error;
+    // A pause keeps the OSD up; a new playing starts its auto-hide again.
+    if (this.controlsVisible) this.resetControlsAutoHide();
+    this.renderOsd();
     if (error) {
       refs.errorMessage.textContent = playerErrorMessage(error);
       refs.buttons.forEach((button, index) =>
@@ -338,17 +396,195 @@ export const NewPlayerScreen = {
   onKeyDown(event) {
     const keyCode = Number(event?.keyCode || 0);
     this.session?.restoreSound();
-    if (!this.isErrorVisible()) return;
-    event?.preventDefault?.();
+    if (this.isErrorVisible()) {
+      event?.preventDefault?.();
+      if (keyCode === 37 || keyCode === 39) {
+        const step = keyCode === 39 ? 1 : -1;
+        this.errorFocus = Math.max(0, Math.min(ERROR_ACTIONS.length - 1, this.errorFocus + step));
+        this.render();
+      } else if (isSelectKey(keyCode) && !event?.repeat)
+        this.runErrorAction(ERROR_ACTIONS[this.errorFocus]);
+      return;
+    }
+    // Loading: only Back acts (FocusEngine -> consumeBackRequest).
+    if (!this.session?.firstFrame) return;
+    if (this.streamInfoVisible) {
+      event?.preventDefault?.();
+      if (!event?.repeat && (isStreamInfoKey(event) || isSelectKey(keyCode)))
+        this.closeStreamInfo();
+      else if ((keyCode === 38 || keyCode === 40) && this.streamInfoOverlay)
+        this.streamInfoOverlay.scrollTop += keyCode === 40 ? 100 : -100;
+      return;
+    }
+    if (isStreamInfoKey(event)) {
+      event?.preventDefault?.();
+      if (!event?.repeat) this.showStreamInfo();
+      return;
+    }
+    const action = resolveMediaAction(event);
+    if (action) {
+      event?.preventDefault?.();
+      const code = Number(event?.originalKeyCode || keyCode);
+      if (!notedMediaKeys.has(code)) {
+        notedMediaKeys.add(code);
+        VidaaBenchmark.notePlayerEvent?.(`key${code}-${action}`);
+      }
+      this.applyMediaAction(action, event);
+      return;
+    }
+    if (isSelectKey(keyCode)) {
+      event?.preventDefault?.();
+      if (event?.repeat) return;
+      if (this.seekPreviewSeconds != null) this.commitSeekPreview();
+      this.togglePause();
+      return;
+    }
     if (keyCode === 37 || keyCode === 39) {
-      const step = keyCode === 39 ? 1 : -1;
-      this.errorFocus = Math.max(0, Math.min(ERROR_ACTIONS.length - 1, this.errorFocus + step));
-      this.render();
-    } else if (keyCode === SELECT_KEY && !event?.repeat)
-      this.runErrorAction(ERROR_ACTIONS[this.errorFocus]);
+      event?.preventDefault?.();
+      this.beginSeekPreview(keyCode === 39 ? 1 : -1, Boolean(event?.repeat));
+      return;
+    }
+    if (keyCode === 38 || keyCode === 40) {
+      event?.preventDefault?.();
+      this.setControlsVisible(true);
+    }
   },
 
-  onKeyUp() {},
+  // Android parity: preview while a direction is held, one seek on release.
+  onKeyUp(event) {
+    const keyCode = Number(event?.keyCode || 0);
+    const action = resolveMediaAction(event);
+    if (
+      this.seekPreviewSeconds != null &&
+      (keyCode === 37 || keyCode === 39 || action === "fastForward" || action === "rewind")
+    ) {
+      event?.preventDefault?.();
+      this.commitSeekPreview();
+    }
+  },
+
+  resetOsdState() {
+    this.stopOsdTimers();
+    this.controlsVisible = false;
+    this.streamInfoVisible = false;
+    this.streamInfoOverlay = null;
+    this.seekPreviewSeconds = null;
+    this.seekPreviewDirection = 0;
+    this.seekRepeatCount = 0;
+    this.seekOpenedOsd = false;
+    this.bufferingShown = false;
+  },
+
+  stopOsdTimers() {
+    for (const name of ["osdHideTimer", "seekCommitTimer", "bufferingTimer"]) {
+      if (this[name] !== null) clearTimeout(this[name]);
+      this[name] = null;
+    }
+    if (this.osdTickTimer !== null) clearInterval(this.osdTickTimer);
+    this.osdTickTimer = null;
+  },
+
+  renderOsd() {
+    this.osd?.update({
+      visible: this.controlsVisible && Boolean(this.session?.firstFrame),
+      paused: Boolean(this.video?.paused),
+      current: this.getPlaybackCurrentSeconds(),
+      duration: this.getPlaybackDurationSeconds(),
+      preview: this.seekPreviewSeconds
+    });
+  },
+
+  // Zero OSD timer while it is hidden: the 1 Hz update and the auto-hide live only while shown.
+  setControlsVisible(visible) {
+    this.controlsVisible = Boolean(visible);
+    if (!this.controlsVisible) {
+      this.seekOpenedOsd = false;
+      if (this.osdTickTimer !== null) clearInterval(this.osdTickTimer);
+      this.osdTickTimer = null;
+    } else if (this.osdTickTimer === null) {
+      this.osdTickTimer = setInterval(() => this.renderOsd(), 1000);
+    }
+    this.resetControlsAutoHide();
+    this.renderOsd();
+  },
+
+  clearControlsAutoHide() {
+    if (this.osdHideTimer !== null) clearTimeout(this.osdHideTimer);
+    this.osdHideTimer = null;
+  },
+
+  resetControlsAutoHide() {
+    this.clearControlsAutoHide();
+    if (
+      !this.controlsVisible ||
+      this.paused ||
+      this.seekPreviewSeconds != null ||
+      this.streamInfoVisible
+    )
+      return;
+    this.osdHideTimer = setTimeout(() => {
+      this.osdHideTimer = null;
+      this.setControlsVisible(false);
+    }, OSD_HIDE_MS);
+  },
+
+  togglePause() {
+    if (!this.session?.firstFrame || this.isErrorVisible()) return;
+    if (this.video?.paused) this.session.resume();
+    else this.session.pause();
+    this.setControlsVisible(true);
+  },
+
+  beginSeekPreview(direction, repeat = false) {
+    if (!this.session?.firstFrame || this.isErrorVisible()) return;
+    if (direction !== this.seekPreviewDirection || !repeat) this.seekRepeatCount = 0;
+    this.seekPreviewDirection = direction;
+    const delta = deltaMsForKeyRepeat(this.seekRepeatCount, direction > 0) / 1000;
+    this.seekRepeatCount += 1;
+    const duration = this.getPlaybackDurationSeconds();
+    const base = this.seekPreviewSeconds ?? this.getPlaybackCurrentSeconds();
+    const next = Math.max(0, base + delta);
+    this.seekPreviewSeconds = duration > 0 ? Math.min(next, duration) : next;
+    if (!this.controlsVisible) this.seekOpenedOsd = true;
+    this.setControlsVisible(true);
+    // The video is untouched until the key is released, or 1 s after the last key without keyup.
+    if (this.seekCommitTimer !== null) clearTimeout(this.seekCommitTimer);
+    this.seekCommitTimer = setTimeout(() => this.commitSeekPreview(), SEEK_COMMIT_FALLBACK_MS);
+  },
+
+  commitSeekPreview() {
+    if (this.seekCommitTimer !== null) clearTimeout(this.seekCommitTimer);
+    this.seekCommitTimer = null;
+    const target = this.seekPreviewSeconds;
+    this.seekPreviewSeconds = null;
+    this.seekPreviewDirection = 0;
+    this.seekRepeatCount = 0;
+    this.seekOpenedOsd = false;
+    if (target != null) this.seekPlaybackSeconds(target);
+    this.resetControlsAutoHide();
+    this.renderOsd();
+  },
+
+  cancelSeekPreview() {
+    if (this.seekCommitTimer !== null) clearTimeout(this.seekCommitTimer);
+    this.seekCommitTimer = null;
+    this.seekPreviewSeconds = null;
+    this.seekPreviewDirection = 0;
+    this.seekRepeatCount = 0;
+    // A preview opened from a hidden OSD leaves it hidden again.
+    this.setControlsVisible(!this.seekOpenedOsd);
+  },
+
+  // StreamInfoMethods hooks: the new player has no external frame and no post-play (deferred).
+  isStartupErrorVisible() {
+    return this.isErrorVisible();
+  },
+  isExternalFrameMode() {
+    return false;
+  },
+  isPostPlayVisible() {
+    return false;
+  },
 
   onPointerActivate(target) {
     const action = target?.closest?.("[data-p2-action]")?.dataset?.p2Action;
@@ -358,13 +594,29 @@ export const NewPlayerScreen = {
   onPointerFocus() {},
   onPointerMove() {},
 
-  // P1: Back always leaves (loading, error or playing); P3 adds the OSD and panels first.
+  // Back order: panel, seek preview, (next card / skip intro: P6), visible OSD, then leave.
+  // Loading and error always leave; navigateBackToStreamScreen locks a doubled Back.
   consumeBackRequest() {
+    if (this.isErrorVisible() || !this.session?.firstFrame || this.playerBackNavigationInProgress)
+      return this.navigateBackToStreamScreen();
+    if (this.streamInfoVisible) {
+      this.closeStreamInfo();
+      return true;
+    }
+    if (this.seekPreviewSeconds != null) {
+      this.cancelSeekPreview();
+      return true;
+    }
+    if (this.controlsVisible) {
+      this.setControlsVisible(false);
+      return true;
+    }
     return this.navigateBackToStreamScreen();
   },
 
+  // Same list as the old player: a visible OSD alone lets a history Back return to Sources.
   hasBackDismissableOverlay() {
-    return false;
+    return Boolean(this.streamInfoVisible || this.seekPreviewSeconds != null);
   },
 
   cancelSourceLoad() {},
@@ -529,13 +781,28 @@ export const NewPlayerScreen = {
   getPlaybackSpeed() {
     return 1;
   },
-  seekPlaybackSeconds() {
-    return false;
+  seekPlaybackSeconds(seconds) {
+    const target = Number(seconds);
+    if (!this.session?.firstFrame || !this.video || !Number.isFinite(target)) return false;
+    const duration = this.getPlaybackDurationSeconds();
+    try {
+      this.video.currentTime = Math.max(0, duration > 0 ? Math.min(target, duration) : target);
+    } catch (_) {
+      return false;
+    }
+    return true;
   },
-  applyMediaAction() {
-    return false;
+  // Media keys and the phone remote; Stop pauses like the old player.
+  applyMediaAction(action, event = null) {
+    if (action === "toggle") this.togglePause();
+    else if (action === "play" || action === "pause" || action === "stop") {
+      if (Boolean(this.video?.paused) === (action === "play")) this.togglePause();
+    } else if (action === "fastForward" || action === "rewind")
+      this.beginSeekPreview(action === "fastForward" ? 1 : -1, Boolean(event?.repeat));
   },
-  renderControlButtons() {},
+  renderControlButtons() {
+    this.renderOsd();
+  },
   resolveNextEpisodeInfo() {
     return null;
   },
@@ -576,6 +843,11 @@ export const NewPlayerScreen = {
       this.session = null;
       this.stopTick();
       this.stopResolveCap();
+      try {
+        this.closeStreamInfo({ restore: false });
+      } catch (_) {}
+      this.resetOsdState();
+      this.osd = null;
       try {
         this.progress?.destroy();
       } catch (_) {}

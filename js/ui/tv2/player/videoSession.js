@@ -48,7 +48,13 @@ export function createVideoSession(
     stallMs = 25000,
     capMs = 90000,
     retryDelayMs = 1000,
-    probeStatus = probeHttpStatus
+    // Freeze sentinel (C4): a playing video whose time or decoded frames stand still this long
+    // is reloaded on the same link at the same position; calibrated on the TV evening (P3).
+    freezeMs = 8000,
+    freezeReloads = 2,
+    probeStatus = probeHttpStatus,
+    // Diagnostic counter by event name (freeze reloads); never a link.
+    note = () => {}
   } = {}
 ) {
   const now = () => root.performance?.now?.() ?? Date.now();
@@ -63,6 +69,8 @@ export function createVideoSession(
   let seeksLeft = 0;
   // Percent resume (no position saved): resolved once the real duration is known.
   let startPercent = 0;
+  let watch = null;
+  let still = null;
   const s = {
     state: "idle",
     error: null,
@@ -75,14 +83,68 @@ export function createVideoSession(
     lastProgressAt: 0,
     position: 0,
     networkRetries: 0,
+    freezeReloads: 0,
     attaches: 0
   };
 
   const set = (state) => {
     if (s.state === state) return;
     s.state = state;
+    if (state === "playing") startWatch();
+    else stopWatch();
     onChange(s);
   };
+
+  // Only while playing (never paused, buffering or loading): one 2 s check.
+  function startWatch() {
+    if (watch !== null) return;
+    still = null;
+    watch = root.setInterval(checkFreeze, 2000);
+  }
+  function stopWatch() {
+    if (watch !== null) root.clearInterval(watch);
+    watch = null;
+  }
+  function decodedFrames() {
+    try {
+      const quality = video.getVideoPlaybackQuality?.();
+      const frames = Number(quality?.totalVideoFrames ?? video.webkitDecodedFrameCount);
+      return Number.isFinite(frames) ? frames : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function checkFreeze() {
+    const t = now();
+    const time = Number(video.currentTime) || 0;
+    const frames = decodedFrames();
+    // A long seek on a large MKV stands still without a waiting event: not a freeze.
+    if (root.document?.hidden || video.paused || video.seeking) {
+      still = null;
+      return;
+    }
+    if (!still) {
+      still = { time, timeAt: t, frames, framesAt: t, framesMoved: false };
+      return;
+    }
+    if (time !== still.time) Object.assign(still, { time, timeAt: t });
+    if (frames !== still.frames) {
+      // A counter that never moves (hardware plane) proves nothing: frames count once seen moving.
+      still.framesMoved = still.frames !== null && frames !== null;
+      Object.assign(still, { frames, framesAt: t });
+    }
+    const timeStuck = video.readyState >= 3 && t - still.timeAt >= freezeMs;
+    const framesStuck = still.framesMoved && t - still.framesAt >= freezeMs;
+    if (!timeStuck && !framesStuck) return;
+    note(timeStuck ? "freezeTime" : "freezeFrames");
+    if (s.freezeReloads >= freezeReloads) {
+      fail({ kind: "stalled" });
+      return;
+    }
+    s.freezeReloads += 1;
+    note("freezeReload");
+    load(url, s.position);
+  }
 
   const stopGuard = () => {
     if (guard !== null) root.clearInterval(guard);
@@ -118,6 +180,7 @@ export function createVideoSession(
 
   function fail(error) {
     stopGuard();
+    stopWatch();
     s.error = { kind: error.kind, code: error.code || 0, httpStatus: error.httpStatus || 0 };
     if (s.state === "error") onChange(s);
     else set("error");
@@ -277,6 +340,7 @@ export function createVideoSession(
   function teardown() {
     token += 1;
     stopGuard();
+    stopWatch();
     if (retryTimer !== null) root.clearTimeout(retryTimer);
     retryTimer = null;
     probe?.abort();
@@ -367,6 +431,7 @@ export function createVideoSession(
     /** startPercent applies when no position is known (resumeProgressPercent). */
     attach(nextUrl, { startAt = 0, startPercent: percent = 0 } = {}) {
       s.networkRetries = 0;
+      s.freezeReloads = 0;
       s.played = false;
       startPercent = Math.max(0, Number(percent) || 0);
       load(String(nextUrl || ""), startAt);
@@ -375,6 +440,7 @@ export function createVideoSession(
     retry() {
       if (!url) return;
       s.networkRetries = 0;
+      s.freezeReloads = 0;
       load(url, s.firstFrame ? s.position : Math.max(seekTarget, s.position));
     },
     restoreSound() {
@@ -394,6 +460,9 @@ export function createVideoSession(
       try {
         video.pause();
       } catch (_) {}
+    },
+    resume() {
+      if (s.firstFrame && s.state !== "error") play(token);
     },
     teardown() {
       teardown();

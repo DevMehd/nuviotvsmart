@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr">
   <meta charset="utf-8" />
-  <title>VIDAA new player P1 (real Chrome media pipeline)</title>
+  <title>VIDAA new player P1-P3 (real Chrome media pipeline)</title>
   <link rel="stylesheet" href="../css/tv2-player.css" />
   <style>
     #player { position: fixed; inset: 0; display: none; background: #000; }
@@ -89,6 +89,82 @@
         notes.push(`reprise à ${video.currentTime.toFixed(1)} s`);
         NewPlayerScreen.cleanup();
 
+        // 2c. P3: OK pauses and shows the OSD, one seek per preview (keyup, or 1 s without it),
+        // Back order: panel, preview, OSD, leave; no UI timer while the OSD is hidden.
+        const key = (keyCode, extra = {}) => NewPlayerScreen.onKeyDown({ keyCode, preventDefault() {}, ...extra });
+        const keyUp = (keyCode) => NewPlayerScreen.onKeyUp({ keyCode, preventDefault() {} });
+        const uiTimersIdle = () =>
+          ["osdHideTimer", "osdTickTimer", "seekCommitTimer", "bufferingTimer", "tickTimer"].every(
+            (name) => NewPlayerScreen[name] === null
+          );
+        await NewPlayerScreen.mount({
+          ...params,
+          streamUrl: seekable,
+          streamCandidates: [{ id: "local", url: seekable, title: "Local WebM" }]
+        });
+        await waitFor(() => NewPlayerScreen.session?.firstFrame, 5000, "first image (P3)");
+        // Synthetic keys are no user activation: Chrome would pause a muted start once unmuted.
+        NewPlayerScreen.session.restoreSound = () => {};
+        const osd = container.querySelector(".p2-osd");
+        assert(osd.hidden && uiTimersIdle(), "OSD hidden and no UI timer while playing");
+        key(38);
+        assert(!osd.hidden && NewPlayerScreen.osdHideTimer !== null, "Up shows the OSD with its auto-hide");
+        assert(container.querySelector(".p2-osd-title").textContent === "Fixture", "title");
+        NewPlayerScreen.consumeBackRequest();
+        assert(osd.hidden && uiTimersIdle(), "Back hides the OSD, timers stopped");
+        key(13);
+        await waitFor(() => NewPlayerScreen.paused, 1000, "OK pauses");
+        assert(!osd.hidden && NewPlayerScreen.osdHideTimer === null, "paused OSD stays up");
+        assert(osd.classList.contains("is-paused"), "pause state shown");
+        let seeks = 0;
+        const onSeeking = () => (seeks += 1);
+        video.addEventListener("seeking", onSeeking);
+        const settle = () => new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
+        let landed = settle();
+        NewPlayerScreen.seekPlaybackSeconds(3);
+        await landed;
+        seeks = 0;
+        key(37);
+        key(37, { repeat: true });
+        assert(seeks === 0 && Math.abs(video.currentTime - 3) < 0.1, "the preview never touches the video");
+        assert(NewPlayerScreen.seekPreviewSeconds === 0, `preview ${NewPlayerScreen.seekPreviewSeconds}`);
+        assert(NewPlayerScreen.hasBackDismissableOverlay(), "a preview is a dismissable overlay");
+        landed = settle();
+        keyUp(37);
+        await landed;
+        assert(seeks === 1 && video.currentTime < 0.2, `one seek on release (${seeks})`);
+        // Remote without keyup: the preview commits once, 1 s after the last key.
+        landed = settle();
+        NewPlayerScreen.seekPlaybackSeconds(3);
+        await landed;
+        seeks = 0;
+        key(37);
+        await sleep(600);
+        assert(seeks === 0, "no seek before the fallback");
+        await waitFor(() => seeks === 1, 1500, "fallback commit");
+        await sleep(300);
+        assert(seeks === 1 && NewPlayerScreen.seekPreviewSeconds === null, `one fallback seek (${seeks})`);
+        // Back cancels a preview without seeking, then stream info, then the OSD, then leaves.
+        seeks = 0;
+        key(39);
+        assert(NewPlayerScreen.consumeBackRequest() === true && NewPlayerScreen.seekPreviewSeconds === null, "Back cancels the preview");
+        await sleep(50);
+        assert(seeks === 0 && !osd.hidden, "no seek, OSD kept");
+        key(457);
+        assert(NewPlayerScreen.streamInfoVisible && container.querySelector(".player-stream-info-overlay"), "stream info");
+        assert(osd.hidden, "stream info hides the OSD");
+        assert(NewPlayerScreen.consumeBackRequest() === true, "Back closes stream info");
+        assert(!container.querySelector(".player-stream-info-overlay") && !osd.hidden, "OSD back");
+        assert(NewPlayerScreen.consumeBackRequest() === true && osd.hidden, "Back hides the OSD");
+        const popsBefore = pops.length;
+        assert(NewPlayerScreen.consumeBackRequest() === "history", "Back leaves");
+        assert(NewPlayerScreen.consumeBackRequest() === "history", "doubled Back");
+        assert(pops.length === popsBefore + 1, "one traversal");
+        video.removeEventListener("seeking", onSeeking);
+        NewPlayerScreen.cleanup();
+        assert(uiTimersIdle() && !container.querySelector(".p2-root"), "no UI timer after cleanup");
+        notes.push("OSD, aperçu et Retour");
+
         // 3. A 403 link: explicit error in under 2 s with the status, three buttons, Sources first.
         const t403 = performance.now();
         await NewPlayerScreen.mount({ ...params, streamUrl: media("status/403"), streamCandidates: [], preferredStreamId: "" });
@@ -111,7 +187,7 @@
         // Back on the error: returns to the existing Sources entry; a doubled Back is "history".
         assert(NewPlayerScreen.consumeBackRequest() === "history", "Back returns");
         assert(NewPlayerScreen.consumeBackRequest() === "history", "doubled Back");
-        assert(pops.length === 1 && pops[0][0] === "stream", JSON.stringify(pops.map((p) => p[0])));
+        assert(pops.length === 2 && pops.every((p) => p[0] === "stream"), JSON.stringify(pops.map((p) => p[0])));
         NewPlayerScreen.cleanup();
         notes.push(`403 en ${elapsed403} ms`);
 
@@ -140,7 +216,7 @@
         assert(!video.getAttribute("src"), "released at the end");
 
         result.dataset.status = "passed";
-        result.textContent = `PASS: new player P1-P2 (${notes.join(", ")}; desktop, not a TV measure)`;
+        result.textContent = `PASS: new player P1-P3 (${notes.join(", ")}; desktop, not a TV measure)`;
       } catch (error) {
         result.dataset.status = "failed";
         result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;

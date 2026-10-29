@@ -280,6 +280,23 @@ function harness({ stored = new Map(), observer = true } = {}) {
   assert.equal(s.seekEvents, 1);
 }
 {
+  // New player events (P3): counts by name only, never a link, bounded names.
+  const h = harness();
+  h.service.notePlayerEvent("freezeReload");
+  assert.equal(h.service.getState().report.playerEvents, undefined, "ignored while disabled");
+  h.enable();
+  h.service.notePlayerEvent("freezeReload");
+  h.service.notePlayerEvent("freezeReload");
+  h.service.notePlayerEvent("key417-fastForward");
+  h.service.notePlayerEvent("https://secret.invalid/token");
+  for (let i = 0; i < 40; i += 1) h.service.notePlayerEvent(`event${i}`);
+  const events = h.service.getState().report.playerEvents;
+  assert.equal(events.freezeReload, 2);
+  assert.equal(events["key417-fastForward"], 1);
+  assert.equal(Object.keys(events).length, 24);
+  assert.ok(!JSON.stringify(events).includes("secret"));
+}
+{
   // VIDAA audio-name evidence: kept in the video step, categories and counts only.
   const h = harness();
   h.enable();

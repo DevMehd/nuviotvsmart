@@ -139,7 +139,8 @@ function videoElement(screen) {
   );
 }
 
-function snapshot() {
+// Exported for the tests (old and new player screens).
+export function snapshot() {
   const screen = currentPlayer();
   const video = videoElement(screen);
   if (!screen) {
@@ -190,7 +191,8 @@ export function simulateRemoteKey(key, keyCode, target = document) {
   });
 }
 
-function applyPlan(plan) {
+// Exported for the tests (old and new player screens).
+export function applyPlan(plan) {
   const screen = currentPlayer();
   switch (plan.action) {
     case "key":

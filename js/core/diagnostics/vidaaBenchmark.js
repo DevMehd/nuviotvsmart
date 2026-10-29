@@ -996,6 +996,16 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
         save();
       }
     },
+    // New player events by name (freeze reloads, first use of each media key code): counts
+    // only, never a link. Bounded to 24 names.
+    notePlayerEvent(name) {
+      if (!enabled || !/^[a-zA-Z0-9_-]{1,32}$/.test(String(name))) return;
+      const events = (currentReport().playerEvents ||= {});
+      if (!(name in events) && Object.keys(events).length >= 24) return;
+      events[name] = (events[name] || 0) + 1;
+      save();
+      notify();
+    },
     // One player startup (variant, marks relative to the player opening, outcome).
     noteStartup(entry) {
       return enabled && entry ? pushStartup(entry) : null;
