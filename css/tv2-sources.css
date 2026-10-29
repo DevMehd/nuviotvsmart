@@ -74,6 +74,24 @@
   white-space: pre-line;
 }
 
+/* Decision 1: badges stay on one line of fixed height (heading 33 + 6 + 30 + description 57 fits
+   the 128 px inside a card); the chips that do not fit are cut, never wrapped. */
+.tv2-sources .tv2-sources-badges {
+  flex-wrap: nowrap;
+  height: 30px;
+  margin: 6px 0 0;
+  overflow: hidden;
+}
+
+.tv2-sources .stream-route-stream-badge {
+  flex: 0 0 auto;
+}
+
+.tv2-sources .tv2-sources-badges[hidden],
+.tv2-sources .stream-route-stream-badge[hidden],
+.tv2-sources .stream-route-stream-badge img[hidden],
+.tv2-sources .stream-route-addon-badge img[hidden],
+.tv2-sources .stream-route-addon-badge span[hidden],
 .tv2-sources .stream-route-card-quality[hidden],
 .tv2-sources .tv2-sources-description[hidden],
 .tv2-sources .stream-route-card-side[hidden],

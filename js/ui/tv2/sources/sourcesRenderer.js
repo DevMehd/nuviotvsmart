@@ -2,28 +2,56 @@
 // addon name and the list is a recycled pool of fixed-height rows moved with transforms. Data
 // updates and focus moves only change text, attributes, classes and transforms; nothing is measured.
 import { Environment } from "../../../platform/environment.js";
+import {
+  getCachedAddonLogoDisplayUrl,
+  hasFailedAddonLogo,
+  rememberFailedAddonLogo
+} from "../../../core/media/addonLogoCache.js";
+import { getVidaaBadgeImageOriginal } from "../../../core/media/vidaaBadgeOptimization.js";
+import { isVidaaNavigationBusy } from "../../navigation/vidaaNavigationActivity.js";
 import { contentTextDirection } from "../../../core/util/contentTextDirection.js";
 import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 import { renderLoadingIndicator } from "../../components/loadingIndicator.js";
 import { escapeHtml, t } from "../../screens/stream/streamScreenHelpers-01-stream-badge-limit.js";
+import { createImageQueue } from "../imagePipeline.js";
 import { slotFor } from "../railEngine.js";
-import { rowViewModel, sourcesWindow, SOURCES_ROW_PITCH } from "./sourcesModel.js";
+import {
+  rowViewModel,
+  sourcesWindow,
+  SOURCES_BADGE_SLOTS,
+  SOURCES_ROW_PITCH
+} from "./sourcesModel.js";
 
 const REFRESH_ICON =
   '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.93 9h-2.02A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/></svg>';
 
-const ROW_MARKUP = `
+const IMAGE = '<img alt="" decoding="async" referrerpolicy="no-referrer" hidden />';
+
+// Badge chips are pre-created slots on one line (decision 1): a recycled row changes their class,
+// text and image only.
+function rowMarkup(badgesOnTop) {
+  const badges = `<div class="stream-route-card-badges tv2-sources-badges" aria-label="${escapeHtml(t("settings_stream_badges_section", {}, "Fusion Style"))}" hidden>${`<span class="stream-route-stream-badge" hidden>${IMAGE}</span>`.repeat(SOURCES_BADGE_SLOTS)}</div>`;
+  return `
   <article class="stream-route-card stream-route-card-action focusable" data-action="playStream" data-card-action="play" tabindex="0">
     <div class="stream-route-card-copy">
       <div class="stream-route-card-heading"><span class="tv2-sources-headline"></span><span class="stream-route-party-chip" hidden></span></div>
+      ${badgesOnTop ? badges : ""}
       <div class="stream-route-card-quality"></div>
       <div class="stream-route-card-line tv2-sources-description"></div>
+      ${badgesOnTop ? "" : badges}
     </div>
     <div class="stream-route-card-side" hidden>
-      <div class="stream-route-addon-badge"><span></span></div>
+      <div class="stream-route-addon-badge">${IMAGE}<span></span></div>
       <div class="stream-route-addon-name"></div>
     </div>
   </article>`;
+}
+
+// A VIDAA-optimised badge falls back to its original URL, as in the current screen.
+const fallbacksFor = (url) => {
+  const original = getVidaaBadgeImageOriginal(url);
+  return original ? [original] : [];
+};
 
 const textDirection = (node, text) => {
   if (node.textContent !== text) {
@@ -72,9 +100,13 @@ function shellMarkup({ title, logo, episodeLabel, subtitle, detailLine, isSeries
 
 /**
  * header: getHeaderMeta() plus backdrop and logo; skeletonMarkup: the loading cards shown before the
- * first source; moreMarkup: the loading card under the sources while addons are still loading.
+ * first source; moreMarkup: the loading card under the sources while addons are still loading;
+ * badgesOnTop: the TOP badge placement setting.
  */
-export function createSourcesRenderer(container, { header, skeletonMarkup, moreMarkup }) {
+export function createSourcesRenderer(
+  container,
+  { header, skeletonMarkup, moreMarkup, badgesOnTop = false }
+) {
   container.innerHTML = shellMarkup(header);
   const chipTrack = container.querySelector(".stream-route-chip-track");
   const refreshChip = chipTrack.firstElementChild;
@@ -90,11 +122,13 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
   let poolSize = 1;
   let statusKind = "";
   let focusedNode = null;
+  // Badge and logo images: three at a time, the focused row first, none while a key is held.
+  const images = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
 
   const rowTemplate = document.createElement("div");
   rowTemplate.className = "stream-route-card-row tv2-sources-row";
   rowTemplate.hidden = true;
-  rowTemplate.innerHTML = ROW_MARKUP;
+  rowTemplate.innerHTML = rowMarkup(badgesOnTop);
 
   function slot(index) {
     while (pool.length <= index) {
@@ -111,8 +145,18 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
         side: row.querySelector(".stream-route-card-side"),
         addonLabel: row.querySelector(".stream-route-addon-badge span"),
         addonName: row.querySelector(".stream-route-addon-name"),
+        logo: row.querySelector(".stream-route-addon-badge img"),
+        badgeRow: row.querySelector(".tv2-sources-badges"),
+        badges: Array.from(row.querySelectorAll(".stream-route-stream-badge"), (node) => ({
+          node,
+          image: node.firstElementChild,
+          text: node.appendChild(document.createTextNode("")),
+          badge: null,
+          url: ""
+        })),
         index: -1,
         stream: null,
+        logoUrl: null,
         partySource: false
       });
     }
@@ -122,7 +166,69 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
   // The whole pool exists from the start: navigation never creates a node.
   slot(sourcesWindow({ count: Number.MAX_SAFE_INTEGER }).poolSize - 1);
 
-  function fill(entry, index) {
+  // A recycled image drops the previous picture at once: its new one may wait in the queue.
+  function requestImage(node, previous, url, options) {
+    if (previous !== url) images.request(node, "");
+    images.request(node, url, options);
+  }
+
+  function fillBadges(entry, badges, priority) {
+    entry.badgeRow.hidden = !badges.length;
+    entry.badges.forEach((slot, position) => {
+      const badge = badges[position];
+      if (slot.badge === badge) return;
+      slot.badge = badge;
+      if (!badge || (badge.url && hasFailedAddonLogo(badge.url))) {
+        slot.node.hidden = true;
+        images.request(slot.image, "");
+        slot.url = "";
+        return;
+      }
+      slot.node.className = `stream-route-stream-badge ${badge.kind}${badge.filled ? " filled" : ""}`;
+      slot.node.style.cssText = badge.style || "";
+      slot.text.data = badge.text || "";
+      slot.image.alt = badge.alt || "";
+      slot.image.hidden = !badge.url;
+      slot.node.hidden = false;
+      const url = badge.url ? getCachedAddonLogoDisplayUrl(badge.url) || badge.url : "";
+      requestImage(slot.image, slot.url, url, {
+        fallbacks: fallbacksFor(badge.url),
+        priority,
+        onError() {
+          rememberFailedAddonLogo(badge.url);
+          if (slot.badge === badge) slot.node.hidden = true;
+        }
+      });
+      slot.url = url;
+    });
+  }
+
+  // The addon logo, or its initials when there is none or it fails (rememberFailedAddonLogo).
+  function fillLogo(entry, url, alt, priority) {
+    if (entry.logoUrl === url) return;
+    const usable = Boolean(url) && !hasFailedAddonLogo(url);
+    entry.logo.alt = alt;
+    entry.logo.hidden = !usable;
+    entry.addonLabel.hidden = usable;
+    requestImage(
+      entry.logo,
+      entry.logoUrl,
+      usable ? getCachedAddonLogoDisplayUrl(url) || url : "",
+      {
+        fallbacks: fallbacksFor(url),
+        priority,
+        onError() {
+          rememberFailedAddonLogo(url);
+          if (entry.logoUrl !== url) return;
+          entry.logo.hidden = true;
+          entry.addonLabel.hidden = false;
+        }
+      }
+    );
+    entry.logoUrl = url;
+  }
+
+  function fill(entry, index, priority) {
     const stream = view.items[index];
     if (entry.index !== index) {
       entry.index = index;
@@ -136,8 +242,11 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
       const model = rowViewModel(stream);
       entry.card.dataset.streamId = model.id;
       textDirection(entry.headline, model.headline);
+      const badges = view.badgesFor(stream);
+      fillBadges(entry, badges, priority);
       textDirection(entry.quality, model.quality);
-      entry.quality.hidden = !model.quality;
+      // As in the current screen, the quality line stands in for missing badges.
+      entry.quality.hidden = !model.quality || badges.length > 0;
       textDirection(entry.description, model.description);
       entry.description.hidden = !model.description;
       entry.addonLabel.textContent = model.addonLabel;
@@ -158,6 +267,13 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
           : "";
     }
     if (entry.side.hidden === view.showAddonLogo) entry.side.hidden = !view.showAddonLogo;
+    // The logo lookup can change without the stream (addon manifests): checked on every fill.
+    fillLogo(
+      entry,
+      view.showAddonLogo ? view.logoFor(stream) : "",
+      entry.addonName.textContent,
+      priority
+    );
     if (entry.row.hidden) entry.row.hidden = false;
   }
 
@@ -171,7 +287,7 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
     for (let index = frame.start; index < frame.end; index += 1) {
       const position = slotFor(index, frame.poolSize);
       used.add(position);
-      fill(slot(position), index);
+      fill(slot(position), index, index === focusRow);
     }
     pool.forEach((entry, position) => {
       if (!used.has(position) && !entry.row.hidden) entry.row.hidden = true;
@@ -283,6 +399,7 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
     },
     setFocus,
     dispose() {
+      images.clear();
       container.innerHTML = "";
       pool.length = 0;
       chips.clear();

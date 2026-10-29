@@ -2,7 +2,16 @@
 import { Environment } from "../../../platform/environment.js";
 import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 import { railWindow } from "../railEngine.js";
-import { streamRowKeys } from "../../screens/stream/streamScreenHelpers-01-stream-badge-limit.js";
+import { normalizeAddonLogoUrl } from "../../../core/media/addonLogoCache.js";
+import { getStreamImageBadges } from "../../../core/streams/streamBadgePresets.js";
+import { normalizeStreamBadgeChipColor } from "../../../core/streams/streamBadgeRules.js";
+import { getStreamPresentationBadges } from "../../../core/streams/streamPresentationBadges.js";
+import {
+  formatBytes,
+  STREAM_BADGE_LIMIT,
+  streamRowKeys,
+  t
+} from "../../screens/stream/streamScreenHelpers-01-stream-badge-limit.js";
 import {
   getAddonBadgeLabel,
   getStreamDescriptionLines,
@@ -17,6 +26,8 @@ export const SOURCES_ROW_GAP = 12;
 export const SOURCES_ROW_PITCH = SOURCES_ROW_HEIGHT + SOURCES_ROW_GAP;
 // Inner height of .tv2-sources .stream-route-list: five rows and their four gaps.
 export const SOURCES_LIST_VIEWPORT = 5 * SOURCES_ROW_HEIGHT + 4 * SOURCES_ROW_GAP;
+// Badge chips of a card: the nine images of the current screen (or its technical chips), then the size.
+export const SOURCES_BADGE_SLOTS = STREAM_BADGE_LIMIT + 1;
 // Source description lines kept on a card (decision 1: the card clamps them to two lines).
 export const SOURCES_DESCRIPTION_LINES = 2;
 
@@ -79,4 +90,50 @@ export function rowViewModel(stream) {
     rowModels.set(stream, model);
   }
   return model;
+}
+
+const rowBadgeModels = new WeakMap();
+/**
+ * Badge chips of a source card in the current screen's order (renderImportedStreamBadgeChipContents):
+ * image badges, technical chips only without an image, then the size. Computed once per stream and
+ * settings object; `settings` is a StreamBadgeSettingsStore snapshot plus `enabled`.
+ */
+export function rowBadges(stream, settings) {
+  const cached = rowBadgeModels.get(stream);
+  if (cached?.settings === settings) return cached.badges;
+  const badges = [];
+  if (settings.enabled) {
+    for (const badge of getStreamImageBadges(stream, settings).slice(0, STREAM_BADGE_LIMIT)) {
+      const url = normalizeAddonLogoUrl(badge.imageURL);
+      if (!url) continue;
+      const filled = /^filled(?:\s|$)/i.test(String(badge.tagStyle || "").trim());
+      const background = normalizeStreamBadgeChipColor(badge.tagColor);
+      const outline = normalizeStreamBadgeChipColor(badge.borderColor);
+      const color = normalizeStreamBadgeChipColor(badge.textColor);
+      badges.push({
+        kind: "image",
+        url,
+        filled,
+        alt: String(badge.name || ""),
+        style: [
+          filled && background ? `background:${background};` : "",
+          outline ? `border-color:${outline};` : "",
+          color ? `color:${color};` : ""
+        ].join("")
+      });
+    }
+    // At most nine labels (getStreamPresentationBadges), so every chip has a slot.
+    if (!badges.length)
+      getStreamPresentationBadges(stream, t("trakt_cached_label", {}, "En cache")).forEach((text) =>
+        badges.push({ kind: "technical", text })
+      );
+    const size = stream.behaviorHints?.videoSize;
+    if (settings.showFileSizeBadges !== false && size != null)
+      badges.push({
+        kind: "size",
+        text: t("streams_size", [formatBytes(size)], `SIZE ${formatBytes(size)}`)
+      });
+  }
+  rowBadgeModels.set(stream, { settings, badges });
+  return badges;
 }

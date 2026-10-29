@@ -12,7 +12,7 @@ globalThis.fetch = async () => {
 const { StreamScreen, streamRowKeys } = await import("../js/ui/screens/stream/streamScreen.js");
 const { NewSourcesScreen } = await import("../js/ui/tv2/sources/newSourcesScreen.js");
 const model = await import("../js/ui/tv2/sources/sourcesModel.js");
-const { SOURCES_ROW_PITCH, sourcesWindow, rowKeys, rowViewModel, filterNames } = model;
+const { SOURCES_ROW_PITCH, sourcesWindow, rowKeys, rowViewModel, rowBadges, filterNames } = model;
 
 // Row keys: the extracted helper is the StreamScreen key, duplicates included.
 const duplicates = [
@@ -87,6 +87,53 @@ assert.equal(rowViewModel(described), card, "cached per stream object");
 assert.equal(card.description.split("\n").length, 2);
 assert.equal(card.quality, "1080p");
 assert.equal(card.addonLabel, "µ");
+
+// Badges (T4): computed once per stream and settings, nine images at most, then technical chips
+// only without an image, then the size; the same order and limits as the current screen.
+{
+  const settings = { enabled: true, showFileSizeBadges: true, rules: { imports: [] } };
+  const pictures = {
+    id: "p",
+    badges: Array.from({ length: 12 }, (_, index) => ({
+      name: `Badge ${index}`,
+      imageURL: `https://badges.invalid/${index}.webp`,
+      ...(index === 0 ? { tagStyle: "filled", tagColor: "#112233", borderColor: "#445566" } : {})
+    })),
+    behaviorHints: { videoSize: 2 * 1024 ** 3 }
+  };
+  const badges = rowBadges(pictures, settings);
+  assert.equal(rowBadges(pictures, settings), badges, "cached per stream and settings");
+  assert.deepEqual(
+    badges.map((badge) => badge.kind),
+    [...Array(9).fill("image"), "size"],
+    "nine images, then the size"
+  );
+  assert.equal(badges[0].filled, true);
+  assert.match(badges[0].style, /background:#112233;border-color:#445566;/);
+  assert.equal(badges[1].style, "", "an outline badge has no inline colour");
+  assert.equal(badges[1].url, "https://badges.invalid/1.webp");
+  assert.match(badges[9].text, /2(\.0+)? GB/);
+  const others = { enabled: true, showFileSizeBadges: false, rules: { imports: [] } };
+  assert.notEqual(rowBadges(pictures, others), badges, "other settings recompute the badges");
+  assert.ok(
+    rowBadges(pictures, others).every((badge) => badge.kind === "image"),
+    "no size chip"
+  );
+  assert.deepEqual(rowBadges(pictures, { ...settings, enabled: false }), [], "badges disabled");
+
+  const plain = {
+    id: "t",
+    name: "Addon 2160p",
+    title: "Film.2160p.HEVC.HDR.Atmos.mkv",
+    behaviorHints: { videoSize: 1024 ** 3 }
+  };
+  const technical = rowBadges(plain, settings);
+  assert.ok(technical.length > 1 && technical.at(-1).kind === "size");
+  assert.ok(
+    technical.slice(0, -1).every((badge) => badge.kind === "technical" && badge.text),
+    "technical chips without an image badge"
+  );
+}
 const chips = [{ name: "A", status: "success" }];
 assert.equal(
   filterNames(duplicates, chips),
@@ -160,6 +207,11 @@ const lastFocus = (screen) => screen.calls.focus.at(-1);
   assert.deepEqual(view.chipKeys, ["all", "A", "B"]);
   assert.equal(view.items.length, 12);
   assert.equal(view.more, true, "B is still loading: one loading row under the sources");
+  assert.equal(view.badgesFor(streams[0]), view.badgesFor(streams[0]), "row badges are cached");
+  assert.equal(
+    view.logoFor({ addonName: "A", addonLogo: "https://logo.invalid/a.png" }),
+    "https://logo.invalid/a.png"
+  );
   screen.render();
   assert.equal(
     screen.calls.updates[1].items,

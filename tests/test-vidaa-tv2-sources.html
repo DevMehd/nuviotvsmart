@@ -17,10 +17,12 @@
       // Mounts the new Sources screen with the real CSS and 500 sources from 5 addons, then checks
       // the recycled pool: no layout read or ResizeObserver while navigating, a constant number of
       // row nodes, rows of the fixed pitch, a visible focused row, and the right source for OK and
-      // for a pointer click on a recycled row.
+      // for a pointer click on a recycled row. Badges (T4): pre-created slots that a recycled row
+      // refills with its own images and text, broken images hidden, at most three images loading.
       const result = document.getElementById("result");
       try {
-        const { Router, streamRepository } = await import("/js/ui/screens/stream/streamScreen.js");
+        const { Router, streamRepository, StreamBadgeSettingsStore, hasFailedAddonLogo } =
+          await import("/js/ui/screens/stream/streamScreen.js");
         const { NewSourcesScreen } = await import("/js/ui/tv2/sources/newSourcesScreen.js");
         const { SOURCES_ROW_HEIGHT, SOURCES_ROW_PITCH, SOURCES_LIST_VIEWPORT } =
           await import("/js/ui/tv2/sources/sourcesModel.js");
@@ -33,14 +35,36 @@
         Router.popToExistingRoute = () => false;
         Router.back = () => {};
         streamRepository.setLocalPluginSearchPaused = () => {};
+        // Declared badges only (no Xperience pack, so no network), addon logos and file sizes.
+        const badgeSnapshot = StreamBadgeSettingsStore.snapshot.bind(StreamBadgeSettingsStore);
+        StreamBadgeSettingsStore.snapshot = () => ({
+          ...badgeSnapshot(),
+          rules: { imports: [] },
+          showAddonLogo: true,
+          showFileSizeBadges: true
+        });
+        const brokenBadge = "/assets/icons/missing-fixture-badge.webp";
+        const brokenLogo = "/assets/icons/missing-fixture-logo.png";
+        // Even sources carry image badges (Addon 2 also a broken one), odd sources none: they show
+        // technical chips. Addon 2's logo is broken: its initials stand in.
         const groups = Array.from({ length: 5 }, (_, a) => ({
           addonName: `Addon ${a}`,
           addonId: `fixture.addon.${a}`,
           addonOrderIndex: a,
+          addonLogo: a === 2 ? brokenLogo : `/assets/icons/discover_compass.svg?logo=${a}`,
           streams: Array.from({ length: 100 }, (_, i) => ({
             name: `Addon ${a}\n${["2160p", "1080p", "720p"][i % 3]}`,
             description: `Fixture.${a}.${i}.mkv\n💾 ${i + 1} GB\n🔊 FR\nextra line`,
-            url: `https://fixture.invalid/${a}/${i}.mkv`
+            url: `https://fixture.invalid/${a}/${i}.mkv`,
+            behaviorHints: { videoSize: (i + 1) * 1024 ** 3 },
+            badges:
+              i % 2
+                ? []
+                : [
+                    { name: `Pack ${a}-${i}`, imageURL: `/assets/icons/discover_compass.svg?b=${a}-${i}` },
+                    ...(a === 2 ? [{ name: "Broken", imageURL: brokenBadge }] : []),
+                    ...(i % 4 ? [] : [{ name: "Shared", imageURL: "/assets/icons/ic_player_audio_filled.svg" }])
+                  ]
           }))
         }));
         streamRepository.getStreamsFromAllAddons = async (_type, _id, options = {}) => {
@@ -79,6 +103,30 @@
             super(callback);
           }
         };
+        // Images of the pool still loading (src set, no load or error yet): at most three.
+        const inflight = new Set();
+        let maxInflight = 0;
+        // Capture listeners run before the queue's onload starts the next image.
+        const settled = (event) => inflight.delete(event.target);
+        document.addEventListener("load", settled, true);
+        document.addEventListener("error", settled, true);
+        const src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+        Object.defineProperty(HTMLImageElement.prototype, "src", {
+          configurable: true,
+          get: src.get,
+          set(value) {
+            if (this.closest(".tv2-sources-row")) {
+              inflight.add(this);
+              maxInflight = Math.max(maxInflight, inflight.size);
+            }
+            src.set.call(this, value);
+          }
+        });
+        const removeAttribute = Element.prototype.removeAttribute;
+        Element.prototype.removeAttribute = function (name) {
+          if (name === "src") inflight.delete(this);
+          return removeAttribute.call(this, name);
+        };
         const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
         const waitFor = async (test) => {
           for (let i = 0; i < 600 && !test(); i++) await frame();
@@ -99,6 +147,44 @@
         assert(route.sourcesView.items.length === 500, `500 sources, got ${route.sourcesView.items.length}`);
         const poolSize = rows().length;
         assert(poolSize > 0 && poolSize <= 9, `bounded pool, got ${poolSize} rows`);
+        const badgeNodes = () => route.container.querySelectorAll(".tv2-sources-row .stream-route-stream-badge").length;
+        assert(badgeNodes() === poolSize * 10, `ten badge slots per row, got ${badgeNodes()}`);
+        assert(!route.container.querySelector(".tv2-sources-row img[loading]"), "no lazy images");
+        // Every drawn row shows the badges, logo and size of the source it holds.
+        const checkRows = async (label) => {
+          await waitFor(() => !inflight.size);
+          for (const row of [...rows()].filter((node) => !node.hidden)) {
+            const card = row.querySelector("[data-action='playStream']");
+            const stream = route.sourcesView.items[Number(card.dataset.streamRow)];
+            assert(card.dataset.streamId === stream.id, `${label}: row ${card.dataset.streamRow} holds its source`);
+            const slots = [...row.querySelectorAll(".stream-route-stream-badge")].filter((node) => !node.hidden);
+            const size = slots.pop();
+            assert(size?.classList.contains("size") && /GB/.test(size.textContent), `${label}: size chip last`);
+            const images = stream.badges.map((badge) => badge.imageURL).filter((url) => url !== brokenBadge);
+            if (images.length) {
+              assert(
+                slots.length === images.length &&
+                  slots.every((node, i) => node.classList.contains("image") && node.querySelector("img").getAttribute("src") === images[i]),
+                `${label}: row ${card.dataset.streamRow} shows its own images, the broken one hidden`
+              );
+            } else {
+              assert(
+                slots.length > 0 && slots.every((node) => node.classList.contains("technical") && node.textContent && node.querySelector("img").hidden),
+                `${label}: row ${card.dataset.streamRow} shows technical chips`
+              );
+            }
+            assert(row.querySelector(".stream-route-card-quality").hidden, `${label}: badges replace the quality line`);
+            const logo = row.querySelector(".stream-route-addon-badge img");
+            const initials = row.querySelector(".stream-route-addon-badge span");
+            const logoBroken = stream.addonName === "Addon 2";
+            assert(
+              logo.hidden === logoBroken && initials.hidden === !logoBroken &&
+                (logoBroken || logo.getAttribute("src") === stream.addonLogo),
+              `${label}: row ${card.dataset.streamRow} logo or initials`
+            );
+          }
+        };
+        await checkRows("first rows");
 
         // Navigation: 300 Down, 10 Up, filters both ways. Nothing measures the layout.
         counts.reads = counts.observers = 0;
@@ -119,6 +205,10 @@
         assert(rows().length === poolSize, "the row pool does not grow");
         assert(route.container.getElementsByTagName("*").length === nodesBefore, "the DOM node count is constant");
         const recycled = [...rows()].find((row) => !row.hidden && row.querySelector(".focusable") !== focused());
+        assert(badgeNodes() === poolSize * 10, "the badge slots are recycled");
+        await checkRows("after 300 Down");
+        assert(hasFailedAddonLogo(brokenBadge) && hasFailedAddonLogo(brokenLogo), "failed images are remembered");
+        assert(maxInflight > 0 && maxInflight <= 3, `at most three images loading, got ${maxInflight}`);
 
         // Fixed geometry, checked here only: the row is the pitch minus the gap, the list shows
         // the viewport, and the focused row is inside it.
@@ -165,7 +255,7 @@
         assert(navigations.at(-1).route === "detail", `Back opens the detail, got ${navigations.at(-1).route}`);
         route.cleanup();
         assert(!route.container.querySelector(".tv2-sources-row") && !route.sourcesRenderer, "cleanup releases the pool");
-        result.textContent = `PASS: 500 sources in a pool of ${poolSize} rows, no layout read while navigating, OK/pointer/Back on the right source.`;
+        result.textContent = `PASS: 500 sources in a pool of ${poolSize} rows, no layout read while navigating, recycled badges and logos (≤${maxInflight} loading), OK/pointer/Back on the right source.`;
       } catch (error) {
         result.textContent = `FAIL: ${error?.stack || error}`;
       }

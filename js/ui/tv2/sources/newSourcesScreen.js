@@ -1,14 +1,17 @@
 import {
   StreamScreen,
   StreamBadgeSettingsStore,
+  DebridSettingsStore,
   STREAM_DPAD_REPEAT_THROTTLE_MS,
   clamp,
   getDpadDirection,
   isBackEvent,
+  normalizeAddonLogoUrl,
+  resolveAddonLogo,
   t
 } from "../../screens/stream/streamScreen.js";
 import { createSourcesRenderer } from "./sourcesRenderer.js";
-import { filterNames, rowKeys } from "./sourcesModel.js";
+import { filterNames, rowBadges, rowKeys } from "./sourcesModel.js";
 
 // New TV Sources screen (beta): the StreamScreen data logic (loading, chips, playback, Back, party)
 // is inherited; only the view is replaced by a recycled pool of fixed-height rows. Focus keeps the
@@ -27,6 +30,11 @@ export const NewSourcesScreen = {
       StreamScreen.render.call(this);
       return;
     }
+    // Badge settings are read once per view: rowBadges caches its chips for this snapshot.
+    const badgeSettings = (this.sourcesBadgeSettings ||= {
+      ...StreamBadgeSettingsStore.snapshot(),
+      enabled: DebridSettingsStore.get().streamBadgesEnabled !== false
+    });
     if (!this.sourcesRenderer) {
       this.renderedMarkup = null;
       this.sourcesRenderer = createSourcesRenderer(this.container, {
@@ -36,7 +44,8 @@ export const NewSourcesScreen = {
           logo: this.params?.logo || ""
         },
         skeletonMarkup: this.renderLoadingCards(3),
-        moreMarkup: this.renderLoadingCards(1)
+        moreMarkup: this.renderLoadingCards(1),
+        badgesOnTop: badgeSettings.badgePlacement === "TOP"
       });
     }
     const names = this.getOrderedFilterNames();
@@ -77,7 +86,11 @@ export const NewSourcesScreen = {
         ...this.sourcesView,
         ...this.sourcesChipView(),
         isPartySource: (stream) => Boolean(this.isPartySourceStream?.(stream)),
-        showAddonLogo: StreamBadgeSettingsStore.snapshot().showAddonLogo === true,
+        showAddonLogo: badgeSettings.showAddonLogo === true,
+        badgesFor: (stream) => rowBadges(stream, badgeSettings),
+        logoFor: (stream) =>
+          normalizeAddonLogoUrl(stream.addonLogo) ||
+          resolveAddonLogo(stream.addonName, this.addonLogoLookup),
         // The empty state stays global: another addon may still provide sources.
         loading: !items.length && (pending || this.hasPendingSourceLoads("all")),
         more: items.length > 0 && pending,
@@ -245,6 +258,7 @@ export const NewSourcesScreen = {
     this.sourcesRenderer?.dispose();
     this.sourcesRenderer = null;
     this.sourcesView = null;
+    this.sourcesBadgeSettings = null;
   },
 
   cleanup() {

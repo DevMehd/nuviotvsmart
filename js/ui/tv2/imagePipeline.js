@@ -23,7 +23,8 @@ export function sizedImageUrl(url, width) {
 /**
  * At most `concurrency` images load at once; a node asking again replaces its pending request,
  * so a recycled card never shows an image it no longer represents. A failed image tries its
- * `fallbacks` in turn in the same slot; a `priority` request (the focused card) goes first.
+ * `fallbacks` in turn in the same slot, then calls `onError`; a `priority` request (the focused
+ * card) goes first.
  */
 export function createImageQueue({ concurrency = 3, isBusy = () => false, retryMs = 120 } = {}) {
   const pending = new Map();
@@ -49,26 +50,27 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
       pending.delete(node);
       loading.add(node);
       requested.set(node, entry.url);
-      load(node, entry.url, entry.fallbacks);
+      load(node, entry.url, entry.fallbacks, entry.onError);
     }
   }
 
   // A failed image keeps its slot and tries the next fallback.
-  function load(node, url, fallbacks) {
+  function load(node, url, fallbacks, onError) {
     node.onload = () => {
       release(node);
       pump();
     };
     node.onerror = () => {
-      if (fallbacks.length) return load(node, fallbacks[0], fallbacks.slice(1));
+      if (fallbacks.length) return load(node, fallbacks[0], fallbacks.slice(1), onError);
       release(node);
+      onError?.();
       pump();
     };
     node.src = url;
   }
 
   return {
-    request(node, url, { fallbacks = [], priority = false } = {}) {
+    request(node, url, { fallbacks = [], priority = false, onError = null } = {}) {
       if (!node) return;
       if (!url) {
         pending.delete(node);
@@ -82,7 +84,7 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
       }
       pending.delete(node);
       if (node.getAttribute?.("src") && requested.get(node) === url) return;
-      const entry = { url, fallbacks };
+      const entry = { url, fallbacks, onError };
       if (priority) {
         const rest = [...pending];
         pending.clear();

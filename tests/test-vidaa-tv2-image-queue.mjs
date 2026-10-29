@@ -66,4 +66,20 @@ assert.equal(done.onload, null, "a loaded image is not requested again");
 cut.onerror();
 assert.equal(cut.src, "cut-fallback.jpg", "the reloaded image tries its fallback");
 
+// New Sources (T4): onError runs once, after the last fallback, and frees the slot.
+const q4 = createImageQueue({ concurrency: 1 });
+const badge = node();
+const next = node();
+const failures = [];
+q4.request(badge, "proxy.webp", {
+  fallbacks: ["original.webp"],
+  onError: () => failures.push(badge.src)
+});
+q4.request(next, "next.webp");
+badge.onerror();
+assert.deepEqual(failures, [], "the fallback is tried before onError");
+badge.onerror();
+assert.deepEqual(failures, ["original.webp"], "onError after the last fallback");
+assert.equal(next.src, "next.webp", "a failed image frees its slot");
+
 console.log("PASS: VIDAA new Home image queue never leaks loading slots.");
