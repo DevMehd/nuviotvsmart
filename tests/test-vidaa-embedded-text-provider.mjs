@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import demux from "../services/webos/src/matroskaTextDemux.cjs";
 import { createEmbeddedTextFixture } from "./helpers/vidaaEmbeddedTextFixture.mjs";
+import { createMkvAudioFixture } from "./helpers/vidaaAudioTrackFixture.mjs";
 import {
   createVidaaEmbeddedTextProvider,
   vidaaEmbeddedTextProvider,
@@ -841,7 +842,7 @@ test("real ASS to VTT fallback produces readable dialogue when renderer cannot i
   await ui.applySubtitleEntry({ trackIndex: -1 });
   localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
 });
-test("a first empty window selects successfully; native text already exposed skips probing", async () => {
+test("a first empty window selects successfully; native text already exposed reads only the header", async () => {
   const h = transport();
   const ui = screen(h);
   await ui.loadEmbeddedSubtitleTracks();
@@ -855,8 +856,56 @@ test("a first empty window selects successfully; native text already exposed ski
   const nativeUi = screen(other);
   PlayerController.video.textTracks = [{ mode: "showing", kind: "subtitles" }];
   await nativeUi.loadEmbeddedSubtitleTracks();
-  assert.equal(other.calls.length, 0);
+  // One header request names the audio tracks; native subtitles stay untouched.
+  assert.equal(other.calls.length, 1);
+  assert.ok(other.calls[0].end < VIDAA_EMBEDDED_TEXT_LIMITS.headerBytes);
+  assert.equal(nativeUi.embeddedSubtitleTracks.length, 0);
   assert.equal(PlayerController.video.textTracks[0].mode, "showing");
+});
+test("audio menu: header names replace Audio N without changing the playing track", async () => {
+  const audioFixture = { buffer: createMkvAudioFixture() };
+  const nativeTracks = () =>
+    [0, 1, 2].map((index) => ({
+      id: String(index + 1),
+      kind: "main",
+      label: "",
+      language: "",
+      enabled: index === 2
+    }));
+  const labels = (ui) => ui.getAudioEntries().map((entry) => entry.label);
+  const named = screen(transport(() => {}, audioFixture));
+  PlayerController.video.audioTracks = nativeTracks();
+  PlayerController.video.textTracks = [{ mode: "showing", kind: "subtitles" }];
+  named.selectedAudioTrackIndex = 2;
+  await named.loadEmbeddedSubtitleTracks();
+  named.trackDialogCache = null;
+  // Language names follow the app locale (Intl.DisplayNames): "Français" in the French UI.
+  assert.deepEqual(labels(named), [
+    "French (E-AC-3 5.1)",
+    "English (TrueHD 7.1)",
+    "Commento regista (AAC Stereo)"
+  ]);
+  assert.deepEqual(
+    named.getAudioEntries().map((entry) => entry.selected),
+    [false, false, true]
+  );
+  assert.deepEqual(
+    PlayerController.video.audioTracks.map((track) => track.enabled),
+    [false, false, true]
+  );
+  // The TV omits a stream: counts differ, so no header name is guessed for a native track
+  // and the header-only tracks stay listed but not selectable.
+  const partial = screen(transport(() => {}, audioFixture));
+  PlayerController.video.audioTracks = nativeTracks().slice(0, 2);
+  await partial.loadEmbeddedSubtitleTracks();
+  partial.trackDialogCache = null;
+  const entries = partial.getAudioEntries();
+  assert.deepEqual(labels(partial).slice(0, 2), ["Audio 1", "Audio 2"]);
+  assert.deepEqual(
+    entries.slice(2).map((entry) => entry.supported),
+    [false, false, false]
+  );
+  localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
 });
 test("recovery replacing video/playback token rejects a late first selection on the same URL", async () => {
   let held = false;

@@ -125,13 +125,17 @@ async function fetchJson(url) {
 }
 
 export const localMediaTracksRepository = {
-  async getTracks(mediaUrl, { headers = {}, probeTimeSeconds = 0 } = {}) {
+  async getTracks(mediaUrl, { headers = {}, probeTimeSeconds = 0, audioOnly = false } = {}) {
     const targetUrl = String(mediaUrl || "").trim();
     if (!targetUrl) {
       return [];
     }
     if (Platform.isVidaa()) {
-      return vidaaEmbeddedTextProvider.getTracks(targetUrl, { headers, probeTimeSeconds });
+      return vidaaEmbeddedTextProvider.getTracks(targetUrl, {
+        headers,
+        probeTimeSeconds,
+        audioOnly
+      });
     }
 
     const cachedEntry = tracksCache.get(targetUrl);

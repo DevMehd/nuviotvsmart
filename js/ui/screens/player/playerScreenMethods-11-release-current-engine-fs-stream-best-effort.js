@@ -175,6 +175,21 @@ export function createPlayerScreenMethods11() {
         !/\.(?:mp4|m4v|mov|avi|ts|m2ts|wmv|webm)(?:$|[?#])/i.test(probeUrl)
       );
     },
+    /** VIDAA: MP4/MOV sources, read only for their audio track names. */
+    isVidaaMp4ProbeCandidate(probeUrl = this.getTrackProbeUrl()) {
+      if (!probeUrl || !/^https?:/i.test(probeUrl) || this.isCurrentSourceAdaptiveManifest()) return false;
+      const streamCandidate = this.getCurrentStreamCandidate();
+      const fileName = String(streamCandidate?.behaviorHints?.filename || streamCandidate?.filename || "");
+      const declared = String(this.resolvePlaybackMediaSourceType(streamCandidate) || "")
+        .toLowerCase()
+        .split(";")[0]
+        .trim();
+      return (
+        ["video/mp4", "video/quicktime", "video/x-m4v"].includes(declared) ||
+        /\.(?:mp4|m4v|mov)(?:$|[?#])/i.test(probeUrl) ||
+        /\.(?:mp4|m4v|mov)$/i.test(fileName)
+      );
+    },
     canDiscoverEmbeddedAudioTracks() {
       if (Environment.isTizen()) {
         const usingNativePlayback =
@@ -182,6 +197,14 @@ export function createPlayerScreenMethods11() {
         const usingAvPlay = typeof PlayerController.isUsingAvPlay === "function" ? PlayerController.isUsingAvPlay() : false;
         const probeUrl = this.getTrackProbeUrl();
         return Boolean(usingNativePlayback && usingAvPlay && probeUrl && !this.isCurrentSourceAdaptiveManifest());
+      }
+      if (Environment.isVidaa()) {
+        // The TV lists audio tracks without names: read them from the MKV/MP4 header even
+        // when it already exposes the subtitles itself.
+        const usingNativePlayback =
+          typeof PlayerController.isUsingNativePlayback === "function" ? PlayerController.isUsingNativePlayback() : false;
+        const probeUrl = this.getTrackProbeUrl();
+        return Boolean(usingNativePlayback && (this.isVidaaMatroskaProbeCandidate(probeUrl) || this.isVidaaMp4ProbeCandidate(probeUrl)));
       }
       return this.canDiscoverEmbeddedSubtitleTracks();
     },

@@ -320,6 +320,10 @@ export function createPlayerScreenMethods34() {
       });
       if (this.currentEngineFsStream || prioritizeWebOsRemoteMkvPlayback) {
         this.initialEmbeddedTrackBootstrapPromise = null;
+      } else if (Environment.isVidaa() && !this.canDiscoverEmbeddedSubtitleTracks()) {
+        // VIDAA audio names come from a header-only read: never hold playback start for them.
+        this.initialEmbeddedTrackBootstrapPromise = null;
+        this.loadEmbeddedSubtitleTracks();
       } else {
         const embeddedSubtitleWarmupPromise = this.loadEmbeddedSubtitleTracks();
         this.initialEmbeddedTrackBootstrapPromise = embeddedSubtitleWarmupPromise;

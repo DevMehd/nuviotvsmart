@@ -75,7 +75,9 @@ export function createPlayerScreenMethods40() {
           capabilityPromise,
           localMediaTracksRepository.getTracks(probeUrl, {
             headers: Environment.isVidaa() ? this.getCurrentStreamRequestHeaders() : {},
-            probeTimeSeconds: Environment.isVidaa() ? Number(this.getPlaybackCurrentSeconds?.()) || 0 : 0
+            probeTimeSeconds: Environment.isVidaa() ? Number(this.getPlaybackCurrentSeconds?.()) || 0 : 0,
+            // VIDAA: native or MP4 subtitles leave only the audio names to read (header only).
+            audioOnly: Environment.isVidaa() && !canLoadSubtitleTracks
           })
         ]);
         if (!isCurrentRequest()) {
@@ -83,7 +85,7 @@ export function createPlayerScreenMethods40() {
         }
 
         this.lastEmbeddedTrackProbeUrl = probeUrl;
-        if (Environment.isVidaa()) {
+        if (Environment.isVidaa() && canLoadSubtitleTracks) {
           const diagnostic = localMediaEmbeddedSubtitleRepository.getVidaaDiagnostics();
           this.embeddedTextSubtitleSupportNotice =
             tracks.some((track) => track?.type === "text") || !diagnostic.errorCode ? "" : getVidaaEmbeddedTextNotice(diagnostic.errorCode);

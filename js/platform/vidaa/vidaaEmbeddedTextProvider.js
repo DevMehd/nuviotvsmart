@@ -39,6 +39,20 @@ export function vidaaAudioCodecName(codecId = "") {
   return id.replace(/^A_/, "").toLowerCase();
 }
 
+/** MP4 sample entry fourcc → the same codec names as vidaaAudioCodecName. */
+export function vidaaMp4AudioCodecName(fourcc = "") {
+  const id = String(fourcc || "").trim();
+  if (id === "ec-3") return "eac3";
+  if (id === "ac-3") return "ac3";
+  if (id === "mp4a") return "aac";
+  if (/^dts/.test(id)) return "dts";
+  if (id === "mlpa") return "truehd";
+  if (id === "Opus") return "opus";
+  if (id === "fLaC") return "flac";
+  if (id === ".mp3") return "mp3";
+  return id.toLowerCase();
+}
+
 /** Audio tracks of the container, in order: the TV exposes them in the same order. */
 function audioTrackEntries(tracks = [], identity = "") {
   return tracks
@@ -47,7 +61,7 @@ function audioTrackEntries(tracks = [], identity = "") {
       type: "audio",
       id: track.number,
       codecId: track.codecId,
-      codec: vidaaAudioCodecName(track.codecId),
+      codec: track.codec || vidaaAudioCodecName(track.codecId),
       name: track.name,
       language: track.language,
       channels: track.channels || "",
@@ -74,6 +88,7 @@ export function createVidaaEmbeddedTextProvider({
     const previous = current;
     current = null;
     previous?.metadataController?.abort();
+    previous?.audioController?.abort();
     previous?.windowController?.abort();
     previous?.cache.clear();
     previous?.parsedClusters.clear();
@@ -683,6 +698,8 @@ export function createVidaaEmbeddedTextProvider({
           signal
         )
       );
+    // Name the TV's audio tracks even when the subtitle index below is missing or too large.
+    if (metadata.tracks.length) s.audioTracks = audioTrackEntries(metadata.tracks, s.identity);
     if (metadata.positions[0x1549a966] !== undefined && !metadata.infoParsed) {
       const info = await indexedElement(
         s,
@@ -732,9 +749,6 @@ export function createVidaaEmbeddedTextProvider({
         throw fail("TEXT_DECODER_UNAVAILABLE");
       const head = await range(s, 0, limits.headerBytes, operation, signal);
       const metadata = await loadMetadata(s, head, operation, signal);
-      // Keep the audio tracks before narrowing to text: they name the TV's audio tracks
-      // even when the file has no usable text subtitle.
-      s.audioTracks = audioTrackEntries(metadata.tracks, s.identity);
       metadata.tracks = metadata.tracks.filter(
         (track) =>
           track.type === 17 &&
@@ -851,22 +865,156 @@ export function createVidaaEmbeddedTextProvider({
       if (s.metadataController === controller) s.metadataController = null;
     }
   }
-  async function getTracks(url, { headers = {}, probeTimeSeconds = 0 } = {}) {
+  // MP4 audio tracks from the moov box: box headers are read through 4 KiB pages and
+  // sample tables (stts/stsz/stco...) are skipped by their declared size.
+  async function mp4AudioTracks(s, head, operation, signal) {
+    let page = { start: 0, bytes: head.bytes };
+    const bytesAt = async (start, size) => {
+      if (start < page.start || start + size > page.start + page.bytes.length)
+        page = {
+          start,
+          bytes: (await range(s, start, Math.max(size, 4096), operation, signal)).bytes
+        };
+      if (start + size > page.start + page.bytes.length) throw fail("TRUNCATED_ELEMENT");
+      return page.bytes.subarray(start - page.start, start - page.start + size);
+    };
+    const u32 = (b, at) => new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(at);
+    const ascii = (b, from, to) => String.fromCharCode(...b.subarray(from, to));
+    // Visit child boxes in [start, end); visit returns true to stop the walk.
+    const boxes = async (start, end, visit) => {
+      for (let offset = start, count = 0; offset + 8 <= end; count++) {
+        if (count >= 256) throw fail("ELEMENT_LIMIT");
+        const box = await bytesAt(offset, Math.min(16, end - offset));
+        let size = u32(box, 0);
+        let headerSize = 8;
+        if (size === 1 && box.length >= 16) {
+          size = u32(box, 8) * 2 ** 32 + u32(box, 12);
+          headerSize = 16;
+        } else if (size === 0) size = end - offset;
+        if (size < headerSize || offset + size > end) throw fail("TRUNCATED_ELEMENT");
+        if (await visit(ascii(box, 4, 8), offset + headerSize, offset + size)) return;
+        offset += size;
+      }
+    };
+    const body = (start, end, max) => {
+      if (end - start > max) throw fail("INDEX_ELEMENT_LIMIT");
+      return bytesAt(start, end - start);
+    };
+    const tracks = [];
+    let foundMovie = false;
+    await boxes(0, head.totalSize, async (type, start, end) => {
+      if (type !== "moov") return false;
+      foundMovie = true;
+      await boxes(start, end, async (type, start, end) => {
+        if (type !== "trak") return false;
+        const track = { number: tracks.length + 1, type: 0, codecId: "", language: "", name: "" };
+        await boxes(start, end, async (type, start, end) => {
+          if (type !== "mdia") return false;
+          await boxes(start, end, async (type, start, end) => {
+            if (type === "mdhd") {
+              const b = await body(start, end, 64);
+              const at = b[0] === 1 ? 32 : 20;
+              const packed = b.length >= at + 2 ? (b[at] << 8) | b[at + 1] : 0;
+              if (packed)
+                track.language = [10, 5, 0]
+                  .map((shift) => String.fromCharCode(((packed >> shift) & 31) + 0x60))
+                  .join("");
+            } else if (type === "hdlr") {
+              const b = await body(start, end, 1024);
+              if (b.length < 12) throw fail("TRUNCATED_ELEMENT");
+              if (ascii(b, 8, 12) === "soun") track.type = 2;
+              const name = new TextDecoder().decode(b.subarray(24)).replace(/\0[\s\S]*$/, "");
+              // Muxers put their own name here unless the track has a title.
+              if (!/handler|^core media/i.test(name)) track.name = name.trim();
+            } else if (type === "minf" && track.type === 2) {
+              await boxes(start, end, (type, start, end) =>
+                type !== "stbl"
+                  ? false
+                  : boxes(start, end, async (type, start, end) => {
+                      if (type !== "stsd") return false;
+                      const entry = await bytesAt(start, Math.min(36, end - start));
+                      if (entry.length < 34) throw fail("TRUNCATED_ELEMENT");
+                      track.codecId = ascii(entry, 12, 16);
+                      track.codec = vidaaMp4AudioCodecName(track.codecId);
+                      // AC-3/E-AC-3 sample entries carry a placeholder channel count.
+                      if (!/^[ae]c-3$/.test(track.codecId))
+                        track.channels = (entry[32] << 8) | entry[33];
+                      return true;
+                    }).then(() => true)
+              );
+            }
+            return false;
+          });
+          return true;
+        });
+        tracks.push(track);
+        return false;
+      });
+      return true;
+    });
+    if (!foundMovie) throw fail("INVALID_MP4");
+    return tracks;
+  }
+  // Header-only read of the audio track list (MKV Tracks or MP4 moov); cached per source.
+  async function readAudioTracks(s) {
+    const controller = new AbortController();
+    s.audioController = controller;
+    const signal = controller.signal;
+    const operation = budget("discovery");
+    try {
+      const head = await range(s, 0, limits.headerBytes, operation, signal);
+      let tracks;
+      if (head.bytes.length >= 8 && String.fromCharCode(...head.bytes.subarray(4, 8)) === "ftyp")
+        tracks = await mp4AudioTracks(s, head, operation, signal);
+      else {
+        const metadata = demux.header(head.bytes, head.totalSize);
+        tracks = metadata.tracks;
+        const at = metadata.positions[0x1654ae6b];
+        if (!tracks.length && at !== undefined)
+          tracks = demux.tracks(
+            await indexedElement(s, at, 0x1654ae6b, limits.indexBytes, operation, signal)
+          );
+      }
+      check(s, signal);
+      s.audioTracks = audioTrackEntries(tracks, s.identity);
+    } catch (error) {
+      if (s !== current) return;
+      // Transient failures retry later; an unreadable container stays unnamed.
+      if (/TIMEOUT|BUDGET|SUPERSEDED|TRANSPORT/.test(error.code || ""))
+        s.audioRetryAt = now() + 5000;
+      else s.audioTracks = [];
+    } finally {
+      if (s.audioController === controller) s.audioController = null;
+    }
+  }
+  async function getTracks(url, { headers = {}, probeTimeSeconds = 0, audioOnly = false } = {}) {
     const s = source(url, headers);
     s.probeTimeSeconds = probeTimeSeconds;
-    const audioOnly = () => (s === current && Array.isArray(s.audioTracks) ? s.audioTracks : []);
-    if (!s.accessVerified) {
-      if (s.retryAt > now()) return audioOnly();
+    const audio = () => (s === current && Array.isArray(s.audioTracks) ? s.audioTracks : []);
+    if (!audioOnly && !s.accessVerified && s.retryAt <= now()) {
       s.pending ||= discover(s).finally(() => {
         s.pending = null;
       });
       try {
         await s.pending;
       } catch (_) {
-        return audioOnly();
+        /* Subtitles stay unavailable; audio names may still come from the header below. */
       }
     }
-    if (s !== current || !s.metadata) return audioOnly();
+    // Audio-only requests, and a discovery that found another container (MP4). A failed
+    // transport is not retried here: the same header request would fail again.
+    if (
+      s === current &&
+      (audioOnly || !s.errorCode || s.errorCode === "INVALID_MATROSKA") &&
+      !Array.isArray(s.audioTracks) &&
+      !(s.audioRetryAt > now())
+    ) {
+      s.audioPending ||= readAudioTracks(s).finally(() => {
+        s.audioPending = null;
+      });
+      await s.audioPending;
+    }
+    if (audioOnly || s !== current || !s.metadata) return audio();
     const textTracks = s.metadata.tracks.map((track, ordinal) => ({
       type: "text",
       id: track.number,
@@ -882,7 +1030,7 @@ export function createVidaaEmbeddedTextProvider({
       containerTrackUid: track.uid,
       textAccessVerified: true
     }));
-    return [...textTracks, ...audioOnly()];
+    return [...textTracks, ...audio()];
   }
   async function scanWindow(s, track, start, end, operation, signal) {
     const metadata = s.metadata;
