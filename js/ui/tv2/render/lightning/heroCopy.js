@@ -80,6 +80,8 @@ export function createHeroCopy(deps) {
   let parts = null;
   let signature = "";
   let shown = false;
+  // Previous copy of the same title, kept on screen while its enriched copy is measured.
+  let stale = [];
 
   function measure(textNode) {
     const done = (w, h) => {
@@ -191,7 +193,12 @@ export function createHeroCopy(deps) {
   }
 
   function build(display) {
-    block.children?.slice().forEach((child) => child !== logo && child.destroy());
+    const key = display.title || "";
+    const keep = shown && parts?.key === key;
+    const old = block.children.filter((child) => child !== logo && !stale.includes(child));
+    if (keep && !stale.length) stale = old;
+    else old.forEach((child) => child.destroy());
+    if (!keep) dropStale();
     const lines = heroCopyLines(display);
     const lineOf = (specs) => {
       if (!specs.length) return null;
@@ -203,6 +210,7 @@ export function createHeroCopy(deps) {
       };
     };
     parts = {
+      key,
       title: text({
         text: display.title || "",
         weight: 600,
@@ -221,7 +229,16 @@ export function createHeroCopy(deps) {
           })
         : null
     };
+    if (stale.length) tops().forEach((top) => (top.alpha = 0));
   }
+
+  function dropStale() {
+    stale.forEach((child) => child.destroy());
+    stale = [];
+  }
+
+  const tops = () =>
+    [parts.title, parts.description, parts.primary?.group, parts.secondary?.group].filter(Boolean);
 
   function texts() {
     if (!parts) return [];
@@ -238,12 +255,17 @@ export function createHeroCopy(deps) {
   function layout() {
     if (!parts) return;
     if (!texts().every(size)) {
-      if (shown) {
+      if (shown && !stale.length) {
         deps.settle(block);
         block.alpha = 0;
         shown = false;
       }
       return;
+    }
+    if (stale.length) {
+      dropStale();
+      // The title's alpha follows the logo below; the description keeps its 0.72.
+      tops().forEach((top) => (top.alpha = top === parts.description ? C.description.alpha : 1));
     }
     let y = C.bottom;
     let gap = 0;

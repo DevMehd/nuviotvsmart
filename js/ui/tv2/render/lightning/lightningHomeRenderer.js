@@ -794,7 +794,8 @@ export function createLightningHomeRenderer(
   function heroState(slot, state) {
     const hero = scene?.hero;
     if (!hero || slot !== hero.back) return;
-    if (state !== "loading") setSkeleton(false);
+    // A cleared slot ("empty") is not an end of loading: setHero(null, { loading }) clears it.
+    if (state === "loaded" || state === "failed") setSkeleton(false);
     if (state === "loaded") {
       const old = hero.front;
       hero.front = slot;

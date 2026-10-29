@@ -408,6 +408,18 @@ assert.deepEqual(
   assert.equal(next.secondary.group.y, 486 - 40);
   assert.equal(next.primary.group.y, 486 - 40 - 12 - 40);
   assert.equal(next.title.y, 486 - 40 - 12 - 40 - 28 - 76);
+  // Enrichment of the same title (enrichCurrentHeroAsync): the shown copy stays until the
+  // enriched one is measured, without a blink, then gives way to it.
+  copy.set({ ...series, description: "Enriched" });
+  const enriched = copy.parts();
+  assert.equal(copy.block.alpha, 1, "same title: no blink while measuring");
+  assert.equal(next.title.destroyed, undefined, "shown copy kept meanwhile");
+  assert.equal(enriched.title.alpha, 0);
+  report(1);
+  assert.equal(next.title.destroyed, true, "previous copy destroyed once replaced");
+  assert.equal(enriched.title.alpha, 1);
+  assert.equal(enriched.description.alpha, HERO_COPY.description.alpha);
+  assert.equal(enriched.description.y, 486 - 36);
   copy.set(null);
   assert.equal(copy.block.alpha, 0);
 }
