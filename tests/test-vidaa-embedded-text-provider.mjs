@@ -850,6 +850,14 @@ test("a first empty window selects successfully; native text already exposed rea
   assert.equal(await ui.applySubtitleEntry({ embeddedSubtitleTrackIndex: 0 }), true);
   assert.equal(ui.webOsEmbeddedTextSubtitleUsingHtml, true);
   assert.equal(ui.htmlSubtitleCues.length, 0);
+  // The TV exposing its own subtitles later only re-reads the audio names: the MKV list stays.
+  const subtitleCount = ui.embeddedSubtitleTracks.length;
+  assert.ok(subtitleCount > 0);
+  const previousTextTracks = PlayerController.video.textTracks;
+  PlayerController.video.textTracks = [{ mode: "disabled", kind: "subtitles" }];
+  await ui.loadEmbeddedSubtitleTracks();
+  assert.equal(ui.embeddedSubtitleTracks.length, subtitleCount);
+  PlayerController.video.textTracks = previousTextTracks;
   ui.disableEmbeddedSubtitleSelection();
   localMediaEmbeddedSubtitleRepository.disposeVidaaSource();
   const other = transport();

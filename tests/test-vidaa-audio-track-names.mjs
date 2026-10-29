@@ -90,6 +90,17 @@ for (const moovAtEnd of [false, true]) {
   });
 }
 
+test("MOV: QuickTime counted handler names give the title, never the muxer name", async () => {
+  const h = rangeTransport(createMp4AudioFixture({ quickTime: true }));
+  const p = createVidaaEmbeddedTextProvider(h);
+  const tracks = await p.getTracks(`${url}.mov`, { audioOnly: true });
+  assert.deepEqual(
+    tracks.map((track) => track.name),
+    ["", "", "Commento regista"]
+  );
+  p.dispose();
+});
+
 test("MP4 reached through the subtitle discovery falls back to the header read", async () => {
   const h = rangeTransport(createMp4AudioFixture());
   const p = createVidaaEmbeddedTextProvider(h);

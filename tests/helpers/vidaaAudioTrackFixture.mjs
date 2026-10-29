@@ -71,7 +71,14 @@ const packedLanguage = (code) =>
   );
 function trak(
   handler,
-  { language = "und", name = "", fourcc = "avc1", channels = 2, version = 0 } = {}
+  {
+    language = "und",
+    name = "",
+    fourcc = "avc1",
+    channels = 2,
+    version = 0,
+    quickTime = false
+  } = {}
 ) {
   const mdhd =
     version === 1
@@ -83,7 +90,13 @@ function trak(
     Buffer.alloc(4),
     Buffer.from(handler, "latin1"),
     Buffer.alloc(12),
-    Buffer.from(`${name || (handler === "soun" ? "SoundHandler" : "VideoHandler")}\0`, "utf8")
+    // QuickTime names are counted (Pascal) strings; ISO names end with NUL.
+    quickTime
+      ? Buffer.concat([
+          uint(Buffer.byteLength(name || "Core Media Audio"), 1),
+          Buffer.from(name || "Core Media Audio")
+        ])
+      : Buffer.from(`${name || (handler === "soun" ? "SoundHandler" : "VideoHandler")}\0`, "utf8")
   );
   const entry =
     handler === "soun"
@@ -113,7 +126,11 @@ function trak(
 }
 
 /** MP4: video + the audio tracks above; moov before the media, or after it. */
-export function createMp4AudioFixture({ moovAtEnd = false, mediaBytes = 300 * 1024 } = {}) {
+export function createMp4AudioFixture({
+  moovAtEnd = false,
+  mediaBytes = 300 * 1024,
+  quickTime = false
+} = {}) {
   const ftyp = box(
     "ftyp",
     Buffer.from("isom", "latin1"),
@@ -125,7 +142,12 @@ export function createMp4AudioFixture({ moovAtEnd = false, mediaBytes = 300 * 10
     full("mvhd", 0, Buffer.alloc(96)),
     trak("vide"),
     ...AUDIO_TRACKS.map((track, index) =>
-      trak("soun", { ...track, version: index === 1 ? 1 : 0, name: index === 2 ? track.name : "" })
+      trak("soun", {
+        ...track,
+        version: index === 1 ? 1 : 0,
+        name: index === 2 ? track.name : "",
+        quickTime
+      })
     )
   );
   const mdat = box("mdat", Buffer.alloc(mediaBytes));

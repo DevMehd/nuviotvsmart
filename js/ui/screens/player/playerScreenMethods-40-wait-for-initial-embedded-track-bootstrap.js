@@ -90,7 +90,8 @@ export function createPlayerScreenMethods40() {
           this.embeddedTextSubtitleSupportNotice =
             tracks.some((track) => track?.type === "text") || !diagnostic.errorCode ? "" : getVidaaEmbeddedTextNotice(diagnostic.errorCode);
         }
-        this.embeddedSubtitleTracks = canLoadSubtitleTracks ? this.normalizeEmbeddedSubtitleTracks(tracks) : [];
+        // VIDAA audio-only read: keep the subtitle list (and a selected MKV subtitle) found earlier.
+        if (canLoadSubtitleTracks) this.embeddedSubtitleTracks = this.normalizeEmbeddedSubtitleTracks(tracks);
         this.embeddedAudioTracks = canLoadAudioTracks ? this.normalizeEmbeddedAudioTracks(tracks) : [];
         this.warmBitmapSubtitleSharedResources();
         const selectedEmbeddedSubtitleTrack =
@@ -101,7 +102,10 @@ export function createPlayerScreenMethods40() {
           typeof PlayerController.getSelectedWebOsEmbeddedAudioTrackIndex === "function"
             ? PlayerController.getSelectedWebOsEmbeddedAudioTrackIndex()
             : -1;
-        if (!Environment.isVidaa() || this.webOsEmbeddedTextSubtitleTrack?.embeddedTextProvider !== "vidaa-range") {
+        if (
+          canLoadSubtitleTracks &&
+          (!Environment.isVidaa() || this.webOsEmbeddedTextSubtitleTrack?.embeddedTextProvider !== "vidaa-range")
+        ) {
           this.selectedEmbeddedSubtitleTrackIndex = Number.isFinite(selectedEmbeddedSubtitleTrack) ? selectedEmbeddedSubtitleTrack : -1;
         }
         this.selectedEmbeddedAudioTrackIndex = Number.isFinite(selectedEmbeddedAudioTrack) ? selectedEmbeddedAudioTrack : -1;

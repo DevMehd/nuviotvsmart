@@ -923,9 +923,11 @@ export function createVidaaEmbeddedTextProvider({
               const b = await body(start, end, 1024);
               if (b.length < 12) throw fail("TRUNCATED_ELEMENT");
               if (ascii(b, 8, 12) === "soun") track.type = 2;
-              const name = new TextDecoder().decode(b.subarray(24)).replace(/\0[\s\S]*$/, "");
+              // QuickTime stores a counted (Pascal) string, ISO a NUL-terminated one.
+              const from = b.length > 24 && b[24] === b.length - 25 ? 25 : 24;
+              const name = new TextDecoder().decode(b.subarray(from)).replace(/\0[\s\S]*$/, "");
               // Muxers put their own name here unless the track has a title.
-              if (!/handler|^core media/i.test(name)) track.name = name.trim();
+              if (!/handler|^core media|^iso media/i.test(name)) track.name = name.trim();
             } else if (type === "minf" && track.type === 2) {
               await boxes(start, end, (type, start, end) =>
                 type !== "stbl"
