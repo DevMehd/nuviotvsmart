@@ -132,8 +132,13 @@ export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], 
       chips.push(chip);
     }
   });
-  if (!chips.length) {
-    getStreamPresentationBadges(stream).forEach((label) => {
+  // webOS renders nothing while a proxied logo loads: text chips only stand in for badges without a usable logo.
+  const hasPendingLogo = badges.slice(0, STREAM_BADGE_LIMIT).some((badge) => {
+    const url = normalizeAddonLogoUrl(badge.imageURL);
+    return url && !hasFailedAddonLogo(url);
+  });
+  if (!chips.length && !hasPendingLogo) {
+    getStreamPresentationBadges(stream, t("trakt_cached_label", {}, "En cache")).forEach((label) => {
       chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
     });
   }

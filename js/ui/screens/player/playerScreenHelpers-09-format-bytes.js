@@ -343,7 +343,7 @@ export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadg
     }
   });
   if (!matchedBadges.length) {
-    getStreamPresentationBadges(stream).forEach((label) => {
+    getStreamPresentationBadges(stream, t("trakt_cached_label", {}, "En cache")).forEach((label) => {
       chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
     });
   }

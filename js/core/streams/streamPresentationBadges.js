@@ -1,4 +1,4 @@
-export function getStreamPresentationBadges(stream = {}) {
+export function getStreamPresentationBadges(stream = {}, cachedLabel = "En cache") {
   const raw = stream.raw || {};
   const presentation = stream.streamPresentation || raw.streamPresentation || {};
   const parsed = raw.parsed || stream.clientResolve?.stream?.raw?.parsed || {};
@@ -55,7 +55,7 @@ export function getStreamPresentationBadges(stream = {}) {
   const provider = stream.debridCacheStatus?.providerId || stream.clientResolve?.service || "";
   if (/^torbox$/i.test(provider) || /\btorbox\b|(?:\[|\()tb\+?(?:\]|\))/i.test(text)) add("TorBox");
   if (presentation.cached === true || stream.debridCacheStatus?.status === "cached")
-    add("En cache");
+    add(cachedLabel);
   return labels.slice(0, 9);
 }
 

@@ -35,6 +35,15 @@ const noRules = { rules: { imports: [] }, showFileSizeBadges: false };
 assert.ok(renderStreamBadges(source, true, noRules).includes("stream-route-stream-badge technical"));
 assert.ok(renderPlayerSourceBadges(source, noRules).includes("stream-route-stream-badge technical"));
 assert.equal(hasStreamBadges(source, true, noRules), true);
+// A matched image badge whose logo is still loading on webOS (no fallback
+// URL there) must not be replaced by text chips that would then stay.
+const withImageBadge = { ...source, badges: [{ name: "4K", imageURL: "http://127.0.0.1:2710/image-proxy?url=https%3A%2F%2Fi.imgur.com%2F4k.png" }] };
+assert.ok(!renderStreamBadges(withImageBadge, true, noRules).includes("technical"));
+assert.ok(!renderPlayerSourceBadges(withImageBadge, noRules).includes("technical"));
+// The cached label follows the interface language (fallback stays French).
+assert.ok(renderStreamBadges({ ...source, streamPresentation: { cached: true } }, true, noRules).includes(">En cache<"));
+const { getStreamPresentationBadges } = await import("../js/core/streams/streamPresentationBadges.js");
+assert.ok(getStreamPresentationBadges({ streamPresentation: { cached: true } }, "Cached").includes("Cached"));
 
 // The Xperience pack stays VIDAA-only (audit final verdict keep-platform):
 // on webOS an explicit pack keeps the imported rules, and Essential mode
