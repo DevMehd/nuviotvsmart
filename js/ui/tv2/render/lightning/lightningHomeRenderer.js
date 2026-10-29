@@ -11,6 +11,11 @@ import { ATLAS_WEIGHTS, atlasUrls, glText } from "./sdfAtlas.js";
 import { createHeroCopy } from "./heroCopy.js";
 import { useVidaaHeroTransition } from "../../../screens/home/vidaaHeroTransition.js";
 import { isTitleItemWatched } from "../../../components/watchedTitleBadge.js";
+import {
+  mountTrailerMedia,
+  pauseTrailerMedia,
+  releaseTrailerMedia
+} from "../../../screens/home/homeTrailerLayer.js";
 
 // New TV Home (nuv-091, lot B2), 100 % WebGL prototype on Lightning: hero, rails, text (SDF
 // atlases, canvas text for characters outside them) and focus are drawn in one canvas. Same interface as createDomHomeRenderer. The
@@ -31,6 +36,8 @@ const FOCUS_RING = 3;
 const FOCUS_SCALE = 1.015;
 // The incoming hero image loads at this alpha: Lightning only uploads a visible node's texture.
 const HERO_LOADING_ALPHA = 0.01;
+// Hero trailer reveal: the DOM trailer layer's opacity transition (components-16.css).
+const TRAILER_FADE = { duration: 480, easing: "ease" };
 // Fixed GPU budget: the image windows of renderer.js need about 45 MB (poster ~0.7 MB, hero
 // 3.7 MB). Still above it after Lightning's own cleanup means the TV cannot hold the scene.
 export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
@@ -304,6 +311,24 @@ async function createEngine(report) {
   engineCount += 1;
   const font = `${FONT}${engineCount}`;
   const fonts = Object.fromEntries(ATLAS_WEIGHTS.map((weight) => [weight, `${font}-${weight}`]));
+  const Platform =
+    variant === "platform-legacy" && L.WebPlatformLegacy ? L.WebPlatformLegacy : L.WebPlatform;
+  // Variant trailer-above (lot W5 fallback): the trailer goes over the canvas, which can be opaque.
+  // The first getContext call fixes the attributes; Lightning's own call then gets this context.
+  class OpaquePlatform extends Platform {
+    createContext() {
+      this.canvas?.getContext("webgl", {
+        alpha: false,
+        antialias: false,
+        depth: false,
+        stencil: true,
+        powerPreference: "high-performance",
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false
+      });
+      return super.createContext();
+    }
+  }
   let renderer;
   try {
     renderer = new L.RendererMain(
@@ -315,10 +340,7 @@ async function createEngine(report) {
         renderEngine: L.WebGlCoreRenderer,
         // Canvas text only for a text the atlases lack (glText): one texture per node.
         fontEngines: [L.SdfTextRenderer, L.CanvasTextRenderer].filter(Boolean),
-        platform:
-          variant === "platform-legacy" && L.WebPlatformLegacy
-            ? L.WebPlatformLegacy
-            : L.WebPlatform,
+        platform: variant === "trailer-above" ? OpaquePlatform : Platform,
         createImageBitmapSupport: variant === "bitmap-basic" ? "basic" : "full",
         numImageWorkers: 0,
         // Default 42 ms per frame: uploads would eat a whole 140 ms slide in three frames.
@@ -757,6 +779,7 @@ export function createLightningHomeRenderer(
   container.innerHTML = `
     <div class="tv2-home tv2-home-webgl">
       ${renderLegacySidebar({ selectedRoute: "home", layout })}
+      <div class="tv2-gl-trailer home-hero-trailer-layer"></div>
       <div class="tv2-gl-host"></div>
       <img class="tv2-gl-gif" alt="" decoding="async" />
       <div class="home-main tv2-gl-proxy"><article class="home-poster-card tv2-card focusable" data-action="openDetail"><div class="tv2-card-title"></div></article></div>
@@ -765,6 +788,16 @@ export function createLightningHomeRenderer(
   const host = container.querySelector(".tv2-gl-host");
   const proxy = container.querySelector(".tv2-gl-proxy .tv2-card");
   const gifImage = container.querySelector(".tv2-gl-gif");
+  const trailerLayer = container.querySelector(".tv2-gl-trailer");
+  // On the WebGL hero media rectangle (or the full screen), at the canvas scale innerWidth / 1920.
+  const heroRect = heroNodeProps(layout);
+  const px = (value) => `${(value * (globalThis.innerWidth || APP_WIDTH)) / APP_WIDTH}px`;
+  Object.assign(trailerLayer.style, {
+    left: px(heroRect.x),
+    top: px(heroRect.y),
+    width: px(heroRect.w),
+    height: px(heroRect.h)
+  });
   const views = new Map();
   const last = { rows: [], focus: null, options: {}, hero: null };
   // The hero image stays out of the card queue, as in the DOM renderer.
@@ -781,6 +814,8 @@ export function createLightningHomeRenderer(
   // Focused card on screen once the rails stop (app pixels), and the folder focus GIF over it.
   let focusRect = null;
   const gif = { url: "", id: "", key: "", timer: null };
+  let stopTrailer = null;
+  let trailerShown = false;
   const motion = homeMotion(root);
   // The legacy sidebar is drawn until lot W6: content starts after its rail, even with the pill.
   const geo = { ...geometry, contentStart: RAIL_LEFT, viewport: APP_WIDTH - RAIL_LEFT };
@@ -795,7 +830,7 @@ export function createLightningHomeRenderer(
     if (!closed) onFailure?.(reason);
   }
 
-  function buildScene({ renderer, fonts }) {
+  function buildScene({ renderer, fonts, variant }) {
     const colors = {
       bg: themeColor(root, "--bg-color", "#0d0d0d"),
       bgClear: themeColor(root, "--bg-color", "#0d0d0d", 0),
@@ -868,11 +903,12 @@ export function createLightningHomeRenderer(
       current.destroy();
       return next;
     };
+    // Transparent (lot W5): the hero trailer plays under the canvas, .tv2-home paints the background.
     const sceneRoot = node({
       parent: renderer.root,
       w: APP_WIDTH,
       h: APP_HEIGHT,
-      color: colors.bg
+      color: variant === "trailer-above" ? colors.bg : 0
     });
     const hero = heroNodeProps(layout);
     // Two hero images: the next one loads hidden over the shown one, then fades in (setHero).
@@ -937,6 +973,8 @@ export function createLightningHomeRenderer(
       retext,
       shader,
       root: sceneRoot,
+      heroLayer,
+      rowsClip,
       hero: { front: heroSlots[0], back: heroSlots[1], shown: "", wanted: "" },
       skeleton: { node: skeleton, on: false, ctrl: null },
       heroCopy,
@@ -1305,6 +1343,48 @@ export function createLightningHomeRenderer(
     gif.timer = setTimeout(() => gifImage.classList.add("is-active"), motion.rail?.duration || 0);
   }
 
+  /**
+   * Trailer shown (lot W5): the hero images fade out over the DOM video under the canvas, the
+   * WebGL fades stay over it; full screen also fades the rails and the hero meta, as the DOM.
+   */
+  function revealTrailer(on) {
+    trailerShown = on;
+    // Destroyed: the scene goes with its nodes, nothing to fade back.
+    if (!scene || closed) return;
+    tween(scene.heroLayer, "alpha", on ? 0 : 1, TRAILER_FADE);
+    if (!layout.modernHeroFullScreenBackdropEnabled) return;
+    tween(scene.rowsClip, "alpha", on ? 0 : 1, TRAILER_FADE);
+    scene.heroCopy.hideMeta(on, TRAILER_FADE);
+  }
+
+  /** Current Home hero_media trailer (or folder hero video) in the DOM layer, as the DOM renderer. */
+  function playHeroTrailer(source) {
+    stopHeroTrailer();
+    // A deferred stop's paused media leaves at once, as the current Home's mount does.
+    releaseTrailerMedia(trailerLayer);
+    stopTrailer = mountTrailerMedia(
+      trailerLayer,
+      source,
+      () => revealTrailer(true),
+      () => stopHeroTrailer()
+    );
+  }
+
+  /** `deferred`: paused now, unloaded once idle (constrained TVs, as the current Home). */
+  function stopHeroTrailer({ deferred = false } = {}) {
+    if (trailerShown) revealTrailer(false);
+    stopTrailer?.({ deferred });
+    stopTrailer = null;
+  }
+
+  /** Home hidden or destroyed: trailer media unloaded now (no audio), focus GIF cleared. */
+  function suspend() {
+    stopHeroTrailer();
+    pauseTrailerMedia(trailerLayer);
+    releaseTrailerMedia(trailerLayer);
+    setFocusGif("");
+  }
+
   function setProfile(profile) {
     const sidebar = container.querySelector(".home-sidebar");
     if (!sidebar) return;
@@ -1325,10 +1405,12 @@ export function createLightningHomeRenderer(
       engine = ready;
       engine.renderer.targetFPS = 0;
       host.appendChild(engine.canvas);
+      root.classList.toggle("tv2-gl-trailer-above", engine.variant === "trailer-above");
       scene = buildScene(engine);
       setRows(last.rows);
       if (last.focus) update(last.rows, last.focus, last.options);
       setHero(last.hero, { loading: last.heroLoading });
+      if (trailerShown) revealTrailer(true);
     })
     .catch((error) => fail(error?.message || "init"));
 
@@ -1338,14 +1420,17 @@ export function createLightningHomeRenderer(
     update,
     setWatched,
     setHero,
+    playHeroTrailer,
+    stopHeroTrailer,
     setFocusGif,
     setProfile,
     sidebarItems,
     focusedNode: () => sidebarFocused || (proxyFocused ? proxy : null),
+    suspend,
     destroy() {
       closed = true;
-      clearTimeout(gif.timer);
-      imageQueue.request(gifImage, "");
+      // Leaving Home (newHomeScreen cleanup destroys a WebGL view): the trailer's audio stops here.
+      suspend();
       heroQueue.clear();
       if (scene) {
         views.forEach((view) => setRowSkeletons(scene, view, 0));

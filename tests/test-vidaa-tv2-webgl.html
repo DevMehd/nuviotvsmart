@@ -608,12 +608,58 @@
           assert(!gifNode.classList.contains("is-active") && !gifNode.getAttribute("src"), "focus left: GIF cleared");
           w4bView.destroy();
 
+          // Lot W5: the hero trailer plays in a DOM layer under the transparent canvas. On its first
+          // frame the hero image fades out (the canvas reads transparent there) while the WebGL fade
+          // stays over it; full screen also fades the rails. Stop brings the hero back; destroy
+          // unloads the video (no audio after Home). Whether the TV shows video under the canvas is
+          // for the TV to confirm (variant trailer-above otherwise).
+          const { trailerVideoFixture } = await import("/tests/helpers/trailerVideoFixture.mjs");
+          const trailerView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern", modernHeroFullScreenBackdropEnabled: true },
+            onFailure: (reason) => failures.push(reason)
+          });
+          trailerView.setRows([row]);
+          trailerView.update([row], { row: 0, columns: { a: 0 } }, { sidebarIndex: -1 });
+          trailerView.setHero({ id: "tt9", type: "movie", name: "Hero", background: checker, poster: red });
+          const trailerLayer = document.querySelector(".tv2-gl-trailer");
+          const heroAlpha = () => {
+            lightning.stage.drawFrame();
+            return pixelsAt(1700, 100)[3];
+          };
+          await settle("trailer hero drawn", () => document.querySelector(".tv2-gl-canvas") && heroAlpha() === 255);
+          assert(
+            trailerLayer.compareDocumentPosition(document.querySelector(".tv2-gl-host")) & Node.DOCUMENT_POSITION_FOLLOWING &&
+              getComputedStyle(trailerLayer).zIndex === "auto",
+            "trailer layer under the canvas"
+          );
+          assert(
+            ["left", "top", "width", "height"].map((key) => trailerLayer.style[key]).join() === "0px,0px,1920px,1080px",
+            `full-screen trailer rectangle ${trailerLayer.style.cssText}`
+          );
+          const showTrailer = async () => {
+            trailerView.playHeroTrailer({ kind: "video", url: trailerVideoFixture, muted: true });
+            await settle("trailer first frame", () => trailerLayer.classList.contains("is-active"));
+          };
+          await showTrailer();
+          await settle("hero image faded over the trailer", () => heroAlpha() === 0);
+          assert(pixelsAt(100, 1000)[3] > 200, "the WebGL fade stays over the trailer");
+          await settle("full screen: rails faded", () => rowsLayer().parent.alpha === 0);
+          trailerView.stopHeroTrailer();
+          assert(!trailerLayer.querySelector("video") && !trailerLayer.classList.contains("is-active"), "stop unloads the trailer");
+          await settle("hero and rails back", () => heroAlpha() === 255 && rowsLayer().parent.alpha === 1);
+          await showTrailer();
+          const playing = trailerLayer.querySelector("video");
+          trailerView.destroy();
+          assert(!trailerLayer.querySelector("video") && playing.paused && !playing.getAttribute("src"), "destroy unloads the trailer: no audio");
+
           assert(!failures.length, `WebGL fell back to DOM: ${failures.join(",")}`);
           // Failures are forgotten on leaving Home: the kept engine retries them on the next visit.
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF, hero trailer under the canvas (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;

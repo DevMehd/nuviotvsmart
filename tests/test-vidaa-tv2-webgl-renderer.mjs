@@ -420,6 +420,26 @@ assert.deepEqual(
   assert.equal(enriched.title.alpha, 1);
   assert.equal(enriched.description.alpha, HERO_COPY.description.alpha);
   assert.equal(enriched.description.y, 486 - 36);
+  // Lot W5, full-screen trailer: the meta lines and description fade, the title stays, an
+  // enrichment meanwhile keeps them hidden, and they come back to their alphas after it.
+  copy.hideMeta(true, null);
+  assert.deepEqual(
+    [enriched.title, enriched.primary.group, enriched.secondary.group, enriched.description].map(
+      (node) => node.alpha
+    ),
+    [1, 0, 0, 0]
+  );
+  copy.set({ ...series, description: "Enriched again" });
+  report(1);
+  const during = copy.parts();
+  assert.equal(during.title.alpha, 1);
+  assert.equal(during.description.alpha, 0, "a copy laid out under the trailer stays hidden");
+  copy.set(movie);
+  assert.equal(copy.parts().primary.group.alpha, 0, "a new title under the trailer too");
+  report();
+  copy.hideMeta(false, null);
+  assert.equal(copy.parts().primary.group.alpha, 1);
+  assert.equal(copy.parts().description.alpha, HERO_COPY.description.alpha);
   copy.set(null);
   assert.equal(copy.block.alpha, 0);
 }
@@ -677,7 +697,13 @@ assert.equal(glText(null).text, "");
 // Diagnostic variants: one at a time, cycled from the Diagnostic, back to standard.
 assert.equal(setting.getWebglVariant(), "standard");
 const seen = setting.WEBGL_VARIANTS.map(() => setting.cycleWebglVariant());
-assert.deepEqual(seen, ["bitmap-basic", "platform-legacy", "hero-780", "standard"]);
+assert.deepEqual(seen, [
+  "bitmap-basic",
+  "platform-legacy",
+  "hero-780",
+  "trailer-above",
+  "standard"
+]);
 assert.equal(store.has("tvWebglVariant"), false);
 
 console.log(

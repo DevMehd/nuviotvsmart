@@ -586,6 +586,44 @@ html[data-card-depth="true"][data-card-depth-posters="true"]
   display: block;
 }
 
+/* Hero trailer of the WebGL Home (lot W5): under the transparent canvas, so the WebGL hero fades
+   stay over it; the renderer sets its rectangle (the hero media, or the full screen). Same fade as
+   the DOM .home-hero-trailer-layer. */
+.tv2-gl-trailer {
+  position: absolute;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 480ms ease;
+}
+
+.tv2-gl-trailer.is-active {
+  opacity: 1;
+}
+
+.tv2-gl-trailer .home-inline-trailer-frame,
+.tv2-gl-trailer .home-inline-trailer-video {
+  position: absolute;
+  inset: 0;
+  /* --modern-trailer-overscan-zoom of the DOM hero (components-16.css). */
+  transform: scale(1.35);
+}
+
+/* Variant trailer-above (W5 fallback, Diagnostic): over the opaque canvas, the hero fades in CSS
+   (the canvas's two stops); the canvas copy under the video is hidden while it plays. */
+.tv2-gl-trailer-above .tv2-gl-trailer {
+  z-index: 1;
+}
+
+.tv2-gl-trailer-above .tv2-gl-trailer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, var(--bg-color), transparent 45%),
+    linear-gradient(to bottom, transparent 40%, var(--bg-color));
+}
+
 /* Folder focus GIF over the focused WebGL card (decision 3), placed by the renderer once the rails
    stop; same fade as .tv2-card-gif. */
 .tv2-gl-gif {

@@ -82,6 +82,8 @@ export function createHeroCopy(deps) {
   let shown = false;
   // Previous copy of the same title, kept on screen while its enriched copy is measured.
   let stale = [];
+  // Full-screen trailer (lot W5): meta lines and description hidden, the logo or title stays.
+  let metaHidden = false;
 
   function measure(textNode) {
     const done = (w, h) => {
@@ -230,6 +232,7 @@ export function createHeroCopy(deps) {
         : null
     };
     if (stale.length) tops().forEach((top) => (top.alpha = 0));
+    else if (metaHidden) metas().forEach((top) => (top.alpha = 0));
   }
 
   function dropStale() {
@@ -237,8 +240,10 @@ export function createHeroCopy(deps) {
     stale = [];
   }
 
-  const tops = () =>
-    [parts.title, parts.description, parts.primary?.group, parts.secondary?.group].filter(Boolean);
+  const metas = () =>
+    [parts.description, parts.primary?.group, parts.secondary?.group].filter(Boolean);
+  const tops = () => [parts.title, ...metas()];
+  const metaAlpha = (top) => (metaHidden ? 0 : top === parts.description ? C.description.alpha : 1);
 
   function texts() {
     if (!parts) return [];
@@ -265,7 +270,7 @@ export function createHeroCopy(deps) {
     if (stale.length) {
       dropStale();
       // The title's alpha follows the logo below; the description keeps its 0.72.
-      tops().forEach((top) => (top.alpha = top === parts.description ? C.description.alpha : 1));
+      tops().forEach((top) => (top.alpha = top === parts.title ? 1 : metaAlpha(top)));
     }
     let y = C.bottom;
     let gap = 0;
@@ -330,6 +335,12 @@ export function createHeroCopy(deps) {
       }
       build(display);
       layout();
+    },
+    /** Full-screen trailer (DOM tv2-hero-trailer-active): the meta lines and description fade. */
+    hideMeta(on, fade) {
+      metaHidden = Boolean(on);
+      if (parts && !stale.length)
+        metas().forEach((top) => deps.tween(top, "alpha", metaAlpha(top), fade));
     },
     parts: () => parts,
     logo
