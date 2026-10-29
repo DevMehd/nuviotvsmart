@@ -1,5 +1,12 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-30 — 1.3.12
+
+- Diagnostic guidé : nouveau test « Lecture brute de la dernière source », qui lance la vidéo sans aucune couche de l’application et mesure son démarrage. Le Diagnostic note aussi les temps de démarrage de chaque lecture, et l’étape vidéo du parcours atteint maintenant une vraie source.
+- Nouvel accueil WebGL (bêta, Paramètres → Disposition → « Nouvel accueil (bêta) » → « Activé, WebGL ») : les affiches s’affichent partout, la bannière n’est plus déformée et montre le logo, les infos, les notes et le résumé ; les rangées et le focus sont animés ; les cartes « Continuer à regarder » ont leur progression, les titres vus leur badge, et les affiches paysage sont prises en charge, comme sur le mobile.
+- Nouvel écran Sources (bêta, Paramètres → Disposition → « Nouvel écran Sources (bêta) », pas sur les télés LG) : liste plus fluide avec badges ; le retour revient sur la source exacte choisie, et sur la source réellement lue.
+- Rien ne change par défaut : l’accueil et l’écran Sources actuels restent utilisés tant que ces réglages bêta ne sont pas activés.
+
 ## 2026-10-29 — 1.3.11
 
 - Nouvel accueil (bêta, moteur DOM) plus fluide sur la télé : les cartes ne créent plus chacune leur propre couche d’affichage, et l’agrandissement au focus n’est plus recalculé à chaque appui sur les télés peu puissantes.
