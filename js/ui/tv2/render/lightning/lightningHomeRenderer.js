@@ -1,12 +1,6 @@
 import { renderLegacySidebar } from "../../../components/sidebarNavigationHelpers-02-get-sidebar-avatar-catalog.js";
 import { loadScript } from "../../../../runtime/loadStreamingLibs.js";
-import {
-  railWindow,
-  slotFor,
-  rowsOffset,
-  ROW_TITLE_HEIGHT,
-  RAIL_VIEWPORT
-} from "../../railEngine.js";
+import { homeLayout, rowCardSize, rowLabelHeight, slotFor } from "../../railEngine.js";
 import { t } from "../../../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import { focusedIndex } from "../../focusModel.js";
 import { createImageQueue, glImageUrl } from "../../imagePipeline.js";
@@ -14,6 +8,7 @@ import { cardImage, fillCard, navRowOf, setNavPosition } from "../../renderer.js
 import { getWebglVariant, markWebglFailed, setWebglInfoSource } from "../../newHomeSetting.js";
 import { buildModernHeroPresentation } from "../../../screens/home/homeScreenHelpers-11-build-hero-display-model.js";
 import { buildSdfAtlas } from "./sdfAtlas.js";
+import { useVidaaHeroTransition } from "../../../screens/home/vidaaHeroTransition.js";
 
 // New TV Home (nuv-091, lot B2), 100 % WebGL prototype on Lightning: hero, rails, text (SDF
 // atlas) and focus are drawn in one canvas. Same interface as createDomHomeRenderer. The
@@ -29,7 +24,11 @@ const APP_HEIGHT = 1080;
 // Same layout as css/tv2-home.css.
 const RAIL_LEFT = 220;
 const MAIN_TOP = 560;
-const FOCUS_RING = 4;
+// Focus ring of the DOM card (tv2-home.css .tv2-card.focused box-shadow): 3 px, --focus-color.
+const FOCUS_RING = 3;
+const FOCUS_SCALE = 1.015;
+// The incoming hero image loads at this alpha: Lightning only uploads a visible node's texture.
+const HERO_LOADING_ALPHA = 0.01;
 // Fixed GPU budget: the image windows of renderer.js need about 45 MB (poster ~0.7 MB, hero
 // 3.7 MB). Still above it after Lightning's own cleanup means the TV cannot hold the scene.
 export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
@@ -60,6 +59,59 @@ const glStats = {
   peakTextureBytes: 0
 };
 let liveEngine = null;
+
+/**
+ * Motion of the current Home on VIDAA, as the DOM renderer: rails and rows slide in 140 ms (100
+ * on constrained runtimes, tv2-home.css); the focused card scales and the hero fades behind
+ * useVidaaHeroTransition (vidaa-balanced-motion), which animateHeroBackdropSwap checks before its
+ * transition mode. Nothing under reduced motion. `null` means a direct jump.
+ */
+export function homeMotion(root) {
+  const html = globalThis.document?.documentElement?.classList;
+  const reduced = Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+  const balanced = useVidaaHeroTransition(root);
+  const standard = "cubic-bezier(0.2, 0, 0, 1)";
+  return {
+    rail:
+      html?.contains("vidaa-tv") && !reduced
+        ? {
+            duration: html.contains("performance-constrained") ? 100 : 140,
+            easing: "cubic-bezier(0.33, 0, 0.67, 1)"
+          }
+        : null,
+    scale: balanced ? { duration: 160, easing: standard } : null,
+    hero: balanced ? { duration: 200, easing: standard } : null
+  };
+}
+
+// One animated property per node (track x, rows y, card scale, hero alpha).
+const running = new WeakMap();
+
+/**
+ * Animates `prop` of a Lightning node to `value`, or sets it at once without `settings`. A new
+ * target stops the running animation where it is (stop(false), no reset), so the next one starts
+ * from the current value; the same target never restarts it. Lightning pools its controllers: a
+ * handle is dropped as soon as it stops, never stopped twice. `done` follows the end or the stop.
+ */
+export function tween(node, prop, value, settings, done) {
+  const run = running.get(node);
+  if (run ? run.value === value : node[prop] === value) return void (!run && done?.());
+  run?.ctrl.stop(false);
+  if (!settings) {
+    node[prop] = value;
+    return void done?.();
+  }
+  const ctrl = node.animate({ [prop]: value }, settings);
+  running.set(node, { ctrl, value });
+  ctrl.once("stopped", () => {
+    if (running.get(node)?.ctrl === ctrl) running.delete(node);
+    done?.();
+  });
+  ctrl.start();
+}
+
+/** Ends a running animation of `node` now, at its current value (its `done` runs). */
+const settle = (node) => running.get(node)?.ctrl.stop(false);
 
 function hostClass(url) {
   if (/^(?:\/_vercel\/image\?|https:\/\/res\.cloudinary\.com\/)/.test(url)) return "proxy";
@@ -212,6 +264,8 @@ async function createEngine(report) {
             : L.WebPlatform,
         createImageBitmapSupport: variant === "bitmap-basic" ? "basic" : "full",
         numImageWorkers: 0,
+        // Default 42 ms per frame: uploads would eat a whole 140 ms slide in three frames.
+        textureProcessingTimeLimit: 10,
         // A failed URL fails at once: the card's fallbacks, then its text tile, replace retries.
         maxRetryCount: 0,
         clearColor: 0x00000000,
@@ -229,6 +283,8 @@ async function createEngine(report) {
   } catch (_) {
     throw new Error("no-webgl");
   }
+  // The focus ring's rounded border (not in Lightning's default shader set).
+  renderer.stage.shManager.registerShaderType("RoundedWithBorder", L.RoundedWithBorder);
   const canvas = renderer.canvas;
   canvas.className = "tv2-gl-canvas";
   canvas.addEventListener("webglcontextlost", () => report("context-lost"));
@@ -358,8 +414,9 @@ export function createLightningHomeRenderer(
   let failed = false;
   let proxyFocused = false;
   let sidebarFocused = null;
-
-  const sizeFor = (kind) => (kind === "continue" ? geometry.landscape : geometry.poster);
+  const motion = homeMotion(root);
+  // The legacy sidebar is drawn until lot W6: content starts after its rail, even with the pill.
+  const geo = { ...geometry, contentStart: RAIL_LEFT, viewport: APP_WIDTH - RAIL_LEFT };
 
   function fail(reason) {
     if (failed) return;
@@ -400,7 +457,14 @@ export function createLightningHomeRenderer(
       color: colors.bg
     });
     const hero = heroNodeProps(layout);
-    const heroImage = node({ parent: sceneRoot, ...hero });
+    // Two hero images: the next one loads hidden over the shown one, then fades in (setHero).
+    const heroLayer = group({ parent: sceneRoot });
+    const heroSlots = [0, 1].map(() => {
+      const image = node({ parent: heroLayer, ...hero });
+      const slot = imageSlot(image, HERO_LOADING_ALPHA, (state) => heroState(slot, state));
+      slot.node = image;
+      return slot;
+    });
     // Left and bottom fades of the hero media (components-16.css ::before/::after), two stops.
     node({
       parent: sceneRoot,
@@ -433,7 +497,7 @@ export function createLightningHomeRenderer(
       group,
       text,
       root: sceneRoot,
-      heroSlot: imageSlot(heroImage),
+      hero: { front: heroSlots[0], back: heroSlots[1], shown: "", wanted: "" },
       heroTitle: text({ parent: sceneRoot, x: RAIL_LEFT, y: 300, fontSize: 64, maxWidth: 900 }),
       heroDescription: text({
         parent: sceneRoot,
@@ -446,16 +510,33 @@ export function createLightningHomeRenderer(
         color: colors.secondary
       }),
       rowsLayer: group({ parent: rowsClip }),
-      ring: node({ parent: sceneRoot, color: colors.focus, alpha: 0 })
+      // Child of the focused card, so it follows its slide and scale; transparent inside.
+      ring: node({
+        parent: sceneRoot,
+        x: -FOCUS_RING,
+        y: -FOCUS_RING,
+        color: 0,
+        alpha: 0,
+        shader: renderer.createShader("RoundedWithBorder", {
+          radius: (geometry.radius ?? 24) + FOCUS_RING,
+          "border-w": FOCUS_RING,
+          "border-color": colors.focus
+        })
+      })
     };
   }
 
   function setRows(rows) {
     last.rows = rows;
     if (!scene) return;
-    const keys = new Set(rows.map((row) => row.key));
+    const kept = new Map(rows.map((row) => [row.key, rowCardSize(row, geo)]));
     for (const [key, view] of views) {
-      if (!keys.has(key)) {
+      const size = kept.get(key);
+      // A row whose card shape changed (kind, tile shape) gets new pooled cards.
+      if (!size || size.width !== view.size.width || size.height !== view.size.height) {
+        // The ring may sit on one of its cards; the next update puts it back on the focus.
+        scene.ring.parent = scene.root;
+        scene.ring.alpha = 0;
         view.node.destroy();
         views.delete(key);
       }
@@ -468,22 +549,23 @@ export function createLightningHomeRenderer(
           node: rowNode,
           title: scene.text({
             parent: rowNode,
-            x: RAIL_LEFT,
+            x: geo.contentStart,
             y: 10,
             fontSize: 32,
-            maxWidth: RAIL_VIEWPORT
+            maxWidth: geo.viewport
           }),
           status: scene.text({
             parent: rowNode,
-            x: RAIL_LEFT,
+            x: geo.contentStart,
             y: 70,
             fontSize: 24,
-            maxWidth: RAIL_VIEWPORT,
+            maxWidth: geo.viewport,
             color: scene.colors.tertiary
           }),
-          track: scene.group({ parent: rowNode, y: ROW_TITLE_HEIGHT }),
+          track: scene.group({ parent: rowNode }),
           slots: [],
-          kind: row.kind
+          size: kept.get(row.key),
+          placed: false
         };
         views.set(row.key, view);
       }
@@ -497,16 +579,17 @@ export function createLightningHomeRenderer(
   function slotCard(view, slot) {
     let card = view.slots[slot];
     if (!card) {
-      const { width, height } = sizeFor(view.kind);
+      const { width, height } = view.size;
       const cardNode = scene.node({
         parent: view.track,
         w: width,
         h: height,
         color: scene.colors.card,
+        pivot: 0.5,
         zIndex: 1
       });
       const image = scene.node({ parent: cardNode, w: width, h: height, textureOptions: COVER });
-      card = { node: cardNode, image: null, title: null, index: -1, rowKey: "" };
+      card = { node: cardNode, image: null, title: null, index: -1, rowKey: "", x: null };
       const scrim = scene.node({
         parent: cardNode,
         y: height - 80,
@@ -540,16 +623,21 @@ export function createLightningHomeRenderer(
         card.fallback.alpha = on ? 1 : 0;
         scrim.alpha = card.title.alpha = on ? 0 : 1;
       };
-      card.image = imageSlot(image, 1, (state) => card.showTile(state === "failed"));
+      card.image = imageSlot(image, 1, (state) => {
+        card.showTile(state === "failed");
+        // Given back (out of bounds, freed) or cleared: the next update asks again.
+        if (state === "empty") card.wanted = null;
+      });
       view.slots[slot] = card;
     }
     return card;
   }
 
-  function updateProxy(rows, focus, sidebarIndex) {
+  function updateProxy(rows, focus, sidebarIndex, hideFocus) {
     const row = rows[focus.row];
     const index = focusedIndex(focus, rows);
-    const item = sidebarIndex < 0 ? row?.items[index] : null;
+    // A hold menu is open (current Home lockHomeHoldFocus): nothing focused.
+    const item = sidebarIndex < 0 && !hideFocus ? row?.items[index] : null;
     proxyFocused = Boolean(item);
     if (item) {
       fillCard(proxy, item, index, row);
@@ -557,7 +645,7 @@ export function createLightningHomeRenderer(
     }
     proxy.className = `${row?.kind === "continue" ? "home-continue-card" : "home-poster-card"} tv2-card focusable${proxyFocused ? " focused" : ""}`;
     sidebarFocused?.classList.remove("focused");
-    sidebarFocused = sidebarIndex >= 0 ? sidebarItems()[sidebarIndex] || null : null;
+    sidebarFocused = sidebarIndex >= 0 && !hideFocus ? sidebarItems()[sidebarIndex] || null : null;
     sidebarFocused?.classList.add("focused");
     root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
     const sidebar = container.querySelector(".home-sidebar");
@@ -565,32 +653,45 @@ export function createLightningHomeRenderer(
     sidebar?.classList.toggle("content-expanded", sidebarIndex >= 0);
   }
 
+  /**
+   * Card position and focus scale, as the DOM renderer's placeCard: only a card staying in place
+   * tweens its scale; a placed or recycled card jumps instead of sliding across the rail.
+   */
+  function placeCard(card, x, scaled) {
+    const stays = card.x === x;
+    card.x = card.node.x = x;
+    if (stays && card.scaled === scaled) return;
+    card.scaled = scaled;
+    tween(card.node, "scale", scaled ? FOCUS_SCALE : 1, stays ? motion.scale : null);
+  }
+
+  /**
+   * Same window and positions as the DOM renderer (homeLayout). Only the rails and the rows layer
+   * slide; the rows drawn are the visible ones plus one on each side, and an image is requested
+   * only when a card's URL changes (or it is the focused card, to keep its priority).
+   */
   function update(rows, focus, options = {}) {
-    const sidebarIndex = options.sidebarIndex ?? -1;
+    const { sidebarIndex = -1, hideFocus = false } = options;
     Object.assign(last, { rows, focus, options });
-    updateProxy(rows, focus, sidebarIndex);
+    updateProxy(rows, focus, sidebarIndex, hideFocus);
     if (!scene) return;
-    const heights = [];
-    let top = 0;
-    let ringCard = null;
-    const focusIndex = focusedIndex(focus, rows);
     samplePeak();
-    rows.forEach((row, rowIndex) => {
-      const size = sizeFor(row.kind);
-      const height = size.height + ROW_TITLE_HEIGHT + geometry.gap;
-      heights.push(height);
+    const placed = homeLayout(rows, focus, geo);
+    const focusIndex = focusedIndex(focus, rows);
+    const focusShown = sidebarIndex < 0 && !hideFocus;
+    const viewHeight = APP_HEIGHT - MAIN_TOP;
+    const visible = placed.rows.map(
+      ({ top, height }) => top + placed.offsetY < viewHeight && top + height + placed.offsetY > 0
+    );
+    const firstRow = visible.indexOf(true) - 1;
+    const lastRow = visible.lastIndexOf(true) + 1;
+    let ringCard = null;
+    placed.rows.forEach(({ row, size, pitch, win, top, height }, rowIndex) => {
       const view = views.get(row.key);
       if (!view) return;
       view.node.y = top;
-      top += height;
-      const pitch = size.width + geometry.gap;
-      const column = Number(focus.columns[row.key] || 0);
-      const win = railWindow({
-        count: row.items.length,
-        focusIndex: column,
-        pitch,
-        viewport: RAIL_VIEWPORT
-      });
+      if (rowIndex < firstRow || rowIndex > lastRow) return;
+      view.track.y = height - size.height - rowLabelHeight(row, geo) - geo.rowGap;
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
       view.slots.forEach((card) => (card.node.alpha = 0));
       for (let i = win.start; i < win.end; i += 1) {
@@ -605,31 +706,61 @@ export function createLightningHomeRenderer(
           card.source = cardImage(row, item, size, layout, glImageUrl);
         }
         card.node.alpha = 1;
-        card.node.x = i * pitch;
         const focused = rowIndex === focus.row && i === focusIndex;
-        imageQueue.request(card.image, loadImages ? card.source.url : "", {
-          fallbacks: card.source.fallbacks,
-          priority: focused
-        });
+        const url = loadImages ? card.source.url : "";
+        if (card.wanted !== url || focused) {
+          card.wanted = url;
+          imageQueue.request(card.image, url, {
+            fallbacks: card.source.fallbacks,
+            priority: focused
+          });
+        }
         // No artwork at all: the mobile shows the same text tile (ShelfComponents.kt, imageUrl null).
         if (!card.source.url) card.showTile(true);
         else if (changed) card.showTile(false);
+        placeCard(card, i * pitch, Boolean(motion.scale) && focusShown && focused);
         if (focused) ringCard = card;
       }
-      view.track.x = RAIL_LEFT + win.offset;
+      // A new row is placed where it belongs, never slid in from the left edge.
+      tween(view.track, "x", geo.contentStart + win.offset, view.placed ? motion.rail : null);
+      view.placed = true;
     });
-    scene.rowsLayer.y = rowsOffset(heights, focus.row);
+    tween(scene.rowsLayer, "y", placed.offsetY, scene.placed ? motion.rail : null);
+    scene.placed = true;
 
     const { ring } = scene;
-    if (ringCard && sidebarIndex < 0) {
-      ring.parent = ringCard.node.parent;
-      ring.x = ringCard.node.x - FOCUS_RING;
-      ring.y = -FOCUS_RING;
-      ring.w = ringCard.node.w + 2 * FOCUS_RING;
-      ring.h = ringCard.node.h + 2 * FOCUS_RING;
+    if (ringCard && focusShown) {
+      if (ring.parent !== ringCard.node) {
+        ring.parent = ringCard.node;
+        ring.w = ringCard.node.w + 2 * FOCUS_RING;
+        ring.h = ringCard.node.h + 2 * FOCUS_RING;
+      }
       ring.alpha = 1;
     } else {
       ring.alpha = 0;
+    }
+  }
+
+  /**
+   * Hero image swap: the next image loads in the hidden node over the shown one, fades in once
+   * Lightning reports it loaded (200 ms on VIDAA, a cut outside the motion guard), then the old
+   * texture is let go. The same image again never restarts a running fade.
+   */
+  function heroState(slot, state) {
+    const hero = scene?.hero;
+    if (!hero || slot !== hero.back) return;
+    if (state === "loaded") {
+      const old = hero.front;
+      hero.front = slot;
+      hero.back = old;
+      hero.shown = hero.wanted;
+      slot.node.zIndex = 1;
+      old.node.zIndex = 0;
+      tween(slot.node, "alpha", 1, motion.hero, () => !closed && heroQueue.request(old, ""));
+    } else if (state === "failed") {
+      // No backdrop for this title: never keep the previous title's one.
+      heroQueue.request(hero.front, "");
+      hero.shown = "";
     }
   }
 
@@ -648,7 +779,20 @@ export function createLightningHomeRenderer(
           .map((source) => glImageUrl(source, width))
       )
     ];
-    heroQueue.request(scene.heroSlot, url, { fallbacks });
+    const { hero } = scene;
+    if (url === hero.shown) {
+      if (hero.wanted !== url) heroQueue.request(hero.back, "");
+      hero.wanted = url;
+      return;
+    }
+    // A fade still running ends now, so the node about to load is no longer on screen.
+    settle(hero.front.node);
+    hero.wanted = url;
+    heroQueue.request(hero.back, url, { fallbacks });
+    if (!url) {
+      heroQueue.request(hero.front, "");
+      hero.shown = "";
+    }
   }
 
   function setProfile(profile) {
@@ -656,7 +800,8 @@ export function createLightningHomeRenderer(
     if (!sidebar) return;
     sidebar.outerHTML = renderLegacySidebar({ selectedRoute: "home", layout, profile });
     sidebarFocused = null;
-    if (last.focus) updateProxy(last.rows, last.focus, last.options.sidebarIndex ?? -1);
+    if (last.focus)
+      updateProxy(last.rows, last.focus, last.options.sidebarIndex ?? -1, last.options.hideFocus);
   }
 
   function sidebarItems() {

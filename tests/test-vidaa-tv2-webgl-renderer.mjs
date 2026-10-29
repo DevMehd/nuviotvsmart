@@ -11,9 +11,14 @@ globalThis.localStorage = {
 };
 globalThis.__NUVIO_PLATFORM__ = "vidaa";
 globalThis.location = { search: "" };
-globalThis.document = { documentElement: { classList: { contains: () => false } } };
+const rootClasses = new Set();
+globalThis.document = {
+  documentElement: { classList: { contains: (name) => rootClasses.has(name) } }
+};
+let reducedMotion = false;
+globalThis.matchMedia = () => ({ matches: reducedMotion });
 
-const { imageSlot, heroNodeProps, glInfo } =
+const { imageSlot, heroNodeProps, glInfo, homeMotion, tween } =
   await import("../js/ui/tv2/render/lightning/lightningHomeRenderer.js");
 const { createImageQueue } = await import("../js/ui/tv2/imagePipeline.js");
 const setting = await import("../js/ui/tv2/newHomeSetting.js");
@@ -127,10 +132,84 @@ assert.deepEqual(
   [0, 0, 1920, 1080]
 );
 
+// Motion (lot W2): the DOM renderer's durations and curves, none under reduced motion.
+{
+  const domRoot = { animate() {} };
+  const rail = { duration: 140, easing: "cubic-bezier(0.33, 0, 0.67, 1)" };
+  assert.deepEqual(homeMotion(domRoot), { rail: null, scale: null, hero: null }, "off VIDAA");
+  rootClasses.add("vidaa-tv").add("vidaa-balanced-motion");
+  assert.deepEqual(homeMotion(domRoot), {
+    rail,
+    scale: { duration: 160, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+    hero: { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" }
+  });
+  rootClasses.add("performance-constrained");
+  assert.equal(homeMotion(domRoot).rail.duration, 100);
+  reducedMotion = true;
+  assert.deepEqual(homeMotion(domRoot), { rail: null, scale: null, hero: null }, "reduced motion");
+  reducedMotion = false;
+
+  // Like Lightning: animate() hands out a pooled controller, stop(reset) emits "stopped".
+  const calls = [];
+  const node = {
+    x: 0,
+    animate(props, settings) {
+      const listeners = [];
+      const ctrl = {
+        stopped: false,
+        start: () => calls.push(["start", props.x, settings]),
+        stop(reset) {
+          calls.push(["stop", reset]);
+          ctrl.stopped = true;
+          listeners.splice(0).forEach((fn) => fn());
+        },
+        once: (event, fn) => event === "stopped" && listeners.push(fn),
+        finish() {
+          Object.assign(node, props);
+          listeners.splice(0).forEach((fn) => fn());
+        }
+      };
+      node.ctrl = ctrl;
+      return ctrl;
+    }
+  };
+  tween(node, "x", -100, rail);
+  assert.deepEqual(calls, [["start", -100, rail]]);
+  tween(node, "x", -100, rail);
+  assert.equal(calls.length, 1, "the same target never restarts the slide");
+  const first = node.ctrl;
+  tween(node, "x", -200, rail);
+  assert.deepEqual(
+    calls.slice(1),
+    [
+      ["stop", false],
+      ["start", -200, rail]
+    ],
+    "stopped in place"
+  );
+  assert.equal(first.stopped, true);
+  node.ctrl.finish();
+  tween(node, "x", -300, rail);
+  assert.deepEqual(
+    calls.slice(3),
+    [["start", -300, rail]],
+    "a finished (pooled) one is not stopped"
+  );
+  let done = 0;
+  tween(node, "x", 40, null, () => (done += 1));
+  assert.deepEqual(calls.slice(4), [["stop", false]], "no settings: set at once");
+  assert.equal(node.x, 40);
+  assert.equal(done, 1);
+  tween(node, "x", 40, rail, () => (done += 1));
+  assert.equal(calls.length, 5, "already there: no animation");
+  assert.equal(done, 2);
+  rootClasses.clear();
+}
+
 // Diagnostic variants: one at a time, cycled from the Diagnostic, back to standard.
 assert.equal(setting.getWebglVariant(), "standard");
 const seen = setting.WEBGL_VARIANTS.map(() => setting.cycleWebglVariant());
 assert.deepEqual(seen, ["bitmap-basic", "platform-legacy", "hero-780", "standard"]);
 assert.equal(store.has("tvWebglVariant"), false);
 
-console.log("PASS: WebGL Home image slots, fallbacks, text tile, hero cover and variants");
+console.log("PASS: WebGL Home image slots, fallbacks, text tile, hero cover, motion and variants");
