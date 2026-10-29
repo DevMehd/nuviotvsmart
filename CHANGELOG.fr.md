@@ -1,9 +1,16 @@
 # Nuvio personnel — Historique des modifications
 
-## 2026-10-29 — 1.3.7
+## 2026-10-29 — 1.3.8
 
 - Démarrage plus rapide sur la télé VIDAA : au lancement, l’application ne charge plus que l’accueil et la sélection du profil. Les autres écrans (fiche, lecteur, paramètres, recherche…) sont chargés la première fois que tu les ouvres, puis restent disponibles hors ligne. Si une mise à jour arrive pendant l’utilisation, l’application se recharge une fois d’elle-même au lieu de rester bloquée.
 - Le code envoyé à la télé est préparé pour son navigateur (Chromium 111) : moins de code à lire au démarrage. Les autres télés (Samsung, LG) gardent la version actuelle.
+- Les puces techniques des liens vidéo (2160p, HDR, codec…) s’affichent aussi sur les autres télés (Samsung, LG) quand aucun badge graphique ne correspond ; sur VIDAA, ces puces, le choix « Pack de badges » et la section Flux du mode Essentiel ne changent pas. Quelques délais de chargement de l’accueil et des collections suivent désormais le mode de performance plutôt que le seul modèle de télé (en mode automatique, rien ne change sur VIDAA).
+
+## 2026-10-29 — 1.3.7
+
+- Nouvel accueil (bêta, moteur DOM) : la carte sélectionnée de « Continuer à regarder » ne disparaît plus sur la télé (une règle prévue pour les appareils peu puissants la renvoyait hors de l’écran).
+- Nouvel accueil (bêta) : avec le menu latéral en pastille, le contenu commence au même endroit que dans l’accueil actuel ; les premières cartes n’apparaissent plus coupées au bord gauche.
+- Le Diagnostic guidé reconnaît les nouvelles cartes « Continuer à regarder » du nouvel accueil.
 
 ## 2026-10-27 — 1.3.6
 
