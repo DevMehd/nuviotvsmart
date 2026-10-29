@@ -61,6 +61,26 @@ await pending;
 assert.equal(mounts.length, 0, "stale navigation does not mount the screen");
 assert.equal(Router.routes.settings, SettingsScreen, "the loaded screen still fills its slot");
 
+// Back while the chunk loads returns to the caller (history still holds it) instead
+// of history.back(), which would skip the caller.
+const pendingBacks = [];
+Router.backFromPendingNavigation = async () => pendingBacks.push(Router.current);
+const slow = lazyRouteScreen(
+  () => new Promise((resolve) => (releaseDetail = () => resolve(DetailScreen)))
+);
+Router.routes = { detail: slow };
+Router.current = "detail";
+Router.currentParams = params = { id: "tt2" };
+mounts.length = 0;
+const slowMount = slow.mount(params, {});
+assert.equal(Router.getCurrentScreen?.() ?? Router.routes.detail, slow);
+assert.equal(slow.consumeBackRequest(), true, "Back is consumed while the chunk loads");
+assert.deepEqual(pendingBacks, ["detail"], "the caller is restored from history");
+Router.current = "stream"; // backFromPendingNavigation navigated away.
+releaseDetail();
+await slowMount;
+assert.equal(mounts.length, 0, "the late chunk does not mount over the restored caller");
+
 // A failed load is retried; one page reload covers a chunk of a replaced deployment.
 const store = new Map();
 globalThis.sessionStorage = {
@@ -81,7 +101,17 @@ Router.currentParams = params;
 failNext = 2;
 await retry.mount(params, {});
 assert.equal(reloads, 1, "first failure reloads the page once");
+// During boot the guard is active: the error reaches it and no screen is restored.
+const backs = [];
+Router.backFromPendingNavigation = async () => backs.push(Router.current);
+globalThis.NuvioBootGuard = { isActive: () => true };
 await assert.rejects(retry.mount(params, {}), /chunk 404/, "second failure reaches the boot guard");
+assert.equal(backs.length, 0, "no screen mounted under the boot error");
+// After boot the guard shows nothing: the previous screen comes back, history untouched.
+globalThis.NuvioBootGuard = { isActive: () => false };
+failNext = 1;
+await assert.rejects(retry.mount(params, {}), /chunk 404/);
+assert.deepEqual(backs, ["settings"], "previous screen restored, no blank screen");
 assert.equal(reloads, 1, "no reload loop");
 await retry.mount(params, {});
 assert.equal(Router.routes.settings, SettingsScreen, "a later attempt loads again and succeeds");

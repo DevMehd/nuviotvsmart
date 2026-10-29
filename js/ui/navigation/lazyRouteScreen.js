@@ -36,6 +36,14 @@ export function lazyRouteScreen(load) {
           globalThis.location.reload();
           return;
         }
+        // After boot the guard shows nothing: restore the previous screen instead of
+        // a blank one (the failed navigation wrote no history entry).
+        if (
+          !globalThis.NuvioBootGuard?.isActive?.() &&
+          Router.current === routeName &&
+          Router.currentParams === params
+        )
+          await Router.backFromPendingNavigation();
         throw error;
       }
       storage()?.removeItem(RELOAD_FLAG);
@@ -43,6 +51,12 @@ export function lazyRouteScreen(load) {
       // The user left (or reopened with other params) while the chunk loaded.
       if (Router.current !== routeName || Router.currentParams !== params) return;
       return Screen.mount(params, context);
+    },
+    // Back while the chunk loads: history still holds the caller, so a plain
+    // history.back() would skip it. Return to the caller like a pending Detail.
+    consumeBackRequest() {
+      void Router.backFromPendingNavigation();
+      return true;
     }
   };
   return placeholder;
