@@ -11,7 +11,7 @@ import {
   t
 } from "../../screens/stream/streamScreen.js";
 import { createSourcesRenderer } from "./sourcesRenderer.js";
-import { filterNames, rowBadges, rowKeys } from "./sourcesModel.js";
+import { filterNames, findSourceRow, rowBadges, rowKeys } from "./sourcesModel.js";
 
 // New TV Sources screen (beta): the StreamScreen data logic (loading, chips, playback, Back, party)
 // is inherited; only the view is replaced by a recycled pool of fixed-height rows. Focus keeps the
@@ -70,12 +70,15 @@ export const NewSourcesScreen = {
     // New earlier sources replace the initial first result; once the user moved, keep the source.
     const holdFirstResult =
       this.focusState?.zone === "card" && row === 0 && !this.streamUserMovedFocus;
-    // As in StreamScreen, the focused row indexes the rendered list (inherited code may set it).
-    const focusedKey = this.focusState?.zone === "card" ? this.sourcesView?.keys[row] || "" : "";
+    // As in StreamScreen, the focused row indexes the rendered list (inherited code may set it);
+    // a focus restored from the player carries the key and source of its row (captureRouteState).
+    const card = this.focusState?.zone === "card" ? this.focusState : null;
+    const focusedKey = card ? card.key || this.sourcesView?.keys[row] || "" : "";
+    const focusedId = card ? String(card.streamId ?? this.sourcesView?.items[row]?.id ?? "") : "";
     if (preferredRow >= 0 && !this.streamVirtualFocusReset) {
       this.focusState = { zone: "card", row: preferredRow, index: preferredRow, action: "play" };
-    } else if (focusedKey && !holdFirstResult && !this.streamVirtualFocusReset) {
-      const index = keys.indexOf(focusedKey);
+    } else if (card && !holdFirstResult && !this.streamVirtualFocusReset) {
+      const index = findSourceRow(items, keys, focusedKey, focusedId);
       if (index >= 0) this.focusState = { ...this.focusState, row: index, index };
     }
     const pending = this.hasPendingSourceLoads();
@@ -252,6 +255,25 @@ export const NewSourcesScreen = {
 
   getOrderedFilterNames() {
     return filterNames(this.streams, this.sourceChips);
+  },
+
+  /**
+   * StreamScreen snapshot, plus the focused row's key and stream id in its focusState: the
+   * inherited mount restores focusState as is, and render() finds the source again by key, then
+   * by id, wherever late or reattached sources moved it. listScrollTop is unused here.
+   */
+  captureRouteState() {
+    const state = StreamScreen.captureRouteState.call(this);
+    const row = Number(this.focusState?.row);
+    const stream = this.focusState?.zone === "card" ? this.sourcesView?.items[row] : null;
+    if (stream) {
+      state.focusState = {
+        ...state.focusState,
+        key: this.sourcesView.keys[row],
+        streamId: String(stream.id ?? "")
+      };
+    }
+    return state;
   },
 
   disposeSourcesView() {

@@ -19,6 +19,7 @@
       // row nodes, rows of the fixed pitch, a visible focused row, and the right source for OK and
       // for a pointer click on a recycled row. Badges (T4): pre-created slots that a recycled row
       // refills with its own images and text, broken images hidden, at most three images loading.
+      // Player return (T5): row 300 of 500 focused and visible without a layout read.
       const result = document.getElementById("result");
       try {
         const { Router, streamRepository, StreamBadgeSettingsStore, hasFailedAddonLogo } =
@@ -250,6 +251,32 @@
         );
         assert(route.focusState.row === recycledRow, "the pointer focuses that row");
 
+        // Back from the player (T5) on row 300 of 500: the same source is drawn and focused at once,
+        // its offset from the fixed geometry, without reading the layout.
+        while (route.focusState.row < 300) press("ArrowDown", 40);
+        await frame();
+        const playedId = route.sourcesView.items[300].id;
+        const restoredState = route.captureRouteState();
+        assert(restoredState.focusState.streamId === playedId, "the snapshot holds the focused source");
+        route.cleanup();
+        counts.reads = counts.observers = 0;
+        const backContext = { isBackNavigation: true, previousRoute: "player" };
+        await route.mount(restoredState.params, { ...backContext, restoredState });
+        assert(focused()?.dataset.streamId === playedId && focused().dataset.streamRow === "300", "row 300 focused on return");
+        assert(counts.reads === 0 && counts.observers === 0, `no layout read on return (${counts.reads}, ${counts.observers})`);
+        const returnCard = focused().getBoundingClientRect();
+        const returnList = route.container.querySelector(".stream-route-list").getBoundingClientRect();
+        assert(returnCard.top >= returnList.top + 8 && returnCard.bottom <= returnList.bottom - 8, "the returned row is visible");
+        // Evicted snapshot: a fresh search focuses the source named by the route.
+        route.cleanup();
+        const evictedId = restoredState.streams.at(-1).id;
+        await route.mount({ ...restoredState.params, preferredStreamId: evictedId }, { ...backContext, restoredState: null });
+        await waitFor(() => route.streamSearchCompleted && focused()?.dataset.streamId === evictedId);
+        assert(
+          route.focusState.row === route.sourcesView.items.findIndex((stream) => stream.id === evictedId) && route.focusState.row > 300,
+          `the preferred source is focused, got row ${route.focusState.row}`
+        );
+
         // Back keeps the StreamScreen navigation; cleanup releases the pool.
         press("Escape", 27);
         assert(navigations.at(-1).route === "detail", `Back opens the detail, got ${navigations.at(-1).route}`);
@@ -285,7 +312,7 @@
         assert(host.querySelector(".tv2-sources-row:not([hidden]) .stream-route-stream-badge").hidden, "a recycled broken badge is hidden");
         recycler.dispose();
         host.remove();
-        result.textContent = `PASS: 500 sources in a pool of ${poolSize} rows, no layout read while navigating, recycled badges and logos (≤${maxInflight} loading), OK/pointer/Back on the right source.`;
+        result.textContent = `PASS: 500 sources in a pool of ${poolSize} rows, no layout read while navigating, recycled badges and logos (≤${maxInflight} loading), OK/pointer/Back on the right source, player return on row 300 without layout read.`;
       } catch (error) {
         result.textContent = `FAIL: ${error?.stack || error}`;
       }

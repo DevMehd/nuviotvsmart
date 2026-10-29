@@ -445,4 +445,101 @@ const focusedId = (screen) => screen.calls.updates.at(-1).items[screen.focusStat
   assert.equal(screen.addonFilter, "all");
 }
 
-console.log("PASS: new Sources screen geometry, view memo, keys, arrival focus, chips and states.");
+// T5: return from the player on the source by key, then by stream id.
+{
+  const { findSourceRow } = model;
+  const list = [early("a"), early("b"), early("c")];
+  const listKeys = rowKeys(list);
+  assert.equal(findSourceRow(list, listKeys, listKeys[2], "c"), 2, "by key");
+  assert.equal(findSourceRow(list, listKeys, "gone::0", "b"), 1, "by id when the key is gone");
+  assert.equal(findSourceRow(list, listKeys, "gone::0", "gone"), -1, "neither");
+  assert.equal(findSourceRow(list, listKeys, "", ""), -1, "nothing to find");
+  // A duplicate arriving first takes occurrence 0: the stream id keeps the source.
+  const duplicate = { ...early("a"), id: "a-dup" };
+  const shifted = [duplicate, ...list];
+  const shiftedKeys = rowKeys(shifted);
+  assert.equal(shiftedKeys[0], listKeys[0], "the duplicate now owns the key");
+  assert.equal(findSourceRow(shifted, shiftedKeys, listKeys[0], "a"), 1, "the id wins");
+  assert.equal(findSourceRow(shifted, shiftedKeys, listKeys[0], ""), 0, "no id: the key alone");
+}
+
+const restoreScreen = (state, overrides = {}) =>
+  // Inherited StreamScreen mount: the restored snapshot fields, user move set, no view yet.
+  createScreen({
+    params: { ...state.params },
+    streams: state.streams.map((stream) => ({ ...stream })),
+    addonFilter: state.addonFilter,
+    focusState: { ...state.focusState },
+    streamUserMovedFocus: true,
+    ...overrides
+  });
+const capturable = { contains: () => true, querySelector: () => null };
+
+{
+  // The snapshot carries the focused row's key and source; the old fields keep their shape.
+  const screen = createScreen({ container: capturable });
+  for (let i = 0; i < 8; i += 1) screen.onKeyDown(key("ArrowDown"));
+  assert.equal(focusedId(screen), "s8");
+  const state = screen.captureRouteState();
+  assert.equal(state.focusState.zone, "card");
+  assert.equal(state.focusState.row, 8);
+  assert.equal(state.focusState.key, rowKeys(screen.sourcesView.items)[8]);
+  assert.equal(state.focusState.streamId, "s8");
+  assert.equal(state.addonFilter, "all");
+  assert.equal(state.streams.length, streams.length);
+
+  // Back from the player while late sources are inserted before the focused one.
+  const back = restoreScreen(state, {
+    streams: [early("e1"), early("e2"), ...state.streams]
+  });
+  assert.equal(focusedId(back), "s8", "the restored source is focused, not row 8");
+  assert.equal(back.calls.focus.at(-1).row, 10);
+  assert.equal(back.focusState.key, undefined, "the restored key is used once");
+  // The reattached search keeps adding sources before it: the focus follows the source.
+  back.streams = [early("e0"), ...back.streams];
+  back.render();
+  assert.equal(focusedId(back), "s8", "late sources keep the source focused");
+  // A duplicate arriving first takes the key's occurrence: the source stays focused by id.
+  back.streams = [
+    { ...back.streams.find((stream) => stream.id === "s8"), id: "s8-dup" },
+    ...back.streams
+  ];
+  back.render();
+  assert.equal(focusedId(back), "s8", "a duplicate before it does not steal the focus");
+
+  // Same filter restored, and its row is found by key.
+  const filtered = createScreen({ container: capturable });
+  filtered.onKeyDown(key("ArrowRight"));
+  filtered.onKeyDown(key("ArrowRight"));
+  assert.equal(filtered.addonFilter, "B");
+  filtered.onKeyDown(key("ArrowDown"));
+  filtered.onKeyDown(key("ArrowDown"));
+  assert.equal(focusedId(filtered), "s8");
+  const filteredState = filtered.captureRouteState();
+  const filteredBack = restoreScreen(filteredState, {
+    streams: [early("b0", "B"), ...filteredState.streams]
+  });
+  assert.equal(filteredBack.addonFilter, "B", "the filter is restored");
+  assert.equal(focusedId(filteredBack), "s8", "the source of the filter is focused");
+
+  // A snapshot on the filters restores the chip as before.
+  const chip = createScreen({ container: capturable });
+  chip.onKeyDown(key("ArrowUp"));
+  const chipState = chip.captureRouteState();
+  assert.equal(chipState.focusState.key, undefined, "no key outside the list");
+  assert.deepEqual(restoreScreen(chipState).focusState, chipState.focusState);
+
+  // Evicted snapshot (fresh search on return): preferredStreamId takes the focus when it arrives.
+  const evicted = createScreen({
+    params: { itemId: "tt1", itemType: "movie", preferredStreamId: "s9" },
+    streams: streams.slice(0, 3)
+  });
+  assert.equal(focusedId(evicted), "s0");
+  evicted.streams = streams;
+  evicted.render();
+  assert.equal(focusedId(evicted), "s9", "the source played first is focused");
+}
+
+console.log(
+  "PASS: new Sources screen geometry, view memo, keys, arrival focus, chips, states and player return."
+);

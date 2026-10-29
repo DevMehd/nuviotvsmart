@@ -62,6 +62,19 @@ export function rowKeys(items) {
   return keys;
 }
 
+/**
+ * Row of a source followed by its key, or by its stream id when the key is gone or now names
+ * another source (a duplicate arriving earlier takes occurrence ::0). -1 when neither is found.
+ */
+export function findSourceRow(items, keys, key, id) {
+  let index = key ? keys.indexOf(key) : -1;
+  if (id && String(items[index]?.id ?? "") !== id) {
+    const byId = items.findIndex((stream) => String(stream?.id ?? "") === id);
+    if (byId >= 0) index = byId;
+  }
+  return index;
+}
+
 let lastFilterNames = null;
 /** Filter chip names, recomputed only when the sources or their chips change. */
 export function filterNames(streams, chips) {
