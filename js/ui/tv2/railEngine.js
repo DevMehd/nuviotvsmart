@@ -12,9 +12,9 @@ export const HERO_ROW_HEIGHT = HERO_CARD_HEIGHT + 32;
 const CLASSIC_LABEL_HEIGHT = 49;
 // Classic "from {addon}" line under the row title (components-15.css .home-row-subtitle).
 const ROW_SUBTITLE_HEIGHT = 20;
-const SCREEN_HEIGHT = 1080;
+export const SCREEN_HEIGHT = 1080;
 // Modern rows viewport under the hero (.tv2-main top in tv2-home.css).
-const MODERN_ROWS_TOP = 560;
+export const MODERN_ROWS_TOP = 560;
 
 /** Classic and grid: fixed CSS sizes, focusable hero row, See All, minimal scrolling. */
 export const isLegacyLayout = (mode) => mode === "classic" || mode === "grid";

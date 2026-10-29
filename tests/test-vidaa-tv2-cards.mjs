@@ -646,6 +646,10 @@ try {
         [0, 1, 2],
         "artwork ranks from the left"
       );
+      // On-screen cards are flagged (the budget never blanks them); the right margin is not.
+      const artwork = released.filter((r) => r.options?.fallbacks);
+      assert.equal(artwork[0].options.onScreen, true, "first card on screen");
+      assert.equal(artwork.at(-1).options.onScreen, false, "right margin card off screen");
       released.length = 0;
       pooledView.update(rows, { row: 0, columns: { r: 29 } });
       const hiddenSlots = pooled
@@ -657,6 +661,17 @@ try {
         assert.ok(
           released.some((r) => r.node === node.querySelector(".tv2-card-image") && r.url === ""),
           "a hidden pooled card drops its image"
+        );
+      // A removed row releases its images (otherwise they stay counted in the budget).
+      const slots = pooled
+        .querySelector(".tv2-rows")
+        .children[0].querySelector(".tv2-track").children;
+      released.length = 0;
+      pooledView.setRows([]);
+      for (const node of slots)
+        assert.ok(
+          released.some((r) => r.node === node.querySelector(".tv2-card-image") && r.url === ""),
+          "a removed row drops its images"
         );
 
       // Reduced performance mode (no vidaa-balanced-motion): no scale.

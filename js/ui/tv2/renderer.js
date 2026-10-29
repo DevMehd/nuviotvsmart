@@ -44,6 +44,8 @@ import { I18n } from "../../i18n/index.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import {
   gridStickyTitle,
+  MODERN_ROWS_TOP,
+  SCREEN_HEIGHT,
   slotFor,
   homeLayout,
   rowCardSize,
@@ -273,6 +275,11 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     const keys = new Set(rows.map((row) => row.key));
     for (const [key, view] of views) {
       if (!keys.has(key)) {
+        // Its images leave the decoded-pixel budget (the queue would otherwise keep them).
+        for (const node of view.slots) {
+          const card = node && cards.get(node);
+          if (card) [card.image, card.logo, card.gif].forEach((img) => imageQueue.request(img, ""));
+        }
         view.section.remove();
         views.delete(key);
       }
@@ -478,14 +485,18 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     const focusIndex = focusedIndex(focus, rows);
     const focusShown = sidebarIndex < 0 && !hideFocus;
     const logos = [];
-    placed.rows.forEach(({ row, pitch, win }, rowIndex) => {
+    placed.rows.forEach(({ row, size, pitch, win, top, height }, rowIndex) => {
       const view = views.get(row.key);
       if (!view) return;
       if (row.kind === "hero") {
         setNavPosition(hero.card, navRowOf(rows, rowIndex), 0);
         return;
       }
-      const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
+      // On screen: inside .tv2-main (modern from 560 px, classic/grid from the top). Such cards
+      // always load, even rows above the focus in classic/grid, and the budget never blanks them.
+      const y = (legacy ? 0 : MODERN_ROWS_TOP) + top + placed.offsetY;
+      const rowShown = y < SCREEN_HEIGHT && y + height > (legacy ? 0 : MODERN_ROWS_TOP);
+      const loadImages = rowShown || (rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2);
       // Image rank (lower loads first and is evicted last): focused row, the next, the previous,
       // then two below; in a row, visible cards from the left, then the left margin.
       const away = rowIndex - focus.row;
@@ -509,12 +520,15 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         );
         const { image, logo, source } = cards.get(node);
         const rank = rowRank + (i >= left ? i - left : 50 + left - i);
+        const x = (geometry.contentStart ?? 220) + i * pitch + win.offset;
+        const onScreen = rowShown && x < 1920 && x + size.width > 0;
         imageQueue.request(image, loadImages ? source.url : "", {
           fallbacks: source.fallbacks,
           priority: rowIndex === focus.row && i === focusIndex,
-          rank
+          rank,
+          onScreen
         });
-        logos.push([logo, loadImages ? source.logo : "", rank + 500]);
+        logos.push([logo, loadImages ? source.logo : "", { rank: rank + 500, onScreen }]);
       }
       // Pooled cards outside the window: hidden, their images released (decoded-pixel budget).
       for (const node of view.slots) {
@@ -527,7 +541,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       view.track.style.transform = `translate3d(${win.offset}px,0,0)`;
     });
     // Landscape logos after their row's artwork, in the same bounded queue.
-    logos.forEach(([node, url, rank]) => imageQueue.request(node, url, { rank }));
+    logos.forEach(([node, url, options]) => imageQueue.request(node, url, options));
     rowsHost.style.transform = `translate3d(0,${placed.offsetY}px,0)`;
     if (gridSticky) {
       // The last title stays while the header fades out.

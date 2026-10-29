@@ -7,7 +7,8 @@ const TMDB_SIZES = [342, 500, 780, 1280];
 // TMDB logo widths (its logo_sizes) for the card logos, ~200 px wide.
 export const TMDB_LOGO_SIZES = [300, 500];
 // Decoded card artwork, logos and folder GIFs of the Home (natural pixels; the hero is outside
-// the queue): ~8 Mpx at card sizes for the loaded rows; oversized sources are capped, far first.
+// the queue): ~8 Mpx at card sizes for the loaded rows; oversized sources are capped off screen,
+// far first (visible cards always load).
 export const HOME_IMAGE_BUDGET_PX = 10e6;
 // Anchored like tmdbImageUrl.js: a TMDB URL embedded in a proxy or a look-alike host is left as is.
 const TMDB_SIZE = /^((?:https?:)?\/\/image\.tmdb\.org\/t\/p\/)(original|w(\d+))\//i;
@@ -57,8 +58,10 @@ export function sizedImageUrl(url, width, sizes = TMDB_SIZES) {
  * At most `concurrency` images load at once; a node asking again replaces its pending request,
  * so a recycled card never shows an image it no longer represents. A failed image tries its
  * `fallbacks` in turn in the same slot. Requests load by `rank` (lower first; a `priority`
- * request, the focused card, before all). Decoded pixels (natural size) stay under `budgetPx`:
- * over it, a request evicts the loaded images of a worse rank, or waits if its rank is above 0.
+ * request, the focused card, before all). Decoded pixels (natural size) stay under `budgetPx`
+ * for off-screen images only: over it, an off-screen request evicts the off-screen images of a
+ * worse rank or waits; an `onScreen` one (default, e.g. the WebGL renderer) evicts any off-screen
+ * image and never waits, and is never evicted, so the budget never blanks a visible card.
  */
 export function createImageQueue({
   concurrency = 3,
@@ -70,6 +73,7 @@ export function createImageQueue({
   // Loaded nodes: natural pixels and the rank of their latest request.
   const decoded = new Map();
   const ranks = new WeakMap();
+  const offScreen = new WeakSet();
   let decodedPx = 0;
   // Nodes holding a slot. Changing or removing src mid-load cancels it without load/error events.
   const loading = new Set();
@@ -87,11 +91,11 @@ export function createImageQueue({
     decoded.delete(node);
   }
 
-  // Over budget: drop loaded images ranked after `rank`, worst first. True once under budget.
+  // Over budget: drop off-screen loaded images ranked after `rank`, worst first. True once under budget.
   function makeRoom(rank) {
     if (decodedPx < budgetPx) return true;
     const victims = [...decoded.keys()]
-      .filter((node) => ranks.get(node) > rank)
+      .filter((node) => offScreen.has(node) && ranks.get(node) > rank)
       .sort((a, b) => ranks.get(b) - ranks.get(a));
     for (const node of victims) {
       forget(node);
@@ -112,8 +116,7 @@ export function createImageQueue({
     for (const [node, entry] of order) {
       // A node already loading reuses its own slot.
       if (!loading.has(node) && loading.size >= concurrency) continue;
-      // Rank 0 or better (the focused card, unranked callers such as the WebGL renderer) never waits.
-      if (!makeRoom(entry.rank) && entry.rank > 0) continue;
+      if (!makeRoom(entry.onScreen ? -Infinity : entry.rank) && !entry.onScreen) continue;
       pending.delete(node);
       loading.add(node);
       requested.set(node, entry.url);
@@ -129,6 +132,8 @@ export function createImageQueue({
       const pixels = (node.naturalWidth || 0) * (node.naturalHeight || 0);
       decoded.set(node, pixels);
       decodedPx += pixels;
+      // Loads started under budget can end over it: worse-ranked off-screen images make room.
+      makeRoom(offScreen.has(node) ? ranks.get(node) : -Infinity);
       pump();
     };
     node.onerror = () => {
@@ -140,10 +145,12 @@ export function createImageQueue({
   }
 
   return {
-    request(node, url, { fallbacks = [], priority = false, rank = 0 } = {}) {
+    request(node, url, { fallbacks = [], priority = false, rank = 0, onScreen = true } = {}) {
       if (!node) return;
       const order = priority ? -1 : rank;
       ranks.set(node, order);
+      if (onScreen || priority) offScreen.delete(node);
+      else offScreen.add(node);
       if (!url) {
         pending.delete(node);
         requested.delete(node);
@@ -157,7 +164,7 @@ export function createImageQueue({
       }
       pending.delete(node);
       if (node.getAttribute?.("src") && requested.get(node) === url) return;
-      pending.set(node, { url, fallbacks, rank: order });
+      pending.set(node, { url, fallbacks, rank: order, onScreen: onScreen || priority });
       if (!timer) pump();
     },
     clear() {
