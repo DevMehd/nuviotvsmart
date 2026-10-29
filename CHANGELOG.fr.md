@@ -1,5 +1,11 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-29 — 1.3.7
+
+- Nouvel accueil (bêta, moteur DOM) : la carte sélectionnée de « Continuer à regarder » ne disparaît plus sur la télé (une règle prévue pour les appareils peu puissants la renvoyait hors de l’écran).
+- Nouvel accueil (bêta) : avec le menu latéral en pastille, le contenu commence au même endroit que dans l’accueil actuel ; les premières cartes n’apparaissent plus coupées au bord gauche.
+- Le Diagnostic guidé reconnaît les nouvelles cartes « Continuer à regarder » du nouvel accueil.
+
 ## 2026-10-27 — 1.3.6
 
 - « Nouvel accueil (bêta) » : choisir le réglage ouvre bien la liste Désactivé / DOM / WebGL dans le navigateur (et sur les télés autres que VIDAA) ; en 1.3.5, le clic ne faisait rien.
