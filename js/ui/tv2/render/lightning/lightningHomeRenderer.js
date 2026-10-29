@@ -102,7 +102,9 @@ const TMDB_ANY_SIZE = /^(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:w\d+|original)\/
 export function blurredSource(source) {
   const tiny = (url) => String(url || "").replace(TMDB_ANY_SIZE, "$1w92/");
   const url = tiny(source.url);
-  return { ...source, url, fallbacks: source.fallbacks.map(tiny), veil: url === source.url };
+  // A fallback shrunk to the same URL would only retry the one that just failed.
+  const fallbacks = [...new Set(source.fallbacks.map(tiny))].filter((value) => value !== url);
+  return { ...source, url, fallbacks, veil: url === source.url };
 }
 
 const shimmers = (motion) =>

@@ -632,7 +632,7 @@ assert.deepEqual(
   const tmdbStill = "https://image.tmdb.org/t/p/w500/still.jpg";
   const blurred = blurredSource({ url: tmdbStill, fallbacks: [tmdbStill, "/other.jpg"] });
   assert.equal(blurred.url, "https://image.tmdb.org/t/p/w92/still.jpg", "TMDB's smallest size");
-  assert.deepEqual(blurred.fallbacks, [blurred.url, "/other.jpg"]);
+  assert.deepEqual(blurred.fallbacks, ["/other.jpg"], "no fallback equal to the shrunk URL");
   assert.equal(blurred.veil, false);
   assert.equal(blurredSource({ url: "/other.jpg", fallbacks: [] }).veil, true, "veil elsewhere");
   const nextUp = createGlCard(scene, glNode(), "continue", geometry.continueCard);

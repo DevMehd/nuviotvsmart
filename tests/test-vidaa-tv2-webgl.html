@@ -185,6 +185,31 @@
           // Cover in 1382×650: 80 × 1382/1280 ≈ 86 px both ways; stretched would be 86 × 72.
           assert(Math.abs(across - 86) <= 3, `hero square width ${across}`);
           assert(Math.abs(down / across - 1) < 0.06, `hero squares ${across}×${down}: not distorted`);
+
+          // Lot W4b: a watched change after the cards are filled refreshes them. The badge is the
+          // round texture (art in its corner, the dark pupil in its center), and the failed no-CORS
+          // card keeps its text tile through the refill.
+          view.setWatched(new Set([items[2].id]));
+          view.update([row], focus, { sidebarIndex: -1 });
+          // Card 2: red art, not focused, so not scaled. The canvas texture uploads asynchronously.
+          const watchedLeft = cardX(2) + width - 12 - 40;
+          let badgeCorner = null;
+          let badgeCenter = null;
+          for (const until = performance.now() + 3000; performance.now() < until; ) {
+            lightning.stage.drawFrame();
+            badgeCorner = pixelsAt(watchedLeft + 2, top + 12 + 2);
+            badgeCenter = pixelsAt(watchedLeft + 20, top + 12 + 20);
+            if (badgeCenter[0] < 80) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          assert(badgeCorner[0] > 200 && badgeCorner[1] < 40, `badge corner shows the art: ${badgeCorner}`);
+          assert(badgeCenter[0] < 80 && badgeCenter[1] < 80, `badge pupil drawn: ${badgeCenter}`);
+          const refilledCorner = pixelsAt(cardX(1) + 6, top + 6);
+          const refilledText = Math.max(
+            ...Array.from(pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80).filter((_, i) => i % 4 === 0))
+          );
+          assert(refilledCorner[0] < 80 && refilledText > refilledCorner[0] + 40, `refill keeps the tile: ${refilledCorner} / ${refilledText}`);
+          view.setWatched(null);
           const info = glInfo();
           assert(info?.renderer && info.maxTextureSize > 0, "Diagnostic WebGL facts");
           assert(info.failed.autre >= 1 && info.failed.tmdb === 0, JSON.stringify(info.failed));
