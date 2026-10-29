@@ -158,7 +158,16 @@
             );
           const checks = [];
 
-          for (const mode of ["modern", "classic", "grid"]) {
+          // Constrained runtimes (js/app.js: <= 4 cores, as VIDAA TVs) get the current Home's unscoped
+          // card rules (components-44/49/60); the focused Continue Watching card must keep its place.
+          for (const [mode, constrained] of [
+            ["modern", false],
+            ["modern", true],
+            ["classic", true],
+            ["grid", true]
+          ]) {
+            for (const node of [document.documentElement, document.body])
+              node.classList.toggle("performance-constrained", constrained);
             const legacy = mode !== "modern";
             const layout = {
               homeLayout: mode,
@@ -184,7 +193,7 @@
               imageQueue: createImageQueue(),
               layout
             });
-            const at = (label) => `${mode}: ${label}`;
+            const at = (label) => `${mode}${constrained ? " constrained" : ""}: ${label}`;
             // The visible frame (artwork, See All or skeleton) keeps the card radius.
             const assertFrame = (card) => {
               const frame = card.classList.contains("is-seeall")
@@ -257,7 +266,7 @@
                 );
               }
             });
-            checks.push(`${mode} sizes`);
+            checks.push(at("sizes"));
 
             // Skeletons: the loading row's cards are drawn, painted and on screen.
             const skeletons = [...container.querySelectorAll(".tv2-card-skeleton")];
@@ -283,7 +292,7 @@
               skeleton.style.pointerEvents = "";
               assert(hit === skeleton, at(`skeleton covered by ${hit?.className}`));
             }
-            checks.push(`${mode} skeletons`);
+            checks.push(at("skeletons"));
 
             // Hero copy above the first rail (modern hero, or the classic/grid hero card).
             {
@@ -307,7 +316,7 @@
                   at(`hero copy bottom ${rect.bottom} over first rail top ${firstRow.top}`)
                 );
             }
-            checks.push(`${mode} hero`);
+            checks.push(at("hero"));
 
             // Labels inside their reserved block (classic/grid titles, CW copy, folder titles).
             const labels = () => {
@@ -343,7 +352,7 @@
               }
             };
             labels();
-            checks.push(`${mode} labels`);
+            checks.push(at("labels"));
 
             // Sidebar: the collapsed rail keeps its icons inside its items and on screen.
             {
@@ -378,11 +387,13 @@
                   )
                 );
             }
-            checks.push(`${mode} sidebar`);
+            checks.push(at("sidebar"));
 
             // Navigation: the focused card stays fully on screen, right of the sidebar rail.
             const main = container.querySelector(".tv2-main").getBoundingClientRect();
+            // Modern starts on Continue Watching: move along it first (classic/grid: the first down).
             const keys = [
+              ...(legacy ? [] : ["right", "right", "right"]),
               "down",
               ...Array(7).fill("right"),
               "down",
@@ -417,14 +428,25 @@
                 rect.left + rect.width / 2,
                 rect.top + rect.height / 2
               );
-              if (node.classList.contains("tv2-card")) assertFrame(node);
+              if (node.classList.contains("tv2-card")) {
+                assertFrame(node);
+                // Pooled cards jump to a new slot (placeCard): no CSS transition may slide them.
+                const durations = getComputedStyle(node).transitionDuration.split(",");
+                assert(
+                  durations.every((duration) => parseFloat(duration) === 0),
+                  at(`${node.dataset.rowKey} card transition ${durations}`)
+                );
+                // VIDAA balanced motion: the focused card keeps its 1.015 scale.
+                const scale = new DOMMatrix(getComputedStyle(node).transform).a;
+                assert(near(scale * 100, 101.5), at(`${node.dataset.rowKey} focus scale ${scale}`));
+              }
               assert(
                 node.contains(hit),
                 at(`focus ${node.dataset.rowKey} covered by ${hit?.className}`)
               );
             }
             labels();
-            checks.push(`${mode} navigation`);
+            checks.push(at("navigation"));
             view.destroy();
             container.innerHTML = "";
           }

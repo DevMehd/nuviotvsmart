@@ -133,6 +133,14 @@
   background: var(--card-bg);
 }
 
+/* Pooled cards jump to their slot (renderer placeCard), even under the constrained runtimes'
+   global 140 ms transition (components-44.css `.performance-constrained *`). Continue Watching
+   cards are .tv2-continue-card: the current Home's unscoped `.home-continue-card.focused
+   { transform: none !important }` (constrained, Tizen) would drop their position. */
+.tv2-home .tv2-rows .tv2-card {
+  transition: none !important;
+}
+
 /* Current Home loading card (home-poster-card-loading): placeholder gradient and shimmer. */
 .tv2-card-skeleton {
   pointer-events: none;
@@ -258,11 +266,11 @@
 }
 
 /* Continue Watching card (components-14/17.css, modern sizes): badge, copy, progress, blur. */
-.tv2-card.home-continue-card {
+.tv2-card.tv2-continue-card {
   background: linear-gradient(145deg, #393939, #111);
 }
 
-.tv2-card.home-continue-card::after {
+.tv2-card.tv2-continue-card::after {
   content: "";
   position: absolute;
   z-index: 1;
@@ -382,7 +390,7 @@ html.vidaa-tv.performance-constrained .tv2-rows {
    (LayoutPreferences applyCardDepthPresentation). */
 html[data-card-depth="true"][data-card-depth-posters="true"] .tv2-card.home-poster-card::before,
 html[data-card-depth="true"][data-card-depth-continue-watching="true"]
-  .tv2-card.home-continue-card::before {
+  .tv2-card.tv2-continue-card::before {
   content: "";
   position: absolute;
   z-index: 10;
