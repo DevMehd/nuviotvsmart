@@ -525,6 +525,11 @@ assert.deepEqual(
     badgeText.emit("loaded", { dimensions: { w: 100, h: 28 } });
     assert.equal(badge.w, 100 + 2 * CW_CARD.badge.padX, "badge frame around its text");
     assert.equal(badge.x, size.width - 16);
+    assert.equal(
+      badgeText.maxWidth,
+      size.width - 64,
+      `${cardStyle}: a long badge stays in the card`
+    );
     assert.equal(badge.color, 4, "badge in the background color at 0.80");
     // A movie: no episode code nor subtitle, the title sits on the bottom line.
     const movie = { contentId: "tt5", type: "movie", title: "Heat", positionMs: 0, durationMs: 0 };

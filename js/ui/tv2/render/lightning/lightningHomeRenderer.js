@@ -495,7 +495,9 @@ function continueParts(scene, parent, width, height) {
       fontSize: C.badge.fontSize,
       lineHeight: C.badge.lineHeight,
       weight: 600,
-      contain: "none"
+      contain: "none",
+      // Cards are not clipped: a long badge (German, small posters) ends with "…" inside the card.
+      maxWidth: width - 2 * (C.badge.inset + C.badge.padX)
     })
   );
   C.lines.forEach((line) => {
