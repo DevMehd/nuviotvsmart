@@ -122,7 +122,7 @@ function renderRawProbe(entry) {
           "Changement de piste audio",
           swap.skipped
             ? `non tenté : ${swap.skipped}`
-            : `${swap.from}→${swap.to} · actives ${swap.enabled.map((on) => (on ? 1 : 0)).join("")} · ${number(swap.advancedSeconds, " s lues")} · attentes ${swap.waitingEvents}${swap.errorCode ? ` · erreur ${swap.errorCode}` : ""}`
+            : `${swap.from}→${swap.to} · actives ${swap.enabled.map((on) => (on ? 1 : 0)).join("")} · ${number(swap.advancedSeconds, " s lues")} · attentes ${swap.waitingEvents}${swap.thrown ? ` · refusé : ${swap.thrown}` : ""}${swap.errorCode ? ` · erreur ${swap.errorCode}` : ""}`
         )
       : "") +
     (cycles

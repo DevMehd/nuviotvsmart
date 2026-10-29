@@ -126,6 +126,10 @@ export async function runRawVideoProbe({
     }
   };
   for (const type of EVENTS) video.addEventListener(type, onEvent);
+  // Back or leaving the console frees the decoder at once, not at the next 100 ms poll:
+  // the app's player may claim it right after.
+  const onAbort = () => release(video);
+  signal?.addEventListener?.("abort", onAbort);
   const play = () => {
     mark("playCalled");
     let pending;
@@ -249,8 +253,14 @@ export async function runRawVideoProbe({
         const to = from === 0 ? 1 : 0;
         const time = Number(video.currentTime);
         const waiting = run.waiting;
-        tracks[to].enabled = true;
-        tracks[from].enabled = false;
+        let thrown = null;
+        try {
+          tracks[to].enabled = true;
+          tracks[from].enabled = false;
+        } catch (error) {
+          // A refused switch is the evidence this variant looks for: keep the whole result.
+          thrown = short(error?.name, 24) || "erreur";
+        }
         await waitUntil(() => Boolean(video.error), 5000);
         const enabled = [];
         for (let i = 0; i < Math.min(16, length); i += 1) enabled.push(tracks[i].enabled === true);
@@ -258,6 +268,7 @@ export async function runRawVideoProbe({
           from,
           to,
           enabled,
+          thrown,
           errorCode: Number.isInteger(video.error?.code) ? video.error.code : null,
           advancedSeconds: tenths(Number(video.currentTime) - time),
           waitingEvents: run.waiting - waiting
@@ -270,6 +281,7 @@ export async function runRawVideoProbe({
         release(video);
         // One task between teardown and the next src (decoder release hypothesis, lot P §3.4).
         await sleep(0);
+        if (aborted()) break;
         attach();
         await waitUntil(started, cycleMs);
         cycles.push({
@@ -281,6 +293,7 @@ export async function runRawVideoProbe({
       result.probe.cycles = cycles;
     }
   } finally {
+    signal?.removeEventListener?.("abort", onAbort);
     for (const type of EVENTS) video.removeEventListener(type, onEvent);
     release(video);
     video.remove();

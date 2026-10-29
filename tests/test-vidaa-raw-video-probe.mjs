@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { runRawVideoProbe } from "../js/core/diagnostics/rawVideoProbe.js";
+import { scrubDiagnosticText } from "../js/core/diagnostics/vidaaBenchmark.js";
 
 const URL_UNDER_TEST =
   "https://cdn.secret.invalid/dl/Movie.2160p.DV.TrueHD.mkv?token=private-token";
@@ -122,6 +123,13 @@ function fakeVideo(log, behavior) {
       requestVideoFrameCallback: (callback) => later(35, callback)
     })
   );
+  if (behavior === "switch-throws")
+    Object.defineProperty(video.audioTracks[1], "enabled", {
+      get: () => false,
+      set() {
+        throw Object.assign(new Error("refused"), { name: "InvalidStateError" });
+      }
+    });
   return video;
 }
 
@@ -204,7 +212,12 @@ const privacy = (result) => {
 {
   const h = setup("silent");
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), 150);
+  let releasedOnAbort = false;
+  setTimeout(() => {
+    controller.abort();
+    // The decoder is freed synchronously, before the app's player can claim it.
+    releasedOnAbort = h.log.lastIndexOf("remove:src") > h.log.indexOf("src");
+  }, 150);
   const started = performance.now();
   const result = await runRawVideoProbe({
     root: h.root,
@@ -214,6 +227,7 @@ const privacy = (result) => {
   });
   assert.ok(performance.now() - started < 1000, "Back stops the probe at once");
   assert.equal(result.outcome, "abandoned");
+  assert.ok(releasedOnAbort, "decoder released on abort, not at the next poll");
   assert.equal(h.log.at(-1), "element-removed");
   const timeout = await runRawVideoProbe({
     root: setup("silent").root,
@@ -247,6 +261,22 @@ const privacy = (result) => {
   assert.equal(h.log.filter((entry) => entry === "src").length, 11);
   privacy(result);
 }
+{
+  // A refused audio switch is recorded; the rest of the result is kept.
+  const h = setup("switch-throws");
+  const result = await runRawVideoProbe({
+    root: h.root,
+    url: URL_UNDER_TEST,
+    observeMs: 200,
+    variant: "audio-switch"
+  });
+  assert.equal(result.outcome, "playing");
+  assert.equal(result.probe.audioSwitch.thrown, "InvalidStateError");
+}
+assert.equal(
+  scrubDiagnosticText("open failed 192.168.1.20:11470/stream and cdn.secret.invalid"),
+  "open failed [hôte]/stream and [hôte]"
+);
 console.log(
   "PASS VIDAA raw video probe: bare <video>, decoder released first, ordered marks, muted fallback, getter-read tracks, error/abort/timeout, audio switch, 10 source cycles, no link"
 );
