@@ -254,7 +254,8 @@ export function createPlaybackProgress(video, host, { root = globalThis } = {}) 
       if (t - lastTickAt < 1000) return;
       lastTickAt = t;
       MediaServerScrobbleService.update(host.scrobbleContext());
-      tickJournal(false);
+      // timeupdate also fires on a pause and on a seek while paused: not watched time.
+      tickJournal(Boolean(video.paused));
     },
     // Android takes a local checkpoint when playback enters buffering.
     waiting() {

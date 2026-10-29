@@ -240,6 +240,13 @@ const names = () => calls.map(([name]) => name);
   video.emit("waiting");
   assert.equal(flushes.length, 2, "same position: no second save");
   assert.ok(names().includes("server.update") && names().includes("journal.tick"));
+  assert.equal(calls.find(([name]) => name === "journal.tick")[2].paused, false);
+  // A timeupdate while paused (pause steps, seek while paused) is not watched time.
+  video.paused = true;
+  advance(1000);
+  video.emit("timeupdate");
+  assert.equal(calls.filter(([name]) => name === "journal.tick").at(-1)[2].paused, true);
+  video.paused = false;
   assert.ok(!names().includes("scrobble.pause"), "a buffering wait is not a user pause");
   await settle();
   assert.ok(!names().includes("push"));
