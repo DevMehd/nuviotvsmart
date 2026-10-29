@@ -567,6 +567,93 @@ assert.deepEqual(
   assert.equal(view.track.children[0].children.length, 2);
   setRowSkeletons(scene, view, 0);
   assert.equal(pulse.stopped, true, "pulse stopped with the skeletons");
+
+  // Lot W4b: watched badge, landscape logo then title, folder emoji, Next Up blur, depth.
+  const { CARD_EXTRAS, blurredSource } =
+    await import("../js/ui/tv2/render/lightning/lightningHomeRenderer.js");
+  const { cardImage } = await import("../js/ui/tv2/renderer.js");
+  const { Router } = await import("../js/ui/navigation/routerState.js");
+  Router.getCurrent = () => "home";
+  const same = (url) => url;
+  const catalog = { key: "cat", kind: "poster", entry: { type: "movie" } };
+  const film = { id: "tt0000042", type: "movie", name: "Heat", poster: "/heat.jpg" };
+  const watchedCard = createGlCard(scene, glNode(), "poster", geometry.poster);
+  const posterSource = cardImage(catalog, film, geometry.poster, {}, same);
+  fillGlCard(scene, watchedCard, film, posterSource, null);
+  assert.equal(watchedCard.watched.alpha, 0, "not watched");
+  fillGlCard(scene, watchedCard, film, posterSource, new Set(["tt0000042"]));
+  assert.equal(watchedCard.watched.alpha, 1, "badge after setWatched");
+  assert.deepEqual(
+    [watchedCard.watched.x, watchedCard.watched.y, watchedCard.watched.w],
+    [geometry.poster.width - 12 - 40, 12, 40],
+    "mobile 20 dp badge, 6 dp inset"
+  );
+
+  const wide = rowCardSize(
+    catalog,
+    cardGeometry({ homeLayout: "modern", modernLandscapePostersEnabled: true })
+  );
+  assert.ok(wide.width > wide.height, "landscape catalog size");
+  const landscapeCard = createGlCard(scene, glNode(), "poster", wide);
+  assert.equal(landscapeCard.fallback, null, "the overlay title replaces the tile");
+  const logoFilm = { ...film, logo: "https://logo.invalid/l.png", releaseInfo: "2021" };
+  const wideSource = cardImage(catalog, logoFilm, wide, {}, same);
+  fillGlCard(scene, landscapeCard, logoFilm, wideSource, null);
+  const L = landscapeCard.landscape;
+  assert.ok(L.url.includes("logo.invalid"), "logo chosen");
+  assert.equal(L.title.alpha, 0, "title hidden while the logo loads");
+  assert.equal(L.subtitle.text, wideSource.model.subtitle);
+  L.logoNode.texture = { dimensions: { w: 400, h: 50 } };
+  L.logo.src = L.url;
+  L.logoNode.emit("loaded");
+  assert.deepEqual([L.logoNode.w, L.logoNode.h], [232, 29], "logo fitted in 232×60");
+  assert.equal(L.logoNode.y, L.title.y, "logo and title share the bottom line");
+  L.logo.src = `${L.url}?again`;
+  L.logoNode.emit("failed");
+  assert.equal(L.title.alpha, 1, "failed logo: title on 2 lines");
+  assert.equal(L.title.text, "Heat");
+  assert.deepEqual([L.title.maxLines, L.title.weight], [2, 600]);
+  fillGlCard(scene, landscapeCard, film, cardImage(catalog, film, wide, {}, same), null);
+  assert.deepEqual([L.url, L.title.alpha], ["", 1], "no logo: title");
+
+  const folderRow = { key: "col", kind: "collection" };
+  const folder = { id: "collection:c:f", coverEmoji: "🎬", name: "Folder" };
+  const folderCard = createGlCard(scene, glNode(), "collection", geometry.poster);
+  assert.equal(folderCard.watched, null, "no watched badge on folders");
+  fillGlCard(scene, folderCard, folder, cardImage(folderRow, folder, geometry.poster, {}, same));
+  assert.deepEqual(
+    [folderCard.fallback.text, folderCard.fallback.fontSize],
+    ["🎬", CARD_EXTRAS.emoji.fontSize]
+  );
+  const covered = { ...folder, poster: "/cover.jpg" };
+  fillGlCard(scene, folderCard, covered, cardImage(folderRow, covered, geometry.poster, {}, same));
+  assert.deepEqual([folderCard.fallback.text, folderCard.fallback.fontSize], ["Folder", 28]);
+
+  const tmdbStill = "https://image.tmdb.org/t/p/w500/still.jpg";
+  const blurred = blurredSource({ url: tmdbStill, fallbacks: [tmdbStill, "/other.jpg"] });
+  assert.equal(blurred.url, "https://image.tmdb.org/t/p/w92/still.jpg", "TMDB's smallest size");
+  assert.deepEqual(blurred.fallbacks, [blurred.url, "/other.jpg"]);
+  assert.equal(blurred.veil, false);
+  assert.equal(blurredSource({ url: "/other.jpg", fallbacks: [] }).veil, true, "veil elsewhere");
+  const nextUp = createGlCard(scene, glNode(), "continue", geometry.continueCard);
+  const nextCw = { ...continueCardModel(episode, {}), blur: true };
+  fillGlCard(scene, nextUp, episode, { ...blurred, cw: nextCw });
+  assert.equal(nextUp.cw.veil.alpha, 0, "small TMDB image: no veil");
+  fillGlCard(scene, nextUp, episode, { url: "/other.jpg", fallbacks: [], veil: true, cw: nextCw });
+  assert.equal(nextUp.cw.veil.alpha, 1, "veil over artwork that cannot be shrunk");
+
+  const deep = { ...scene, depth: { posters: true, continue: false, edge: 7, sheen: 8 } };
+  const plainCount = createGlCard(scene, glNode(), "poster", geometry.poster).node.children.length;
+  const deepCard = createGlCard(deep, glNode(), "poster", geometry.poster);
+  assert.equal(deepCard.node.children.length, plainCount + 2, "edge and sheen");
+  const [sheen, edge] = deepCard.node.children.slice(-2);
+  assert.deepEqual([edge.color, edge.h, sheen.colorTop], [7, 2, 8]);
+  assert.equal(sheen.h, Math.round(geometry.poster.height * 0.22));
+  assert.equal(
+    createGlCard(deep, glNode(), "continue", geometry.continueCard).node.children.length,
+    createGlCard(scene, glNode(), "continue", geometry.continueCard).node.children.length,
+    "depth off for Continue Watching"
+  );
 }
 
 // Atlas: versioned files equal a fresh build from the TTF files; French typography inside it,

@@ -501,12 +501,94 @@
           assert(posterTexts(posterCard).every((node) => node.alpha === 0), "posters carry no title");
           cwView.destroy();
 
+          // Lot W4b: watched badge after setWatched, landscape logo fitted bottom left (title
+          // hidden), folder emoji, and the folder focus GIF as a DOM <img> on homeLayout's rectangle.
+          const wideGeo = cardGeometry({ homeLayout: "modern", modernLandscapePostersEnabled: true });
+          const w4bView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry: wideGeo,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern", modernLandscapePostersEnabled: true },
+            onFailure: (reason) => failures.push(reason)
+          });
+          const greenLogo = await blobUrl(1000, 200, (ctx) => {
+            ctx.fillStyle = "#00ff00";
+            ctx.fillRect(0, 0, 1000, 200);
+          });
+          const wideRow = many("w");
+          wideRow.items.forEach((item) => (item.logo = greenLogo));
+          const folderRow = {
+            key: "f",
+            kind: "collection",
+            title: "Folders",
+            status: "success",
+            items: [
+              { id: "collection:c:a", type: "collection_folder", coverEmoji: "🎬", name: "A" },
+              { id: "collection:c:b", type: "collection_folder", poster: red, name: "B" }
+            ]
+          };
+          const w4bRows = [wideRow, folderRow];
+          const w4bFocus = { row: 0, columns: {} };
+          w4bView.setRows(w4bRows);
+          w4bView.setWatched(new Set([wideRow.items[1].id]));
+          w4bView.update(w4bRows, w4bFocus, { sidebarIndex: -1 });
+          await settle("W4b scene", () => document.querySelector(".tv2-gl-canvas") && rowsLayer()?.children.length === 2);
+          const { size: wideSize, pitch: widePitch } = homeLayout(w4bRows, w4bFocus, drawn(wideGeo)).rows[0];
+          const wideCard = cardAt(trackOf(0), widePitch);
+          assert(wideCard && wideCard.w === wideSize.width && wideCard.w > wideCard.h, `landscape card ${wideCard?.w}×${wideCard?.h}`);
+          const badgeNode = wideCard.children.find((node) => node.w === 40 && node.h === 40);
+          assert(badgeNode?.alpha === 1, "watched badge after setWatched");
+          const logoOf = (card) => card.children.find((node) => node.mountY === 1 && typeof node.text !== "string");
+          const wideTop = () => 560 + rowsLayer().y + rowsLayer().children[0].y + trackOf(0).y;
+          const wideLeft = trackOf(0).x + wideCard.x;
+          await settle("landscape logo", () => {
+            const logo = logoOf(wideCard);
+            return logo?.w === 232 && logo.h === 46 && wideCard.children[0].src;
+          });
+          const wideTitle = findText(wideCard, wideRow.items[1].name);
+          assert(wideTitle && wideTitle.alpha === 0, "title hidden behind the logo");
+          await settle("W4b drawn", () => {
+            lightning.stage.drawFrame();
+            const logoPixel = pixelsAt(Math.round(wideLeft + 20 + 116), Math.round(wideTop() + logoOf(wideCard).y - 23));
+            const badgePixel = pixelsAt(Math.round(wideLeft + wideSize.width - 12 - 36), Math.round(wideTop() + 12 + 20));
+            const artPixel = pixelsAt(Math.round(wideLeft + 60), Math.round(wideTop() + 40));
+            // The red art is drawn, the badge over it is not red.
+            return logoPixel[1] > 200 && logoPixel[0] < 60 && artPixel[0] > 200 && artPixel[1] < 40 && !(badgePixel[0] > 200 && badgePixel[1] < 40);
+          });
+          assert(cardAt(trackOf(0), 0).children.find((node) => node.w === 40 && node.h === 40).alpha === 0, "unwatched: no badge");
+
+          // Folder row: emoji without cover; the GIF follows the focused folder card, then leaves.
+          w4bFocus.row = 1;
+          w4bFocus.columns.f = 1;
+          w4bView.update(w4bRows, w4bFocus, { sidebarIndex: -1 });
+          const folderLayout = homeLayout(w4bRows, w4bFocus, drawn(wideGeo));
+          const emojiText = findText(trackOf(1), "🎬");
+          assert(emojiText && emojiText.alpha === 1 && emojiText.fontSize === 72, "folder emoji");
+          const gifNode = document.querySelector(".tv2-gl-gif");
+          const gifUrl = `${red}#gif`;
+          w4bView.setFocusGif(gifUrl);
+          await settle("GIF through the image queue", () => gifNode.getAttribute("src") === gifUrl);
+          const { win: fWin, pitch: fPitch, size: fSize, top: fTop } = folderLayout.rows[1];
+          const grow = (1.015 - 1) / 2;
+          const folderTrackY = trackOf(1).y;
+          const expected = {
+            left: 220 + fWin.offset + fPitch - fSize.width * grow,
+            top: 560 + folderLayout.offsetY + fTop + folderTrackY - fSize.height * grow,
+            width: fSize.width * 1.015
+          };
+          for (const [key, value] of Object.entries(expected))
+            assert(Math.abs(parseFloat(gifNode.style[key]) - value) < 0.5, `GIF ${key} ${gifNode.style[key]} ≠ ${value}`);
+          await settle("GIF shown after the slide", () => gifNode.classList.contains("is-active"));
+          w4bFocus.columns.f = 0;
+          w4bView.update(w4bRows, w4bFocus, { sidebarIndex: -1 });
+          assert(!gifNode.classList.contains("is-active") && !gifNode.getAttribute("src"), "focus left: GIF cleared");
+          w4bView.destroy();
+
           assert(!failures.length, `WebGL fell back to DOM: ${failures.join(",")}`);
           // Failures are forgotten on leaving Home: the kept engine retries them on the next visit.
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards and skeletons (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;

@@ -10,6 +10,7 @@ import { buildModernHeroPresentation } from "../../../screens/home/homeScreenHel
 import { ATLAS_WEIGHTS, atlasUrls, glText } from "./sdfAtlas.js";
 import { createHeroCopy } from "./heroCopy.js";
 import { useVidaaHeroTransition } from "../../../screens/home/vidaaHeroTransition.js";
+import { isTitleItemWatched } from "../../../components/watchedTitleBadge.js";
 
 // New TV Home (nuv-091, lot B2), 100 % WebGL prototype on Lightning: hero, rails, text (SDF
 // atlases, canvas text for characters outside them) and focus are drawn in one canvas. Same interface as createDomHomeRenderer. The
@@ -68,6 +69,41 @@ export const CW_CARD = {
 };
 // Loading row cards (mobile HomeSkeletonLoading.kt): surface #1A1A1A; the row pulses 1 ↔ 0.6.
 const ROW_SKELETON = 0x1a1a1aff;
+/**
+ * Card extras (lot W4b) at the TV sizes of the mobile reference: watched badge (PosterActionSheet.kt,
+ * eye on the accent), landscape overlay (ShelfComponents.kt:207-247: logo box, else the title on
+ * 2 lines, over a black scrim on the bottom 42 %), folder emoji, card depth (CardDepthEffect.kt).
+ */
+export const CARD_EXTRAS = {
+  watched: { size: 40, inset: 12, icon: 24 },
+  landscape: {
+    scrim: 0.42,
+    scrimColor: 0x000000bf,
+    pad: 20,
+    gap: 4,
+    logo: { w: 232, h: 60 },
+    title: { fontSize: 24, lineHeight: 30, maxLines: 2, weight: 600 },
+    subtitle: { fontSize: 22, lineHeight: 28, alpha: 0.78 }
+  },
+  emoji: { fontSize: 72, lineHeight: 88, color: 0xffffffff },
+  tile: { fontSize: 28, lineHeight: 34, color: FALLBACK_TEXT },
+  depth: { edge: 2, sheen: 0.22 }
+};
+// Material "Visibility" (the mobile watched icon), 24×24 viewBox.
+const EYE_PATH =
+  "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z";
+const TMDB_ANY_SIZE = /^(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:w\d+|original)\//;
+
+/**
+ * Next Up blur (lot W4b), the cheap version: TMDB's smallest size (w92) stretched over the card
+ * instead of a blur shader. Another host cannot be shrunk (the proxy stays for no-CORS posters at
+ * 256), so its card gets the mobile spec's veil in the background color instead (`veil`).
+ */
+export function blurredSource(source) {
+  const tiny = (url) => String(url || "").replace(TMDB_ANY_SIZE, "$1w92/");
+  const url = tiny(source.url);
+  return { ...source, url, fallbacks: source.fallbacks.map(tiny), veil: url === source.url };
+}
 
 const shimmers = (motion) =>
   Boolean(motion.copy) &&
@@ -425,9 +461,11 @@ export function imageSlot(node, alpha = 1, onState = () => {}) {
 
 /**
  * Pooled card of a row in `parent` (its track). Posters carry no title (D2, mobile): a failed or
- * missing image shows the mobile text tile instead. Continue Watching cards carry the scrim,
- * badge, copy and progress of CW_CARD and keep them when the image fails, as the DOM card does.
- * `scene`: node, group, text, retext, shader and colors of buildScene.
+ * missing image shows the mobile text tile instead (a folder's emoji when it has no cover).
+ * Landscape posters carry the logo or title overlay instead of the tile. Continue Watching cards
+ * carry the scrim, badge, copy and progress of CW_CARD and keep them when the image fails, as
+ * the DOM card does. Catalog cards get the watched badge; cards get the depth when it is on.
+ * `scene`: node, group, text, retext, shader, colors, watchedTexture and depth of buildScene.
  */
 export function createGlCard(scene, parent, kind, { width, height }) {
   const continueCard = kind === "continue";
@@ -440,22 +478,46 @@ export function createGlCard(scene, parent, kind, { width, height }) {
     zIndex: 1
   });
   const image = scene.node({ parent: node, w: width, h: height, textureOptions: COVER });
-  const card = { node, index: -1, rowKey: "", x: null, item: null, cw: null, fallback: null };
+  const card = {
+    node,
+    kind,
+    index: -1,
+    rowKey: "",
+    x: null,
+    item: null,
+    cw: null,
+    fallback: null,
+    landscape: null,
+    watched: null
+  };
   if (continueCard) card.cw = continueParts(scene, node, width, height);
+  else if (kind === "poster" && width > height)
+    card.landscape = landscapeParts(scene, node, width, height);
   else
     card.fallback = scene.text({
       parent: node,
       x: 28,
       y: height / 2,
       mountY: 0.5,
-      fontSize: 28,
-      lineHeight: 34,
+      ...CARD_EXTRAS.tile,
       maxWidth: width - 56,
       maxLines: 3,
       textAlign: "center",
-      color: FALLBACK_TEXT,
       alpha: 0
     });
+  if (kind === "poster") {
+    const { size, inset } = CARD_EXTRAS.watched;
+    card.watched = scene.node({
+      parent: node,
+      x: width - inset - size,
+      y: inset,
+      w: size,
+      h: size,
+      texture: scene.watchedTexture,
+      alpha: 0
+    });
+  }
+  if (scene.depth?.[continueCard ? "continue" : "posters"]) depthParts(scene, node, width, height);
   card.showTile = (on) => card.fallback && (card.fallback.alpha = on ? 1 : 0);
   card.image = imageSlot(image, 1, (state) => {
     card.showTile(state === "failed");
@@ -465,8 +527,75 @@ export function createGlCard(scene, parent, kind, { width, height }) {
   return card;
 }
 
+// Mobile depth (top edge and sheen over the top 22 %), white at the user's strengths.
+function depthParts(scene, parent, width, height) {
+  const { edge, sheen } = scene.depth;
+  scene.node({
+    parent,
+    w: width,
+    h: Math.round(height * CARD_EXTRAS.depth.sheen),
+    colorTop: sheen,
+    colorBottom: 0xffffff00
+  });
+  scene.node({ parent, w: width, h: CARD_EXTRAS.depth.edge, color: edge });
+}
+
+/** Landscape overlay: logo fitted bottom left once loaded, else the title; subtitle under it. */
+function landscapeParts(scene, parent, width, height) {
+  const L = CARD_EXTRAS.landscape;
+  const top = Math.round(height * (1 - L.scrim));
+  scene.node({
+    parent,
+    y: top,
+    w: width,
+    h: height - top,
+    colorTop: 0x00000000,
+    colorBottom: L.scrimColor
+  });
+  const logoNode = scene.node({ parent, x: L.pad, mountY: 1, w: L.logo.w, h: L.logo.h });
+  const maxWidth = width - 2 * L.pad;
+  const parts = {
+    url: "",
+    failed: false,
+    logoNode,
+    title: scene.text({ parent, x: L.pad, mountY: 1, maxWidth, ...L.title }),
+    subtitle: scene.text({ parent, x: L.pad, maxWidth, ...L.subtitle })
+  };
+  parts.logo = imageSlot(logoNode, 1, (state) => {
+    if (state === "loaded") {
+      const { w = L.logo.w, h = L.logo.h } = logoNode.texture?.dimensions || {};
+      const scale = Math.min(L.logo.w / w, L.logo.h / h);
+      logoNode.w = Math.round(w * scale);
+      logoNode.h = Math.round(h * scale);
+    }
+    parts.failed = state === "failed";
+    // The title stands in while there is no logo, or once it failed.
+    parts.title.alpha = parts.url && !parts.failed ? 0 : 1;
+  });
+  return parts;
+}
+
+/** Watched badge texture shared by every card: accent circle, eye in the on-accent color. */
+function watchedBadgeTexture(renderer, fill, glyph) {
+  const { size, icon } = CARD_EXTRAS.watched;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.translate((size - icon) / 2, (size - icon) / 2);
+  ctx.scale(icon / 24, icon / 24);
+  ctx.fillStyle = glyph;
+  ctx.fill(new Path2D(EYE_PATH));
+  return renderer.createTexture("ImageTexture", { src: canvas });
+}
+
 function continueParts(scene, parent, width, height) {
   const C = CW_CARD;
+  // Next Up veil for artwork that cannot be shrunk (blurredSource), under the scrim and copy.
+  const veil = scene.node({ parent, w: width, h: height, color: scene.colors.veil, alpha: 0 });
   const top = Math.round(height * C.scrimTop);
   scene.node({
     parent,
@@ -485,7 +614,7 @@ function continueParts(scene, parent, width, height) {
     color: scene.colors.cwBadge,
     shader: scene.shader({ radius: C.badge.radius, "border-w": 0 })
   });
-  const parts = { badge, badgeText: null };
+  const parts = { veil, badge, badgeText: null };
   parts.badgeText = measureBadge(
     parts,
     scene.text({
@@ -530,14 +659,25 @@ function measureBadge(parts, textNode) {
   return textNode;
 }
 
-/** Card content for `item`: the text tile's title, or the Continue Watching model `source.cw`. */
-export function fillGlCard(scene, card, item, source) {
+/**
+ * Card content for `item` from cardImage's `source`: the text tile's title (a folder's emoji
+ * without cover), the landscape overlay, the watched badge (`watchedIds`, isTitleItemWatched),
+ * or the Continue Watching model `source.cw`.
+ */
+export function fillGlCard(scene, card, item, source, watchedIds = null) {
   const cw = source.cw;
+  if (card.watched)
+    card.watched.alpha =
+      source.model && isTitleItemWatched(source.model.normalized, watchedIds) ? 1 : 0;
+  if (card.landscape) return fillLandscape(scene, card.landscape, source.model);
   if (!cw) {
-    card.fallback = scene.retext(card.fallback, String(item.name || item.title || ""));
+    const emoji = card.kind === "collection" && !source.url ? item.coverEmoji || "" : "";
+    card.fallback = scene.retext(card.fallback, emoji || String(item.name || item.title || ""));
+    Object.assign(card.fallback, emoji ? CARD_EXTRAS.emoji : CARD_EXTRAS.tile);
     return;
   }
   const parts = card.cw;
+  parts.veil.alpha = cw.blur && source.veil ? 1 : 0;
   let bottom = card.node.h - CW_CARD.pad;
   CW_CARD.lines.forEach(({ key, lineHeight }) => {
     parts[key] = scene.retext(parts[key], cw[key] || "");
@@ -558,6 +698,28 @@ export function fillGlCard(scene, card, item, source) {
   parts.fill.w = Math.round(
     (Math.max(0, Math.min(100, cw.progressPct || 0)) / 100) * parts.track.w
   );
+}
+
+// The logo URL is only chosen here: update() requests it last, at the lowest priority.
+function fillLandscape(scene, parts, model) {
+  const L = CARD_EXTRAS.landscape;
+  const normalized = model?.normalized || {};
+  const url = normalized.logo ? glImageUrl(normalized.logo, L.logo.w) : "";
+  if (url !== parts.url) {
+    parts.url = url;
+    parts.failed = false;
+    parts.logoNode.w = L.logo.w;
+    parts.logoNode.h = L.logo.h;
+  }
+  parts.title = scene.retext(parts.title, normalized.name || "Untitled");
+  parts.subtitle = scene.retext(parts.subtitle, model?.subtitle || "");
+  parts.title.alpha = parts.url && !parts.failed ? 0 : 1;
+  let bottom = parts.logoNode.parent.h - L.pad;
+  if (parts.subtitle.text) {
+    parts.subtitle.y = bottom - L.subtitle.lineHeight;
+    bottom -= L.subtitle.lineHeight + L.gap;
+  }
+  parts.title.y = parts.logoNode.y = bottom;
 }
 
 /**
@@ -594,11 +756,13 @@ export function createLightningHomeRenderer(
     <div class="tv2-home tv2-home-webgl">
       ${renderLegacySidebar({ selectedRoute: "home", layout })}
       <div class="tv2-gl-host"></div>
+      <img class="tv2-gl-gif" alt="" decoding="async" />
       <div class="home-main tv2-gl-proxy"><article class="home-poster-card tv2-card focusable" data-action="openDetail"><div class="tv2-card-title"></div></article></div>
     </div>`;
   const root = container.querySelector(".tv2-home");
   const host = container.querySelector(".tv2-gl-host");
   const proxy = container.querySelector(".tv2-gl-proxy .tv2-card");
+  const gifImage = container.querySelector(".tv2-gl-gif");
   const views = new Map();
   const last = { rows: [], focus: null, options: {}, hero: null };
   // The hero image stays out of the card queue, as in the DOM renderer.
@@ -610,6 +774,11 @@ export function createLightningHomeRenderer(
   let proxyFocused = false;
   let sidebarFocused = null;
   let rowsVersion = 0;
+  let watchedIds = null;
+  let watchedVersion = 0;
+  // Focused card on screen once the rails stop (app pixels), and the folder focus GIF over it.
+  let focusRect = null;
+  const gif = { url: "", id: "", key: "", timer: null };
   const motion = homeMotion(root);
   // The legacy sidebar is drawn until lot W6: content starts after its rail, even with the pill.
   const geo = { ...geometry, contentStart: RAIL_LEFT, viewport: APP_WIDTH - RAIL_LEFT };
@@ -639,8 +808,26 @@ export function createLightningHomeRenderer(
       // Continue Watching (mobile): scrim to the background at 0.95, badge at 0.80, accent progress.
       scrim: themeColor(root, "--bg-color", "#0d0d0d", 0.95),
       cwBadge: themeColor(root, "--bg-color", "#0d0d0d", 0.8),
-      accent: themeColor(root, "--secondary-color", "#f5f5f5")
+      accent: themeColor(root, "--secondary-color", "#f5f5f5"),
+      // Next Up veil (mobile spec): the background at 0.6.
+      veil: themeColor(root, "--bg-color", "#0d0d0d", 0.6)
     };
+    const css = getComputedStyle(root);
+    const html = document.documentElement;
+    // Current Home cardDepthEnabled (LayoutPreferences applyCardDepthPresentation), read per mount.
+    const depthAlpha = (name, fallback) => {
+      const value = parseFloat(getComputedStyle(html).getPropertyValue(name));
+      return (0xffffff00 | Math.round((Number.isFinite(value) ? value : fallback) * 255)) >>> 0;
+    };
+    const depth =
+      html.dataset.cardDepth === "true"
+        ? {
+            posters: html.dataset.cardDepthPosters === "true",
+            continue: html.dataset.cardDepthContinueWatching === "true",
+            edge: depthAlpha("--card-depth-edge", 0.28),
+            sheen: depthAlpha("--card-depth-sheen", 0.1)
+          }
+        : null;
     const shader = (props) => renderer.createShader("RoundedWithBorder", props);
     const node = (props) => renderer.createNode(props);
     // Lightning paints any sized node white unless its color is 0: containers stay transparent.
@@ -735,6 +922,13 @@ export function createLightningHomeRenderer(
     return {
       renderer,
       colors,
+      depth,
+      // shortcut: the accent is solid, not the DOM's --player-accent-gradient; a gradient needs a canvas gradient.
+      watchedTexture: watchedBadgeTexture(
+        renderer,
+        css.getPropertyValue("--secondary-color").trim() || "#f5f5f5",
+        css.getPropertyValue("--on-secondary").trim() || "#000000"
+      ),
       node,
       group,
       text,
@@ -885,6 +1079,8 @@ export function createLightningHomeRenderer(
     const firstRow = visible.indexOf(true) - 1;
     const lastRow = visible.lastIndexOf(true) + 1;
     let ringCard = null;
+    focusRect = null;
+    const logos = [];
     placed.rows.forEach(({ row, size, pitch, win, top, height }, rowIndex) => {
       const view = views.get(row.key);
       if (!view) return;
@@ -892,6 +1088,7 @@ export function createLightningHomeRenderer(
       if (rowIndex < firstRow || rowIndex > lastRow) {
         // Off screen: its artwork goes once, as outside the DOM renderer's loading window.
         view.slots.forEach((card) => {
+          if (card.landscape) imageQueue.request(card.landscape.logo, "");
           if (!card.wanted) return;
           card.wanted = "";
           imageQueue.request(card.image, "");
@@ -904,18 +1101,25 @@ export function createLightningHomeRenderer(
       for (let i = win.start; i < win.end; i += 1) {
         const item = row.items[i];
         const card = slotCard(view, slotFor(i, win.poolSize));
+        // As the DOM: watched changes refill every card, row emits the continue ones.
+        const version =
+          row.kind === "continue" ? `${watchedVersion}:${rowsVersion}` : String(watchedVersion);
         const changed =
           card.index !== i ||
           card.rowKey !== row.key ||
           card.item !== item ||
-          (row.kind === "continue" && card.version !== rowsVersion);
+          card.version !== version;
         if (changed) {
           card.item = item;
           card.index = i;
           card.rowKey = row.key;
-          card.version = rowsVersion;
+          card.version = version;
           card.source = cardImage(row, item, size, layout, glImageUrl);
-          fillGlCard(scene, card, item, card.source);
+          if (card.source.cw?.blur) card.source = blurredSource(card.source);
+          fillGlCard(scene, card, item, card.source, watchedIds);
+          // A recycled card never shows the previous title's logo while its own one waits.
+          const logo = card.landscape;
+          if (logo && logo.logo.url !== logo.url) imageQueue.request(logo.logo, "");
         }
         card.node.alpha = 1;
         const focused = rowIndex === focus.row && i === focusIndex;
@@ -929,9 +1133,23 @@ export function createLightningHomeRenderer(
         }
         // No artwork at all: the mobile shows the same text tile (ShelfComponents.kt, imageUrl null).
         if (!card.source.url) card.showTile(true);
-        else if (changed) card.showTile(false);
-        placeCard(card, i * pitch, Boolean(motion.scale) && focusShown && focused);
+        // A refill keeping a failed image's URL keeps its tile; a new request reports its own state.
+        else if (changed && card.wanted !== card.source.url) card.showTile(false);
+        if (card.landscape) logos.push([card.landscape, loadImages ? card.landscape.url : ""]);
+        const scaled = Boolean(motion.scale) && focusShown && focused;
+        placeCard(card, i * pitch, scaled);
         if (focused) ringCard = card;
+        if (focused && focusShown) {
+          const grow = scaled ? (FOCUS_SCALE - 1) / 2 : 0;
+          focusRect = {
+            id: `${row.key}:${i}`,
+            collection: row.kind === "collection",
+            x: geo.contentStart + win.offset + i * pitch - size.width * grow,
+            y: MAIN_TOP + placed.offsetY + top + view.track.y - size.height * grow,
+            w: size.width * (1 + 2 * grow),
+            h: size.height * (1 + 2 * grow)
+          };
+        }
       }
       // A new row is placed where it belongs, never slid in from the left edge.
       tween(view.track, "x", geo.contentStart + win.offset, view.placed ? motion.rail : null);
@@ -939,6 +1157,9 @@ export function createLightningHomeRenderer(
     });
     tween(scene.rowsLayer, "y", placed.offsetY, scene.placed ? motion.rail : null);
     scene.placed = true;
+    // Landscape logos after every artwork: the lowest priority in the same bounded queue.
+    logos.forEach(([parts, url]) => imageQueue.request(parts.logo, url));
+    placeGif();
 
     const { ring } = scene;
     if (ringCard && focusShown) {
@@ -1028,6 +1249,60 @@ export function createLightningHomeRenderer(
     }
   }
 
+  /** Watched title ids (homeModel onWatched): visible cards refill at the next update. */
+  function setWatched(ids) {
+    // The same set again (route return, refresh): visible cards keep their fill.
+    if (
+      ids &&
+      watchedIds &&
+      ids.size === watchedIds.size &&
+      [...ids].every((id) => watchedIds.has(id))
+    )
+      return;
+    watchedIds = ids;
+    watchedVersion += 1;
+  }
+
+  /**
+   * Folder focus GIF (decision 3): one DOM <img> over the focused folder card, since WebGL only
+   * decodes a GIF's first frame. Through the card queue as the DOM; "" clears it.
+   */
+  function setFocusGif(url = "") {
+    const rect = url && focusRect?.collection ? focusRect : null;
+    gif.url = rect ? url : "";
+    gif.id = rect?.id || "";
+    gif.key = "";
+    imageQueue.request(gifImage, gif.url, { priority: true });
+    placeGif();
+  }
+
+  /**
+   * Keeps the GIF on its card's final rectangle, hidden while the rails slide there; the focus
+   * leaving that card (or the sidebar, a hold menu) clears it.
+   */
+  function placeGif() {
+    if (gif.url && focusRect?.id !== gif.id) {
+      gif.url = "";
+      imageQueue.request(gifImage, "");
+    }
+    const rect = gif.url ? focusRect : null;
+    const key = rect ? `${rect.x},${rect.y},${rect.w},${rect.h}` : "";
+    if (key === gif.key) return;
+    gif.key = key;
+    clearTimeout(gif.timer);
+    gifImage.classList.remove("is-active");
+    if (!rect) return;
+    // The canvas is drawn at innerWidth / 1920 (deviceLogicalPixelRatio).
+    const ratio = (globalThis.innerWidth || APP_WIDTH) / APP_WIDTH;
+    Object.assign(gifImage.style, {
+      left: `${rect.x * ratio}px`,
+      top: `${rect.y * ratio}px`,
+      width: `${rect.w * ratio}px`,
+      height: `${rect.h * ratio}px`
+    });
+    gif.timer = setTimeout(() => gifImage.classList.add("is-active"), motion.rail?.duration || 0);
+  }
+
   function setProfile(profile) {
     const sidebar = container.querySelector(".home-sidebar");
     if (!sidebar) return;
@@ -1059,12 +1334,16 @@ export function createLightningHomeRenderer(
     engine: "webgl",
     setRows,
     update,
+    setWatched,
     setHero,
+    setFocusGif,
     setProfile,
     sidebarItems,
     focusedNode: () => sidebarFocused || (proxyFocused ? proxy : null),
     destroy() {
       closed = true;
+      clearTimeout(gif.timer);
+      imageQueue.request(gifImage, "");
       heroQueue.clear();
       if (scene) {
         views.forEach((view) => setRowSkeletons(scene, view, 0));

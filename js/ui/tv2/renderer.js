@@ -57,8 +57,8 @@ import { sizedImageUrl } from "./imagePipeline.js";
 //   setRows(rows), update(rows, focus, { sidebarIndex, hideFocus }), setHero(item, { loading, candidates }),
 //   setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
-//   stopHeroTrailer({ deferred }), setFocusGif(url), setSidebarPill(iconOnly) and suspend() (DOM only
-//   for now: Lightning has none of them and keeps the legacy sidebar).
+//   stopHeroTrailer({ deferred }), setFocusGif(url), setSidebarPill(iconOnly) and suspend()
+//   (Lightning has setWatched and setFocusGif, none of the others yet, and keeps the legacy sidebar).
 // This is the DOM one, the universal fallback and the only one drawing classic and grid (D9);
 // render/lightning/ draws the modern Home in WebGL.
 
