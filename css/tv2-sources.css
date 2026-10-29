@@ -1,0 +1,114 @@
+/* New TV Sources screen (beta): the current stream-route look (components-44/50/51, VIDAA
+   components-60-vidaa and perso-theme focus) with fixed bounds on every platform, so the list is
+   positioned from constants (js/ui/tv2/sources/sourcesModel.js) and never measured.
+   Height chain at 1080: content 40 + chips 58 + 14 + panel 928 (12 + list 904 + 12) + 40. */
+.stream-route-shell.tv2-sources .stream-route-content {
+  padding: 40px 48px;
+}
+
+.stream-route-shell.tv2-sources .stream-route-chip-wrap {
+  height: 58px;
+  margin-bottom: 14px;
+}
+
+.stream-route-shell.tv2-sources .stream-route-panel-shell {
+  flex: 0 0 928px;
+  height: 928px;
+  padding: 12px;
+}
+
+/* Inner height 888 = SOURCES_LIST_VIEWPORT: five 168 px rows and their 12 px gaps. */
+.stream-route-shell.tv2-sources .stream-route-list {
+  position: relative;
+  height: 904px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.tv2-sources-track {
+  position: relative;
+}
+
+.stream-route-shell.tv2-sources .tv2-sources-row,
+.tv2-sources-more {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 168px;
+  margin: 0;
+}
+
+.tv2-sources-row[hidden],
+.tv2-sources-more[hidden],
+.tv2-sources-track[hidden],
+.stream-route-shell.tv2-sources .stream-route-content[hidden] {
+  display: none;
+}
+
+/* Loading cards stay still on VIDAA, constrained or not: no shimmer loop while sources arrive. */
+html.vidaa-tv .tv2-sources .stream-route-skeleton-line {
+  animation: none;
+  opacity: 0.7;
+}
+
+.stream-route-shell.tv2-sources .tv2-sources-row .stream-route-card,
+.tv2-sources-more .stream-route-card {
+  height: 168px;
+  min-height: 168px;
+  padding: 20px 24px;
+  border-radius: 16px;
+  gap: 20px;
+  overflow: hidden;
+}
+
+/* Static focus: no scale, no blurred shadow (perso-theme VIDAA ring). */
+.stream-route-shell.tv2-sources .stream-route-card.focused {
+  transform: none;
+}
+
+.tv2-sources .stream-route-card-copy {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tv2-sources .stream-route-card-quality {
+  margin-top: 6px;
+}
+
+/* Decision 1: the source description keeps its first two lines, clamped to two lines. */
+.tv2-sources .tv2-sources-description {
+  white-space: pre-line;
+}
+
+/* Decision 1: badges stay on one line of fixed height (heading 33 + 6 + 30 + description 57 fits
+   the 128 px inside a card); the chips that do not fit are cut, never wrapped. */
+.tv2-sources .tv2-sources-badges {
+  flex-wrap: nowrap;
+  height: 30px;
+  margin: 6px 0 0;
+  overflow: hidden;
+}
+
+.tv2-sources .stream-route-stream-badge {
+  flex: 0 0 auto;
+}
+
+.tv2-sources .tv2-sources-badges[hidden],
+.tv2-sources .stream-route-stream-badge[hidden],
+.tv2-sources .stream-route-stream-badge img[hidden],
+.tv2-sources .stream-route-addon-badge img[hidden],
+.tv2-sources .stream-route-addon-badge span[hidden],
+.tv2-sources .stream-route-card-quality[hidden],
+.tv2-sources .tv2-sources-description[hidden],
+.tv2-sources .stream-route-card-side[hidden],
+.tv2-sources .stream-route-party-chip[hidden] {
+  display: none;
+}
+
+.tv2-sources .stream-route-addon-name {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

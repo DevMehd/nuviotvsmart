@@ -338,6 +338,7 @@ function harness({ stored = new Map(), observer = true } = {}) {
   assert.equal(env.version, "unknown");
   assert.equal(env.homeVariant, "off");
   assert.equal(env.homeEngine, "off");
+  assert.equal(env.sourcesVariant, "off");
   assert.equal(env.homeLayout, "modern");
   const h = harness();
   h.enable();

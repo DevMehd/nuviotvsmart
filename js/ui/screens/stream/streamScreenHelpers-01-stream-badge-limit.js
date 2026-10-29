@@ -261,6 +261,17 @@ export function streamMergeKey(item = {}) {
   ].join("::");
 }
 
+/** Row identity of each source: merge key plus its occurrence, so duplicates stay distinct. */
+export function streamRowKeys(streams = []) {
+  const occurrences = new Map();
+  return (streams || []).map((stream, index) => {
+    const baseKey = streamMergeKey(stream) || String(stream?.id || stream?.url || stream?.externalUrl || stream?.ytId || index);
+    const occurrence = Number(occurrences.get(baseKey) || 0);
+    occurrences.set(baseKey, occurrence + 1);
+    return `${baseKey}::${occurrence}`;
+  });
+}
+
 export function mergeStreamItem(previous = {}, next = {}) {
   const behaviorHints = {
     ...(previous.behaviorHints || {}),

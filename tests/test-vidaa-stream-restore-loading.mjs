@@ -8,7 +8,11 @@ globalThis.location = { search: "" };
 const { StreamScreen, Router, PlayerSettingsStore, StreamBadgeSettingsStore, streamRepository } =
   await import("../js/ui/screens/stream/streamScreen.js");
 const { resetAddonLogoCache } = await import("../js/core/media/addonLogoCache.js");
-let methods = StreamScreen;
+// --new-sources: the same cases against the new TV Sources screen (beta), which inherits this logic.
+const newSources = process.argv.includes("--new-sources");
+let methods = newSources
+  ? (await import("../js/ui/tv2/sources/newSourcesScreen.js")).NewSourcesScreen
+  : StreamScreen;
 if (process.argv.includes("--baseline")) {
   const fileUrl = new URL(
     "../js/ui/screens/stream/streamScreenMethods-03-mount.js",
@@ -25,7 +29,7 @@ if (process.argv.includes("--baseline")) {
   const baseline = await import(
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
-  methods = { ...StreamScreen, ...baseline.createStreamScreenMethods03() };
+  methods = { ...methods, ...baseline.createStreamScreenMethods03() };
 }
 const timers = new Map();
 let timerId = 0;

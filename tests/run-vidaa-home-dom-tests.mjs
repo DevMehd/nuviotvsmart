@@ -20,7 +20,10 @@ const defaultFixtures = [
   "test-vidaa-tracking-dom.html",
   "test-vidaa-trailer-dom.html",
   "test-vidaa-tv2-layouts.html",
-  "test-vidaa-raw-video-probe.html"
+  "test-vidaa-raw-video-probe.html",
+  "test-vidaa-tv2-sources.html",
+  "test-vidaa-tv2-sources-arrival.html",
+  "test-vidaa-tv2-sources-states.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(

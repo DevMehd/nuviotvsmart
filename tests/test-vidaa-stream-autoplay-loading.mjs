@@ -17,10 +17,25 @@ const {
   StreamScreen,
   Router,
   PlayerSettingsStore,
+  StreamPreferencesStore,
   streamRepository,
   watchProgressRepository,
   addonRepository
 } = await import("../js/ui/screens/stream/streamScreen.js");
+// --new-sources: the same cases against the new TV Sources screen (beta), which inherits this logic.
+const newSources = process.argv.includes("--new-sources");
+// Its DOM view needs a document: here the view paints the picker shell once and records nothing else.
+const Screen = newSources
+  ? {
+      ...(await import("../js/ui/tv2/sources/newSourcesScreen.js")).NewSourcesScreen,
+      createSourcesRenderer(container) {
+        container.innerHTML =
+          '<div class="stream-route-shell tv2-sources"><div class="stream-route-content"></div></div>';
+        const noop = () => {};
+        return { update: noop, updateChips: noop, setFocus: noop, setOverlay: noop, dispose: noop };
+      }
+    }
+  : StreamScreen;
 const timers = new Map();
 let timerId = 0;
 globalThis.setTimeout = (callback) => {
@@ -112,7 +127,7 @@ async function mount(
   document.getElementById = () => container;
   let manualRenders = 0;
   const ui = {
-    ...StreamScreen,
+    ...Screen,
     container,
     cancelAutoPlayCountdown() {},
     loadStreams() {},
@@ -123,7 +138,7 @@ async function mount(
       this.render();
     },
     render() {
-      StreamScreen.render.call(this);
+      Screen.render.call(this);
       if (!this.autoPlayUiActive) manualRenders++;
     }
   };
@@ -362,6 +377,32 @@ test("selector settings hydration paints loading before waiting for resume data"
   } finally {
     watchProgressRepository.getResumeByContentId = previousResume;
   }
+});
+
+test("a remembered Continue Watching source is resumed, but not on return from the player", async () => {
+  StreamPreferencesStore.set("film", "film", "b");
+  const resume = {
+    scope: { streamReuseLastLinkEnabled: true, streamReuseLastLinkCacheHours: 24 },
+    params: { continueWatchingBackHome: true, preferredStreamId: "b" }
+  };
+  const fresh = await mount("MANUAL", resume);
+  assert.equal(fresh.ui.autoResumeUiActive, true, "a fresh open looks for the source");
+  fresh.ui.streams = sources.slice();
+  fresh.ui.maybeAutoResumeStream();
+  await settle();
+  assert.equal(navigations.at(-1)?.params.preferredStreamId, "b");
+  fresh.ui.cleanup();
+  navigations.length = 0;
+  const back = await mount("MANUAL", {
+    ...resume,
+    navigation: { isBackNavigation: true, previousRoute: "player" }
+  });
+  assert.equal(back.ui.autoResumeUiActive, false);
+  complete(back.ui);
+  back.ui.maybeAutoResumeStream({ allLoaded: true });
+  await settle();
+  assert.equal(navigations.length, 0, "no playback loop on return");
+  assert.ok(back.paints.at(-1).includes("stream-route-content"), "the picker is shown");
 });
 
 test("Italian regex selection recognizes styled, fullwidth, flag and format-mark labels", () => {

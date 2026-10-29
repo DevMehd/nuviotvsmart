@@ -57,7 +57,7 @@ export function sizedImageUrl(url, width, sizes = TMDB_SIZES) {
 /**
  * At most `concurrency` images load at once; a node asking again replaces its pending request,
  * so a recycled card never shows an image it no longer represents. A failed image tries its
- * `fallbacks` in turn in the same slot. Requests load by `rank` (lower first; a `priority`
+ * `fallbacks` in turn in the same slot, then calls `onError`. Requests load by `rank` (lower first; a `priority`
  * request, the focused card, before all). Decoded pixels (natural size) stay under `budgetPx`
  * for off-screen images only: over it, an off-screen request evicts the off-screen images of a
  * worse rank or waits; an `onScreen` one (default, e.g. the WebGL renderer) evicts any off-screen
@@ -121,12 +121,12 @@ export function createImageQueue({
       loading.add(node);
       requested.set(node, entry.url);
       forget(node);
-      load(node, entry.url, entry.fallbacks);
+      load(node, entry.url, entry.fallbacks, entry.onError);
     }
   }
 
   // A failed image keeps its slot and tries the next fallback.
-  function load(node, url, fallbacks) {
+  function load(node, url, fallbacks, onError) {
     node.onload = () => {
       release(node);
       const pixels = (node.naturalWidth || 0) * (node.naturalHeight || 0);
@@ -137,15 +137,20 @@ export function createImageQueue({
       pump();
     };
     node.onerror = () => {
-      if (fallbacks.length) return load(node, fallbacks[0], fallbacks.slice(1));
+      if (fallbacks.length) return load(node, fallbacks[0], fallbacks.slice(1), onError);
       release(node);
+      onError?.();
       pump();
     };
     node.src = url;
   }
 
   return {
-    request(node, url, { fallbacks = [], priority = false, rank = 0, onScreen = true } = {}) {
+    request(
+      node,
+      url,
+      { fallbacks = [], priority = false, rank = 0, onScreen = true, onError = null } = {}
+    ) {
       if (!node) return;
       const order = priority ? -1 : rank;
       ranks.set(node, order);
@@ -164,7 +169,7 @@ export function createImageQueue({
       }
       pending.delete(node);
       if (node.getAttribute?.("src") && requested.get(node) === url) return;
-      pending.set(node, { url, fallbacks, rank: order, onScreen: onScreen || priority });
+      pending.set(node, { url, fallbacks, onError, rank: order, onScreen: onScreen || priority });
       if (!timer) pump();
     },
     clear() {

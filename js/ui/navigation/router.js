@@ -1,6 +1,8 @@
 import { HomeScreen } from "../screens/home/homeScreen.js";
 import { NewHomeScreen } from "../tv2/newHomeScreen.js";
 import { sessionNewHomeMode } from "../tv2/newHomeSetting.js";
+import { NewSourcesScreen } from "../tv2/sources/newSourcesScreen.js";
+import { sessionNewSourcesMode } from "../tv2/newSourcesSetting.js";
 import { PlayerScreen } from "../screens/player/playerScreen.js";
 import { AccountScreen } from "../screens/account/accountScreen.js";
 import { AuthQrSignInScreen } from "../screens/account/authQrSignInScreen.js";
@@ -152,6 +154,8 @@ function resolvePendingHistoryReturnParams(pending, state, stackEntry) {
   };
 }
 
+const streamSlots = { off: StreamScreen, on: NewSourcesScreen };
+
 Object.assign(Router, {
   current: null,
   currentParams: {},
@@ -194,7 +198,14 @@ Object.assign(Router, {
     plugin: PluginScreen,
     plugins: PluginsScreen,
     catalogOrder: CatalogOrderScreen,
-    stream: StreamScreen,
+    // "Nouvel écran Sources (bêta)", read once per run. The setter lets the VIDAA lazy
+    // build (lazyRouteScreen.js) put the loaded screen in the slot of the session mode.
+    get stream() {
+      return streamSlots[sessionNewSourcesMode()];
+    },
+    set stream(screen) {
+      streamSlots[sessionNewSourcesMode()] = screen;
+    },
     castDetail: CastDetailScreen,
     catalogSeeAll: CatalogSeeAllScreen,
     tmdbEntityBrowse: TmdbEntityBrowseScreen,

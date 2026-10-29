@@ -119,4 +119,20 @@ q6.request(hidden, "hidden.jpg", off(0));
 assert.equal(hidden.getAttribute("src"), undefined, "off-screen waits: on-screen images stay");
 assert.equal(seen[0].src, "seen0.jpg");
 
+// New Sources (T4): onError runs once, after the last fallback, and frees the slot.
+const q7 = createImageQueue({ concurrency: 1 });
+const badge = node();
+const nextNode = node();
+const failures = [];
+q7.request(badge, "proxy.webp", {
+  fallbacks: ["original.webp"],
+  onError: () => failures.push(badge.src)
+});
+q7.request(nextNode, "next.webp");
+badge.onerror();
+assert.deepEqual(failures, [], "the fallback is tried before onError");
+badge.onerror();
+assert.deepEqual(failures, ["original.webp"], "onError after the last fallback");
+assert.equal(nextNode.src, "next.webp", "a failed image frees its slot");
+
 console.log("PASS: VIDAA new Home image queue never leaks loading slots and keeps its Mpx budget.");
