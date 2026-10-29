@@ -186,10 +186,34 @@ test("a redirecting stream link is followed once for the audio header read", asy
 test("a redirect refused by the subtitle discovery still gets the audio names", async () => {
   const h = redirectingTransport(createMkvAudioFixture());
   const p = createVidaaEmbeddedTextProvider(h);
-  const tracks = await p.getTracks(`${url}.mkv`);
+  // The startup bootstrap awaits this call: the fallback header read must not hold it.
+  assert.deepEqual(await p.getTracks(`${url}.mkv`), []);
   assert.equal(p.diagnostics().errorCode, "TRANSPORT_UNAVAILABLE");
-  assert.deepEqual(summary(tracks), withOrder(expected));
   assert.equal(h.urls[0].redirect, "error", "the subtitle reader keeps refusing redirects");
+  const tracks = await p.getTracks(`${url}.mkv`);
+  assert.deepEqual(summary(tracks), withOrder(expected));
+  p.dispose();
+});
+
+test("the redirect fallback read never delays the startup bootstrap", async () => {
+  const h = redirectingTransport(createMkvAudioFixture());
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const fetchImpl = async (target, options) => {
+    if (options.redirect === "follow") await gate;
+    return h.fetchImpl(target, options);
+  };
+  const p = createVidaaEmbeddedTextProvider({ ...h, fetchImpl });
+  const first = await Promise.race([
+    p.getTracks(`${url}.mkv`),
+    new Promise((resolve) => setTimeout(() => resolve("held"), 50))
+  ]);
+  assert.deepEqual(first, []);
+  assert.equal(p.diagnostics().audio.result, "pending");
+  release();
+  assert.deepEqual(summary(await p.getTracks(`${url}.mkv`)), withOrder(expected));
   p.dispose();
 });
 

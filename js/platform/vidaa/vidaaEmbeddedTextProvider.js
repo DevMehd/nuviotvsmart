@@ -1065,19 +1065,21 @@ export function createVidaaEmbeddedTextProvider({
     }
     // Audio-only requests, and a discovery that found another container (MP4) or refused a
     // redirect. Other transport failures are not retried here: the same request would fail.
+    const redirectFallback =
+      !audioOnly && s.errorCode === "TRANSPORT_UNAVAILABLE" && !hasCustomHeaders(s);
     if (
       s === current &&
-      (audioOnly ||
-        !s.errorCode ||
-        s.errorCode === "INVALID_MATROSKA" ||
-        (s.errorCode === "TRANSPORT_UNAVAILABLE" && !hasCustomHeaders(s))) &&
+      (audioOnly || !s.errorCode || s.errorCode === "INVALID_MATROSKA" || redirectFallback) &&
       !Array.isArray(s.audioTracks) &&
       !(s.audioRetryAt > now())
     ) {
       s.audioPending ||= readAudioTracks(s).finally(() => {
         s.audioPending = null;
       });
-      await s.audioPending;
+      // The startup bootstrap awaits this call, which used to fail at once on a redirect: the
+      // fallback read runs in the background and its names come with the next track poll.
+      if (redirectFallback && !s.audioFallbackStarted) s.audioFallbackStarted = true;
+      else await s.audioPending;
     }
     if (audioOnly || s !== current || !s.metadata) return audio();
     const textTracks = s.metadata.tracks.map((track, ordinal) => ({
