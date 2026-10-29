@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <title>VIDAA new player P1 (real Chrome media pipeline)</title>
+  <link rel="stylesheet" href="../css/tv2-player.css" />
+  <style>
+    #player { position: fixed; inset: 0; display: none; background: #000; }
+    #videoPlayer { position: absolute; inset: 0; width: 100%; height: 100%; }
+  </style>
+  <body>
+    <div id="app">
+      <div id="player" class="screen">
+        <video id="videoPlayer" autoplay playsinline webkit-playsinline preload="auto"></video>
+      </div>
+    </div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot P, P1: the new player screen and its core on a local 5 s VP9/Opus WebM, with
+      // faults served by tests/run-vidaa-home-dom-tests.mjs (403, silent server, cut).
+      // Desktop Chrome checks behavior and order only; no TV timing is measured here.
+      import { Router } from "../js/ui/navigation/routerState.js";
+      import { NewPlayerScreen } from "../js/ui/tv2/player/newPlayerScreen.js";
+      import { createVideoSession } from "../js/ui/tv2/player/videoSession.js";
+
+      const result = document.getElementById("result");
+      const video = document.getElementById("videoPlayer");
+      const container = document.getElementById("player");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (predicate, ms, label) => {
+        const until = performance.now() + ms;
+        while (!predicate()) {
+          if (performance.now() > until) throw Error(`timeout: ${label}`);
+          await sleep(25);
+        }
+      };
+      const media = (name) => new URL(`/__player2/${name}`, location.href).href;
+      const webm = new URL("fixtures/player2/probe-5s.webm", location.href).href;
+      const notes = [];
+      try {
+        const pops = [];
+        Router.current = "player";
+        Router.popToExistingRoute = (route, params) => (pops.push([route, params]), true);
+        Router.navigate = async () => {};
+        const params = {
+          itemId: "tt0000001",
+          itemType: "movie",
+          playerTitle: "Fixture",
+          streamUrl: webm,
+          preferredStreamId: "local",
+          streamCandidates: [{ id: "local", url: webm, title: "Local WebM" }],
+          returnToStreamOnBack: true,
+          streamRouteParams: { itemId: "tt0000001", itemType: "movie" }
+        };
+
+        // 1. Local file: loading screen, then the first image hides it; autoplay handled.
+        await NewPlayerScreen.mount(params);
+        const root = container.querySelector(".p2-root");
+        assert(root && container.style.display === "block", "mounted");
+        assert(!video.hasAttribute("autoplay"), "autoplay removed while mounted");
+        assert(!root.querySelector(".p2-loading").hidden, "loading screen first");
+        await waitFor(() => NewPlayerScreen.session?.firstFrame, 5000, "first image");
+        const firstFrameMs = NewPlayerScreen.session.firstFrameMs;
+        assert(root.querySelector(".p2-loading").hidden, "loading screen hidden at the first image");
+        assert(root.querySelector(".p2-error").hidden, "no error");
+        assert(!video.querySelector("source"), "no <source> child");
+        assert(NewPlayerScreen.tickTimer === null, "no UI timer while playing");
+        notes.push(`1re image ${firstFrameMs} ms${NewPlayerScreen.session.mutedFallback ? " (muet)" : ""}`);
+
+        // 2. Cleanup frees the decoder synchronously and restores the shell.
+        NewPlayerScreen.cleanup();
+        // Synchronously NO_SOURCE (EMPTY once the selection algorithm settles): never LOADING/IDLE.
+        assert(!video.getAttribute("src") && [0, 3].includes(video.networkState), `decoder freed (src=${video.getAttribute("src")}, ns=${video.networkState})`);
+        assert(video.hasAttribute("autoplay"), "autoplay restored");
+        assert(!container.querySelector(".p2-root") && container.style.display === "none", "DOM removed");
+
+        // 3. A 403 link: explicit error in under 2 s with the status, three buttons, Sources first.
+        const t403 = performance.now();
+        await NewPlayerScreen.mount({ ...params, streamUrl: media("status/403"), streamCandidates: [], preferredStreamId: "" });
+        await waitFor(() => NewPlayerScreen.isErrorVisible(), 2000, "403 error");
+        const elapsed403 = Math.round(performance.now() - t403);
+        const errorNode = container.querySelector(".p2-error");
+        assert(!errorNode.hidden, "error shown");
+        assert(/HTTP 403/.test(errorNode.textContent), errorNode.textContent);
+        assert(!/127\.0\.0\.1|__player2|https?:/.test(errorNode.textContent), "no link in the message");
+        const buttons = [...errorNode.querySelectorAll("[data-p2-action]")].map((b) => b.dataset.p2Action);
+        assert(buttons.join() === "sources,retry,back", buttons.join());
+        assert(errorNode.querySelector(".focused")?.dataset.p2Action === "sources", "Sources focused");
+        NewPlayerScreen.onKeyDown({ keyCode: 39, preventDefault() {} });
+        assert(errorNode.querySelector(".focused")?.dataset.p2Action === "retry", "Right moves to Retry");
+        // Retry keeps the same link: the error comes back, never another source.
+        NewPlayerScreen.onKeyDown({ keyCode: 13, preventDefault() {} });
+        await waitFor(() => !NewPlayerScreen.isErrorVisible(), 1000, "retry clears");
+        await waitFor(() => NewPlayerScreen.isErrorVisible(), 2000, "403 again");
+        assert(NewPlayerScreen.session.url === media("status/403"), "same link after Retry");
+        // Back on the error: returns to the existing Sources entry; a doubled Back is "history".
+        assert(NewPlayerScreen.consumeBackRequest() === "history", "Back returns");
+        assert(NewPlayerScreen.consumeBackRequest() === "history", "doubled Back");
+        assert(pops.length === 1 && pops[0][0] === "stream", JSON.stringify(pops.map((p) => p[0])));
+        NewPlayerScreen.cleanup();
+        notes.push(`403 en ${elapsed403} ms`);
+
+        // 4. Silent server: no error before N s, an error after (N = 1.5 s here, 25 s on the TV).
+        const session = createVideoSession(video, { stallMs: 1500, capMs: 60000 });
+        session.attach(media("silent"));
+        await sleep(1000);
+        assert(session.state === "loading" && !session.error, `no early error (${session.state})`);
+        await waitFor(() => session.state === "error", 3000, "stall error");
+        assert(session.error.kind === "stalled", session.error.kind);
+
+        // 5. Cut after 40 kB on the first request: playback continues on the same link.
+        session.attach(media("cut/40000?k=one"));
+        await waitFor(() => session.firstFrame && video.currentTime > 1, 8000, "playback after a cut");
+        assert(session.url === media("cut/40000?k=one"), "same link");
+        assert(session.attaches <= 3, `attaches ${session.attaches}`);
+        notes.push(`coupure : ${session.attaches - 2} reprise(s)`);
+
+        // 6. Ten successive attaches reach an image each, without an error.
+        for (let i = 0; i < 10; i += 1) {
+          session.attach(webm);
+          await waitFor(() => session.firstFrame, 4000, `attach ${i + 1}`);
+          assert(!session.error, `error on attach ${i + 1}`);
+        }
+        session.destroy();
+        assert(!video.getAttribute("src"), "released at the end");
+
+        result.dataset.status = "passed";
+        result.textContent = `PASS: new player P1 (${notes.join(", ")}; desktop, not a TV measure)`;
+      } catch (error) {
+        result.dataset.status = "failed";
+        result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;
+      }
+    </script>
+  </body>
+</html>

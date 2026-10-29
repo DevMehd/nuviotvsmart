@@ -1,4 +1,5 @@
 import { sessionNewHomeMode, homeEngine, homeEngineFallback } from "../../ui/tv2/newHomeSetting.js";
+import { sessionNewPlayerMode } from "../../ui/tv2/newPlayerSetting.js";
 import { VidaaFrameDiagnostics } from "./vidaaFrameDiagnostics.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
 
@@ -90,8 +91,8 @@ const ROUTES = new Set([
 const safeRoute = (value) => (ROUTES.has(value) ? value : "other");
 const finite = (value) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-// P0 has only the existing player; lot P P1 replaces this with the session mode of its setting.
-const PLAYER_VARIANT = "old";
+// Player of this app run ("Nouveau lecteur", lot P): "new" or "old".
+const playerVariant = () => (sessionNewPlayerMode() === "on" ? "new" : "old");
 const STARTUP_RING = 10;
 const STARTUP_OUTCOMES = ["pending", "playing", "error", "abandoned", "timeout"];
 const STARTUP_EVENTS = [
@@ -231,7 +232,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     homeEngine: homeEngine(),
     homeEngineFallback: homeEngineFallback(),
     homeLayout: ["modern", "classic", "grid"].includes(layout) ? layout : null,
-    playerVariant: PLAYER_VARIANT,
+    playerVariant: playerVariant(),
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
     screen: [finite(root.screen?.width), finite(root.screen?.height)],
     pixelRatio: finite(root.devicePixelRatio),
@@ -613,7 +614,7 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
   function startStartup() {
     finishStartup("abandoned");
     startup = {
-      entry: pushStartup({ variant: PLAYER_VARIANT, outcome: "pending" }),
+      entry: pushStartup({ variant: playerVariant(), outcome: "pending" }),
       t0: now(),
       src: "",
       base: null

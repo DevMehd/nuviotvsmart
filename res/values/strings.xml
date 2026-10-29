@@ -3353,4 +3353,12 @@
     <string name="layout_new_home_off">Off</string>
     <string name="layout_new_home_dom">On, DOM</string>
     <string name="layout_new_home_webgl">On, WebGL (prototype)</string>
+    <string name="playback_new_player">New player</string>
+    <string name="playback_new_player_sub">Reliable startup, no automatic source change; applies at next launch</string>
+    <string name="player2_opening">Opening… %1$d s</string>
+    <string name="player2_error_decode">This format is not played by the TV decoder.</string>
+    <string name="player2_error_network">The connection to the source was lost.</string>
+    <string name="player2_error_stalled">The source stopped sending data.</string>
+    <string name="player2_error_timeout">The video did not start in time.</string>
+    <string name="player2_error_unreadable">Source unreadable or expired.</string>
 </resources>

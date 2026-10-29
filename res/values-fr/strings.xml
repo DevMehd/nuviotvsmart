@@ -2862,4 +2862,12 @@
     <string name="layout_new_home_off">Désactivé</string>
     <string name="layout_new_home_dom">Activé, DOM</string>
     <string name="layout_new_home_webgl">Activé, WebGL (prototype)</string>
+    <string name="playback_new_player">Nouveau lecteur</string>
+    <string name="playback_new_player_sub">Démarrage plus fiable, sans changement de source automatique ; effet au prochain démarrage</string>
+    <string name="player2_opening">Ouverture… %1$d s</string>
+    <string name="player2_error_decode">Ce format n’est pas lu par le décodeur de la TV.</string>
+    <string name="player2_error_network">La connexion à la source a été perdue.</string>
+    <string name="player2_error_stalled">La source n’envoie plus de données.</string>
+    <string name="player2_error_timeout">La vidéo n’a pas démarré à temps.</string>
+    <string name="player2_error_unreadable">Source illisible ou expirée.</string>
 </resources>

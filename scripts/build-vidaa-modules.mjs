@@ -17,6 +17,29 @@ export const VIDAA_TARGET = "chrome111";
 export const VIDAA_MODULE_DIR = "m";
 export const VIDAA_CORE_JS = "core-js.vidaa.js";
 
+// Lot P: the new player chunk (and the chunks it loads statically) must not pull the old
+// player screen (~800 KB): no playerScreenMethods-* and no playerScreenContext.
+export function assertNewPlayerChunk(outputs) {
+  const entry = Object.keys(outputs).find(
+    (key) => outputs[key].entryPoint === "js/ui/tv2/player/newPlayerScreen.js"
+  );
+  if (!entry) throw new Error("VIDAA modules: NewPlayerScreen chunk not found.");
+  const seen = new Set();
+  const visit = (key) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const leak = Object.keys(outputs[key].inputs || {}).find((input) =>
+      /playerScreen(?:Methods-|Context)/.test(input)
+    );
+    if (leak)
+      throw new Error(`VIDAA modules: NewPlayerScreen chunk pulls the old player (${leak}).`);
+    for (const dep of outputs[key].imports || [])
+      if (dep.kind === "import-statement" && outputs[dep.path]) visit(dep.path);
+  };
+  visit(entry);
+  return seen.size;
+}
+
 export async function buildVidaaModules(outDir) {
   const { version } = await readAppMetadata();
   const personalChangelog = await readPersonalChangelog(rootDir, version);
@@ -86,6 +109,7 @@ export const ${name} = lazyRouteScreen(() => import(${JSON.stringify(args.path)}
       if (dep.kind === "import-statement" && outputs[dep.path]) visit(dep.path);
   };
   visit(entryKey);
+  assertNewPlayerChunk(outputs);
   const sum = (keys) => [...keys].reduce((total, key) => total + outputs[key].bytes, 0);
   const jsKeys = Object.keys(outputs).filter((key) => key.endsWith(".js"));
 

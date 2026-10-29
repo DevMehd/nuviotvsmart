@@ -20,7 +20,8 @@ const defaultFixtures = [
   "test-vidaa-tracking-dom.html",
   "test-vidaa-trailer-dom.html",
   "test-vidaa-tv2-layouts.html",
-  "test-vidaa-raw-video-probe.html"
+  "test-vidaa-raw-video-probe.html",
+  "test-vidaa-player2.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(
@@ -222,8 +223,45 @@ function fixtureResult(result) {
   throw Error(`Fixture did not complete with PASS or FAIL: ${text}`);
 }
 
+// Lot P player fixtures: faults on the local test video only (status, silent server, a cut
+// after N bytes on the first request of a key), with Range answers like a debrid host.
+const player2Cuts = new Set();
+async function servePlayer2Fault(request, response, url) {
+  const [, kind, arg] = url.pathname.split("/").filter(Boolean);
+  if (kind === "status") {
+    response.writeHead(Number(arg) || 500, { "Content-Type": "text/html" }).end("<h1>denied</h1>");
+    return;
+  }
+  if (kind === "silent") return; // never answers; the fixture aborts by detaching the source
+  const body = await readFile(path.join(workspace, "tests/fixtures/player2/probe-5s.webm"));
+  const range = /bytes=(\d+)-(\d*)/.exec(request.headers.range || "");
+  const start = range ? Number(range[1]) : 0;
+  const end = range && range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+  const chunk = body.subarray(start, end + 1);
+  response.writeHead(range ? 206 : 200, {
+    "Content-Type": "video/webm",
+    "Accept-Ranges": "bytes",
+    "Content-Length": chunk.length,
+    "Cache-Control": "no-store",
+    ...(range ? { "Content-Range": `bytes ${start}-${end}/${body.length}` } : {})
+  });
+  const key = url.searchParams.get("k") || "";
+  if (kind === "cut" && !player2Cuts.has(key)) {
+    player2Cuts.add(key);
+    response.write(chunk.subarray(0, Number(arg) || 1024));
+    setTimeout(() => response.destroy(), 50);
+    return;
+  }
+  response.end(chunk);
+}
+
 const server = http.createServer(async (request, response) => {
   try {
+    const requestUrl = new URL(request.url, "http://127.0.0.1/");
+    if (requestUrl.pathname.startsWith("/__player2/")) {
+      await servePlayer2Fault(request, response, requestUrl);
+      return;
+    }
     const pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1/").pathname);
     const file = path.resolve(workspace, `.${pathname}`);
     if (!insideDirectory(workspace, file) || !mimeTypes[path.extname(file).toLowerCase()]) {

@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./settingsScreenContext.js";
+import { getNewPlayerMode, newPlayerAvailable } from "../../tv2/newPlayerSetting.js";
 
 export function renderPlaybackGeneralBody(model) {
   const {
@@ -68,6 +69,7 @@ export function renderPlaybackGeneralBody(model) {
               ),
               checked: Boolean(model.player.skipIntroEnabled)
             })}
+            ${newPlayerAvailable() ? this.renderToggleRow({ focusKey: "playback:newPlayer", title: t("playback_new_player", {}, "New player"), subtitle: t("playback_new_player_sub", {}, "Reliable startup, no automatic source change; applies at next launch"), checked: getNewPlayerMode() === "on" }) : ""}
             ${this.renderToggleRow({ focusKey: "playback:loadingOverlay", title: t("playback_loading_overlay"), subtitle: t("playback_loading_overlay_sub"), checked: model.player.loadingOverlayEnabled !== false })}
             ${this.renderToggleRow({ focusKey: "playback:loadingStatus", title: t("playback_show_loading_status", {}, "Detailed loading status"), subtitle: t("playback_show_loading_status_sub", {}, "Show detailed player loading progress"), checked: model.player.showPlayerLoadingStatus !== false })}
             ${this.renderToggleRow({ focusKey: "playback:pauseOverlay", title: t("playback_pause_overlay"), subtitle: t("playback_pause_overlay_sub"), checked: model.player.pauseOverlayEnabled !== false })}
