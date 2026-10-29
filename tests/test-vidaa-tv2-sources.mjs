@@ -597,6 +597,15 @@ const capturable = { contains: () => true, querySelector: () => null };
   // Without a change, the key keeps the exact row (same-id duplicates included).
   const same = restoreScreen(state, { params: unchanged, streams: lateFirst });
   assert.equal(same.calls.focus.at(-1).row, 9, "unchanged return: row by key");
+  const sameIdFirst = restoreScreen(state, {
+    params: unchanged,
+    streams: [{ ...early("dup"), id: "s8" }, ...state.streams]
+  });
+  assert.equal(
+    sameIdFirst.calls.focus.at(-1).row,
+    9,
+    "unchanged return: a same-id duplicate first does not steal the row"
+  );
   // A played source absent from the list or from the restored filter keeps the saved source.
   const absent = restoreScreen(state, {
     params: { ...returned, playedStreamId: "stream-0-https://synthetic" },
