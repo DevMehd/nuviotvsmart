@@ -15,7 +15,7 @@ export function createStreamScreenMethods01() {
     STREAM_VIRTUALIZATION_MIN_WINDOW,
     STREAM_VIRTUALIZATION_OVERSCAN_PX,
     STREAM_VIRTUALIZATION_THRESHOLD,
-    streamMergeKey
+    streamRowKeys
   } = internals;
 
   return {
@@ -91,13 +91,7 @@ export function createStreamScreenMethods01() {
       if (this.streamVirtualKeyCache?.streams === streams) {
         return this.streamVirtualKeyCache.keys;
       }
-      const occurrences = new Map();
-      const keys = (streams || []).map((stream, index) => {
-        const baseKey = streamMergeKey(stream) || String(stream?.id || stream?.url || stream?.externalUrl || stream?.ytId || index);
-        const occurrence = Number(occurrences.get(baseKey) || 0);
-        occurrences.set(baseKey, occurrence + 1);
-        return `${baseKey}::${occurrence}`;
-      });
+      const keys = streamRowKeys(streams);
       this.streamVirtualKeyCache = { streams, keys };
       return keys;
     },

@@ -2,7 +2,8 @@
 // Chrome with the VIDAA user agent and CPU throttling, three passes, medians.
 // Desktop Chrome under emulated slowdown: comparable between implementations,
 // never a TV measurement.
-//   node scripts/bench-vidaa-sources.mjs [--runs=3] [--cpu=20] [--json]
+//   node scripts/bench-vidaa-sources.mjs [--runs=3] [--cpu=20] [--variant=on] [--json]
+// --variant=on benches the new Sources screen (beta) instead of the current one.
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ const option = (name, fallback) =>
   Number(process.argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=")[1]) || fallback;
 const RUNS = option("runs", 3);
 const CPU = option("cpu", 20);
+const VARIANT = process.argv.includes("--variant=on") ? "on" : "off";
 const VIDAA_UA =
   "Mozilla/5.0 (Linux; VIDAA/9.0; Hisense 65U7Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36";
 // 1x1 PNG served for external badge images so runs never depend on the network.
@@ -208,7 +210,7 @@ try {
   const browser = await findBrowser();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   profileRoot = await mkdtemp(path.join(os.tmpdir(), "nuvio-sources-bench-"));
-  const url = `http://127.0.0.1:${server.address().port}/tests/test-vidaa-sources-bench.html`;
+  const url = `http://127.0.0.1:${server.address().port}/tests/test-vidaa-sources-bench.html?variant=${VARIANT}`;
   const passes = [];
   for (let run = 0; run < RUNS; run++) {
     passes.push(await runPass(browser, path.join(profileRoot, String(run)), url));
@@ -222,11 +224,18 @@ try {
         typeof value === "number" ? median(passes.map((pass) => pass.phases[name][key])) : value;
     }
   }
-  const report = { cpuThrottle: CPU, runs: RUNS, userAgent: VIDAA_UA, ...passes[0].info, phases };
+  const report = {
+    variant: VARIANT,
+    cpuThrottle: CPU,
+    runs: RUNS,
+    userAgent: VIDAA_UA,
+    ...passes[0].info,
+    phases
+  };
   if (process.argv.includes("--json")) console.log(JSON.stringify(report, null, 2));
   else {
     console.log(
-      `Sources bench (medians of ${RUNS}, CPU x${CPU}, ${report.streams} streams / ${report.addons} addons, ${report.badgeFilters} badge filters, ${report.externalRequests} external requests stubbed). Desktop Chrome, not a TV measure.`
+      `Sources bench, variant ${VARIANT} (medians of ${RUNS}, CPU x${CPU}, ${report.streams} streams / ${report.addons} addons, ${report.badgeFilters} badge filters, ${report.externalRequests} external requests stubbed). Desktop Chrome, not a TV measure.`
     );
     for (const [name, values] of Object.entries(phases)) {
       console.log(

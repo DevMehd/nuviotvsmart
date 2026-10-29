@@ -21,7 +21,11 @@
       try {
         const { StreamScreen, Router, streamRepository, StreamBadgeSettingsStore } =
           await import("/js/ui/screens/stream/streamScreen.js");
-        const route = StreamScreen;
+        // ?variant=on: the new Sources screen (beta), same data logic and phases.
+        const route =
+          new URLSearchParams(location.search).get("variant") === "on"
+            ? (await import("/js/ui/tv2/sources/newSourcesScreen.js")).NewSourcesScreen
+            : StreamScreen;
         Router.getCurrent = () => "stream";
         Router.navigate = () => {};
         Router.back = () => {};

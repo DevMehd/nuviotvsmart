@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv">
+  <meta charset="utf-8" />
+  <title>VIDAA new Sources screen (beta) pool</title>
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <body class="vidaa-tv">
+    <div id="app"><div id="stream" class="screen"></div></div>
+    <pre id="result" style="position: fixed; opacity: 0; z-index: -1">RUNNING</pre>
+    <script>
+      globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    </script>
+    <script type="module">
+      // Mounts the new Sources screen with the real CSS and 500 sources from 5 addons, then checks
+      // the recycled pool: no layout read or ResizeObserver while navigating, a constant number of
+      // row nodes, rows of the fixed pitch, a visible focused row, and the right source for OK and
+      // for a pointer click on a recycled row.
+      const result = document.getElementById("result");
+      try {
+        const { Router, streamRepository } = await import("/js/ui/screens/stream/streamScreen.js");
+        const { NewSourcesScreen } = await import("/js/ui/tv2/sources/newSourcesScreen.js");
+        const { SOURCES_ROW_HEIGHT, SOURCES_ROW_PITCH, SOURCES_LIST_VIEWPORT } =
+          await import("/js/ui/tv2/sources/sourcesModel.js");
+        const assert = (condition, message) => {
+          if (!condition) throw Error(message);
+        };
+        const navigations = [];
+        Router.getCurrent = () => "stream";
+        Router.navigate = (route, params) => navigations.push({ route, params });
+        Router.popToExistingRoute = () => false;
+        Router.back = () => {};
+        streamRepository.setLocalPluginSearchPaused = () => {};
+        const groups = Array.from({ length: 5 }, (_, a) => ({
+          addonName: `Addon ${a}`,
+          addonId: `fixture.addon.${a}`,
+          addonOrderIndex: a,
+          streams: Array.from({ length: 100 }, (_, i) => ({
+            name: `Addon ${a}\n${["2160p", "1080p", "720p"][i % 3]}`,
+            description: `Fixture.${a}.${i}.mkv\n💾 ${i + 1} GB\n🔊 FR\nextra line`,
+            url: `https://fixture.invalid/${a}/${i}.mkv`
+          }))
+        }));
+        streamRepository.getStreamsFromAllAddons = async (_type, _id, options = {}) => {
+          options.onChunk?.({ status: "success", data: groups });
+          return { status: "success", data: groups };
+        };
+
+        const route = NewSourcesScreen;
+        const counts = { reads: 0, observers: 0 };
+        const count = () => counts.reads++;
+        const rect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function () {
+          count();
+          return rect.call(this);
+        };
+        for (const [proto, names] of [
+          [HTMLElement.prototype, ["offsetHeight", "offsetTop", "offsetWidth", "offsetLeft"]],
+          [Element.prototype, ["clientHeight", "clientWidth", "scrollHeight", "scrollTop"]]
+        ]) {
+          for (const name of names) {
+            const { get, set } = Object.getOwnPropertyDescriptor(proto, name);
+            Object.defineProperty(proto, name, {
+              configurable: true,
+              get() {
+                count();
+                return get.call(this);
+              },
+              set
+            });
+          }
+        }
+        const NativeObserver = window.ResizeObserver;
+        window.ResizeObserver = class extends NativeObserver {
+          constructor(callback) {
+            counts.observers++;
+            super(callback);
+          }
+        };
+        const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const waitFor = async (test) => {
+          for (let i = 0; i < 600 && !test(); i++) await frame();
+          assert(test(), "Timed out waiting for the Sources screen");
+        };
+        const press = (key, keyCode, extra = {}) =>
+          route.onKeyDown({ key, code: key, keyCode, repeat: false, preventDefault() {}, stopPropagation() {}, ...extra });
+        const focused = () => route.container.querySelector(".focused");
+        const rows = () => route.container.querySelectorAll(".tv2-sources-row");
+        const svg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>');
+
+        await route.mount(
+          { itemId: "tt-fixture", itemType: "movie", itemTitle: "Fixture", backdrop: svg, startFromBeginning: true },
+          {}
+        );
+        await waitFor(() => route.streamSearchCompleted && focused()?.dataset.action === "playStream");
+        assert(route.container.querySelector(".stream-route-shell.tv2-sources"), "the new shell is mounted");
+        assert(route.sourcesView.items.length === 500, `500 sources, got ${route.sourcesView.items.length}`);
+        const poolSize = rows().length;
+        assert(poolSize > 0 && poolSize <= 9, `bounded pool, got ${poolSize} rows`);
+
+        // Navigation: 300 Down, 10 Up, filters both ways. Nothing measures the layout.
+        counts.reads = counts.observers = 0;
+        const nodesBefore = route.container.getElementsByTagName("*").length;
+        for (let i = 0; i < 300; i++) {
+          press("ArrowDown", 40);
+          if (i % 25 === 0) await frame();
+        }
+        for (let i = 0; i < 10; i++) press("ArrowUp", 38);
+        await frame();
+        assert(route.focusState.row === 290, `row 290 focused, got ${route.focusState.row}`);
+        assert(focused().dataset.streamRow === "290", "the focused node is row 290");
+        assert(
+          focused().dataset.streamId === route.sourcesView.items[290].id,
+          "the focused node shows the source of its row"
+        );
+        assert(counts.reads === 0 && counts.observers === 0, `no layout read while moving (${counts.reads}, ${counts.observers})`);
+        assert(rows().length === poolSize, "the row pool does not grow");
+        assert(route.container.getElementsByTagName("*").length === nodesBefore, "the DOM node count is constant");
+        const recycled = [...rows()].find((row) => !row.hidden && row.querySelector(".focusable") !== focused());
+
+        // Fixed geometry, checked here only: the row is the pitch minus the gap, the list shows
+        // the viewport, and the focused row is inside it.
+        const list = route.container.querySelector(".stream-route-list");
+        const card = focused().getBoundingClientRect();
+        const listBox = list.getBoundingClientRect();
+        assert(focused().closest(".tv2-sources-row").offsetHeight === SOURCES_ROW_HEIGHT, "row height");
+        assert(SOURCES_ROW_PITCH === SOURCES_ROW_HEIGHT + 12, "pitch");
+        assert(list.clientHeight - 16 === SOURCES_LIST_VIEWPORT, `list viewport ${list.clientHeight - 16}`);
+        assert(card.top >= listBox.top + 8 && card.bottom <= listBox.bottom - 8, "the focused row is visible");
+
+        // Filters: Right on a card, then back to All; still no measurement.
+        counts.reads = 0;
+        press("ArrowRight", 39);
+        assert(route.addonFilter === "Addon 0", `filter Addon 0, got ${route.addonFilter}`);
+        assert(route.focusState.row === 0 && focused().dataset.streamRow === "0", "a new filter starts at its top");
+        press("ArrowLeft", 37);
+        assert(route.addonFilter === "all", "back to All");
+        assert(counts.reads === 0, `no layout read on filters (${counts.reads})`);
+        for (let i = 0; i < 3; i++) press("ArrowDown", 40);
+
+        // OK plays the focused source; a held OK does not repeat it.
+        const expected = focused().dataset.streamId;
+        press("Enter", 13);
+        press("Enter", 13, { repeat: true });
+        await waitFor(() => navigations.length);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        assert(navigations.length === 1, `one playback, got ${navigations.length}`);
+        assert(navigations[0].route === "player" && navigations[0].params.preferredStreamId === expected, "OK plays the focused source");
+
+        // A pointer click on a recycled row plays that row's source.
+        const recycledCard = recycled.querySelector("[data-action='playStream']");
+        const recycledRow = Number(recycledCard.dataset.streamRow);
+        route.onPointerActivate(recycledCard);
+        await waitFor(() => navigations.length === 2);
+        assert(
+          navigations[1].params.preferredStreamId === route.sourcesView.items[recycledRow].id,
+          "a recycled row plays the source it shows"
+        );
+        assert(route.focusState.row === recycledRow, "the pointer focuses that row");
+
+        // Back keeps the StreamScreen navigation; cleanup releases the pool.
+        press("Escape", 27);
+        assert(navigations.at(-1).route === "detail", `Back opens the detail, got ${navigations.at(-1).route}`);
+        route.cleanup();
+        assert(!route.container.querySelector(".tv2-sources-row") && !route.sourcesRenderer, "cleanup releases the pool");
+        result.textContent = `PASS: 500 sources in a pool of ${poolSize} rows, no layout read while navigating, OK/pointer/Back on the right source.`;
+      } catch (error) {
+        result.textContent = `FAIL: ${error?.stack || error}`;
+      }
+    </script>
+  </body>
+</html>
