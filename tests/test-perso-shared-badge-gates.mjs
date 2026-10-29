@@ -1,5 +1,5 @@
 // De-gated stream presentation features on a non-VIDAA TV (webOS): the
-// technical text chips fallback and the per-profile Xperience badge pack.
+// technical text chips fallback. The Xperience badge pack stays VIDAA-only.
 import assert from "node:assert/strict";
 
 const storage = new Map();
@@ -16,15 +16,12 @@ globalThis.fetch = async () => {
 
 const { Platform } = await import("../js/platform/index.js");
 const { StreamBadgeSettingsStore } = await import("../js/data/local/streamBadgeSettingsStore.js");
-const { resolveStreamBadgePresetRules } = await import("../js/core/streams/streamBadgePresets.js");
 const { renderStreamBadges, hasStreamBadges } =
   await import("../js/ui/screens/stream/streamScreenHelpers-03-render-image-badge-chip.js");
 const { renderPlayerSourceBadges } =
   await import("../js/ui/screens/player/playerScreenHelpers-09-format-bytes.js");
 const { getVisibleSections } =
   await import("../js/ui/screens/settings/settingsScreenHelpers-08-update-settings-scroll-indicators.js");
-const { createSettingsScreenMethods09 } =
-  await import("../js/ui/screens/settings/settingsScreenMethods-09-render-integration-section.js");
 
 assert.equal(Platform.isVidaa(), false);
 
@@ -39,36 +36,12 @@ assert.ok(renderStreamBadges(source, true, noRules).includes("stream-route-strea
 assert.ok(renderPlayerSourceBadges(source, noRules).includes("stream-route-stream-badge technical"));
 assert.equal(hasStreamBadges(source, true, noRules), true);
 
-// Badge pack: AUTO keeps the imported rules off VIDAA (no pack imposed);
-// an explicit NARD/ELITE choice applies the pack on webOS as on VIDAA.
-assert.deepEqual(StreamBadgeSettingsStore.snapshot().rules.imports, []);
-assert.deepEqual(resolveStreamBadgePresetRules({ personalBadgePreset: "AUTO", rules: { imports: [] } }, false), {
-  imports: []
-});
+// The Xperience pack stays VIDAA-only (audit final verdict keep-platform):
+// on webOS an explicit pack keeps the imported rules, and Essential mode
+// still hides the Streams section as upstream does.
 StreamBadgeSettingsStore.setPersonalBadgePreset("ELITE");
-const elite = StreamBadgeSettingsStore.snapshot();
-assert.equal(elite.rules.imports[0].filters.length, 31);
-assert.ok(renderStreamBadges(source, true, elite).includes("cdn.xperience-app.com"));
-StreamBadgeSettingsStore.setPersonalBadgePreset("AUTO");
 assert.deepEqual(StreamBadgeSettingsStore.snapshot().rules.imports, []);
+StreamBadgeSettingsStore.setPersonalBadgePreset("AUTO");
+assert.ok(!getVisibleSections({ experience: { mode: "ESSENTIAL" } }).some((section) => section.id === "streams"));
 
-// Settings: the Streams section and its pack row exist on webOS; Essential
-// mode keeps only the pack row, Advanced mode keeps the full section.
-assert.ok(getVisibleSections({ experience: { mode: "ESSENTIAL" } }).some((section) => section.id === "streams"));
-const screen = {
-  actionMap: new Map(),
-  renderSectionHeader: () => "<header></header>",
-  renderActionRow: ({ focusKey }) => `<row data-key="${focusKey}"></row>`,
-  renderToggleRow: ({ focusKey }) => `<row data-key="${focusKey}"></row>`,
-  ...createSettingsScreenMethods09()
-};
-const streamBadgeSettings = { rules: { imports: [] } };
-const essential = screen.renderStreamsSection({ streamBadgeSettings, experience: { mode: "ESSENTIAL" } });
-assert.ok(essential.includes('data-key="streams:personalPreset"'));
-assert.ok(!essential.includes('data-key="streams:add"'));
-assert.equal(typeof screen.actionMap.get("streams:personalPreset"), "function");
-const advanced = screen.renderStreamsSection({ streamBadgeSettings, experience: { mode: "ADVANCED" } });
-assert.ok(advanced.includes('data-key="streams:personalPreset"'));
-assert.ok(advanced.includes('data-key="streams:add"'));
-
-console.log("PASS: shared badge gates (technical chips, per-profile pack, Streams settings) on webOS.");
+console.log("PASS: shared technical chips on webOS; Xperience pack still VIDAA-only.");

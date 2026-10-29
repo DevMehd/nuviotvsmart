@@ -34,12 +34,9 @@ export function getSelectedStreamBadgePreset(settings = {}) {
   return id === "AUTO" ? (settings.rules?.imports?.length ? "IMPORTED" : "NARD") : id;
 }
 
-// An explicit NARD/ELITE choice applies on every platform; only autoUsesPack
-// (VIDAA) lets the AUTO default fall back to the Nard pack, so other TVs keep
-// their imported rules until the profile picks a pack.
-export function resolveStreamBadgePresetRules(settings = {}, autoUsesPack = false) {
+export function resolveStreamBadgePresetRules(settings = {}, isVidaa = false) {
   const preset =
-    (autoUsesPack || normalizeStreamBadgePreset(settings.personalBadgePreset) !== "AUTO") &&
+    isVidaa &&
     STREAM_BADGE_PRESETS.find((entry) => entry.id === getSelectedStreamBadgePreset(settings));
   if (!preset) return settings.rules || { imports: [] };
   if (!preparedPresets.has(preset.id)) {

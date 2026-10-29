@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./settingsScreenContext.js";
+import { Platform } from "../../../platform/index.js";
 import { STREAM_BADGE_PRESETS, getSelectedStreamBadgePreset } from "../../../core/streams/streamBadgePresets.js";
 
 export function createSettingsScreenMethods09() {
@@ -27,31 +28,17 @@ export function createSettingsScreenMethods09() {
       const personalPreset = getSelectedStreamBadgePreset(badgeSettings);
       const presetOptions = STREAM_BADGE_PRESETS.map((preset) => ({ id: preset.id, label: `${preset.label} · ${preset.count} badges` }));
       if (imports.length || personalPreset === "IMPORTED") presetOptions.push({ id: "IMPORTED", label: "Mes badges importés" });
-      this.actionMap.set("streams:personalPreset", () => {
-        this.openOptionDialog({
-          title: "Pack de badges",
-          subtitle: "Choix enregistré pour ce profil sur cette télé.",
-          options: presetOptions,
-          selectedId: personalPreset,
-          returnFocusKey: "streams:personalPreset",
-          onSelect: (option) => StreamBadgeSettingsStore.setPersonalBadgePreset(option.id)
+      if (Platform.isVidaa()) {
+        this.actionMap.set("streams:personalPreset", () => {
+          this.openOptionDialog({
+            title: "Pack de badges",
+            subtitle: "Choix enregistré pour ce profil sur cette télé.",
+            options: presetOptions,
+            selectedId: personalPreset,
+            returnFocusKey: "streams:personalPreset",
+            onSelect: (option) => StreamBadgeSettingsStore.setPersonalBadgePreset(option.id)
+          });
         });
-      });
-      const presetRow = this.renderActionRow({
-        focusKey: "streams:personalPreset",
-        title: "Pack de badges",
-        subtitle: "Badges graphiques des liens vidéo, au choix pour chaque profil.",
-        value: presetOptions.find((option) => option.id === personalPreset)?.label || presetOptions[0].label
-      });
-      const sectionHeader = this.renderSectionHeader(SECTION_META.find((item) => item.id === "streams"));
-      // Essential mode follows Android (no advanced Fusion controls) but keeps the per-profile pack choice.
-      if (model.experience?.mode === "ESSENTIAL") {
-        return `
-          ${sectionHeader}
-          <div class="settings-group-card settings-group-card-fill">
-            <div class="settings-stack">${presetRow}</div>
-          </div>
-        `;
       }
       const previewSourceUrl = String(this.streamBadgePreviewSourceUrl || "").trim();
       const previewImport = previewSourceUrl
@@ -197,10 +184,19 @@ export function createSettingsScreenMethods09() {
         : `<p class="settings-row-subtitle">${escapeHtml(t("settings_fusion_badges_empty", {}, "No Fusion badge URLs imported."))}</p>`;
 
       return `
-          ${sectionHeader}
+          ${this.renderSectionHeader(SECTION_META.find((item) => item.id === "streams"))}
           <div class="settings-group-card settings-group-card-fill">
             <div class="settings-stack">
-              ${presetRow}
+              ${
+                Platform.isVidaa()
+                  ? this.renderActionRow({
+                      focusKey: "streams:personalPreset",
+                      title: "Pack de badges",
+                      subtitle: "Badges graphiques des liens vidéo, au choix pour chaque profil.",
+                      value: presetOptions.find((option) => option.id === personalPreset)?.label || presetOptions[0].label
+                    })
+                  : ""
+              }
               ${this.renderToggleRow({
                 focusKey: "streams:toggle:sizeBadges",
                 title: t("settings_stream_size_badges_title", {}, "Size badges"),
