@@ -61,10 +61,14 @@ export function createVideoSession(
   let base = null;
   let seekTarget = 0;
   let seeksLeft = 0;
+  // Percent resume (no position saved): resolved once the real duration is known.
+  let startPercent = 0;
   const s = {
     state: "idle",
     error: null,
     firstFrame: false,
+    // An image was shown for this source (kept across a same-link reload; reset by attach).
+    played: false,
     mutedFallback: false,
     startedAt: 0,
     firstFrameMs: null,
@@ -122,6 +126,7 @@ export function createVideoSession(
   function reached() {
     if (s.firstFrame) return;
     s.firstFrame = true;
+    s.played = true;
     s.firstFrameMs = Math.round(now() - s.startedAt);
     stopGuard();
     s.error = null;
@@ -154,6 +159,15 @@ export function createVideoSession(
       return;
     }
     if (type === "loadedmetadata") {
+      const duration = Number(video.duration);
+      const known = Number.isFinite(duration) && duration > 0;
+      if (startPercent > 0 && known) {
+        seekTarget = (duration * Math.min(100, startPercent)) / 100;
+        seeksLeft = 1;
+        startPercent = 0;
+      }
+      // Same bound as the old player: never resume in the last 3 s.
+      if (seekTarget > 0 && known) seekTarget = Math.min(seekTarget, Math.max(0, duration - 3));
       if (seekTarget > 0) {
         try {
           video.currentTime = seekTarget;
@@ -179,7 +193,7 @@ export function createVideoSession(
       // The resume seek is checked once; a short landing gets a single second try.
       if (seekTarget > 0 && seeksLeft > 0) {
         seeksLeft -= 1;
-        const tolerance = Math.max(1.5, seekTarget * 0.03);
+        const tolerance = Math.max(1.5, Math.min(8, seekTarget * 0.03));
         if (base < seekTarget - tolerance) {
           try {
             video.currentTime = seekTarget;
@@ -347,8 +361,14 @@ export function createVideoSession(
     get url() {
       return url;
     },
-    attach(nextUrl, { startAt = 0 } = {}) {
+    get played() {
+      return s.played;
+    },
+    /** startPercent applies when no position is known (resumeProgressPercent). */
+    attach(nextUrl, { startAt = 0, startPercent: percent = 0 } = {}) {
       s.networkRetries = 0;
+      s.played = false;
+      startPercent = Math.max(0, Number(percent) || 0);
       load(String(nextUrl || ""), startAt);
     },
     /** Same link, same position (Retry button). */

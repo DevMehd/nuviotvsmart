@@ -15,7 +15,7 @@
     </div>
     <pre id="result">RUNNING</pre>
     <script type="module">
-      // Lot P, P1: the new player screen and its core on a local 5 s VP9/Opus WebM, with
+      // Lot P, P1-P2: the new player screen and its core on a local 5 s VP9/Opus WebM, with
       // faults served by tests/run-vidaa-home-dom-tests.mjs (403, silent server, cut).
       // Desktop Chrome checks behavior and order only; no TV timing is measured here.
       import { Router } from "../js/ui/navigation/routerState.js";
@@ -76,6 +76,19 @@
         assert(video.hasAttribute("autoplay"), "autoplay restored");
         assert(!container.querySelector(".p2-root") && container.style.display === "none", "DOM removed");
 
+        // 2b. Resume (P2) at 2 s, on the Range-capable route (the static server cannot seek).
+        const seekable = media("range");
+        await NewPlayerScreen.mount({
+          ...params,
+          streamUrl: seekable,
+          streamCandidates: [{ id: "local", url: seekable, title: "Local WebM" }],
+          resumePositionMs: 2000
+        });
+        await waitFor(() => NewPlayerScreen.session?.firstFrame, 5000, "first image after resume");
+        assert(video.currentTime >= 1.9, `resumed at ${video.currentTime.toFixed(2)} s`);
+        notes.push(`reprise à ${video.currentTime.toFixed(1)} s`);
+        NewPlayerScreen.cleanup();
+
         // 3. A 403 link: explicit error in under 2 s with the status, three buttons, Sources first.
         const t403 = performance.now();
         await NewPlayerScreen.mount({ ...params, streamUrl: media("status/403"), streamCandidates: [], preferredStreamId: "" });
@@ -127,7 +140,7 @@
         assert(!video.getAttribute("src"), "released at the end");
 
         result.dataset.status = "passed";
-        result.textContent = `PASS: new player P1 (${notes.join(", ")}; desktop, not a TV measure)`;
+        result.textContent = `PASS: new player P1-P2 (${notes.join(", ")}; desktop, not a TV measure)`;
       } catch (error) {
         result.dataset.status = "failed";
         result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;

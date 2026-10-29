@@ -4,12 +4,25 @@ import { I18n } from "../../../i18n/index.js";
 import { sizedImageUrl } from "../imagePipeline.js";
 import { createVideoSession } from "./videoSession.js";
 import { pickInitialCandidate, resolvePlayableCandidate } from "./resolvePlayableCandidate.js";
+import {
+  buildPendingPlaybackRestore,
+  buildProgressContext,
+  buildScrobbleContext,
+  createPlaybackProgress,
+  rememberSelectedStreamPreference,
+  restoreStartOptions
+} from "./playerProgress.js";
+import { saveReusableStreamLink } from "../../../core/streams/streamLinkReuse.js";
+import { activeStreamLinkProfile } from "../../../data/local/streamLinkCacheStore.js";
+import { WatchJournal } from "../../../core/perso/watchJournal.js";
+import { maybeOfferRatingAfterPlayback } from "../../screens/player/persoRatingOffer.js";
 
-// New VIDAA player (lot P, P1): start, stop and teardown, explicit errors, no automatic source
-// switch. Same route "player", params and screen contract as the old player (router facade).
-// Never imports playerScreenMethods-* or playerScreenContext (asserted by the VIDAA build).
-// Deferred to later slices: progress/resume/Trakt (P2), OSD/seek/media keys (P3), tracks (P4),
-// in-player Sources (P5), next episode (P6), Watch Party (P7).
+// New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
+// switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js). Same route "player",
+// params and screen contract as the old player (router facade). Never imports
+// playerScreenMethods-* or playerScreenContext (asserted by the VIDAA build).
+// Deferred to later slices: OSD/seek/media keys (P3), tracks (P4), in-player Sources (P5),
+// next episode (P6), Watch Party (P7, whose restore will take priority over the route's).
 
 const t = (key, params = [], fallback = key) => I18n.t(key, params, { fallback });
 const ERROR_ACTIONS = ["sources", "retry", "back"];
@@ -117,14 +130,20 @@ export const NewPlayerScreen = {
   resolveTimer: null,
   resolveAttempt: 0,
   resolveCapMs: 45000,
-  listeners: null,
+  progress: null,
+  progressContext: null,
+  pendingPlaybackRestore: null,
+  personalWatchRun: null,
+  streamLinkCacheProfileId: null,
+  initialFilenameStreamCandidate: null,
   videoAutoplay: false,
 
   get paused() {
     return this.session?.state === "paused";
   },
 
-  isActiveMountToken(token) {
+  // saveReusableStreamLink calls it without a token.
+  isActiveMountToken(token = this.playerMountToken) {
     return token === this.playerMountToken && Router.current === "player";
   },
 
@@ -146,15 +165,31 @@ export const NewPlayerScreen = {
       prepare: (url) => Platform.prepareMediaRequest(url),
       onChange: () => token === this.playerMountToken && this.render()
     });
-    const pause = () => this.session?.pause();
-    const onVisibility = () => document.visibilityState === "hidden" && pause();
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", pause);
-    this.listeners = () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", pause);
-    };
     this.candidate = pickInitialCandidate(this.params);
+    this.initialFilenameStreamCandidate = this.candidate;
+    this.streamLinkCacheProfileId = activeStreamLinkProfile();
+    this.pendingPlaybackRestore = buildPendingPlaybackRestore(this.params);
+    this.progressContext = null;
+    WatchJournal.finish(this.personalWatchRun);
+    this.personalWatchRun = WatchJournal.start(this.params);
+    // Hide, pagehide and app exit save with a cloud push, then pause.
+    this.progress = createPlaybackProgress(this.video, {
+      context: () => this.progressContext,
+      scrobbleContext: () =>
+        buildScrobbleContext(
+          this.params,
+          this.candidate,
+          this.getPlaybackCurrentSeconds(),
+          this.getPlaybackDurationSeconds()
+        ),
+      played: () => Boolean(this.session?.played),
+      presenting: () => Boolean(this.session?.firstFrame),
+      fatal: () => this.session?.state === "error" || Number(this.video?.error?.code || 0) > 0,
+      currentSeconds: () => this.getPlaybackCurrentSeconds(),
+      durationSeconds: () => this.getPlaybackDurationSeconds(),
+      pause: () => this.session?.pause(),
+      journal: () => this.personalWatchRun
+    });
     this.render();
     // The Router awaits mount: resolution and playback continue after it returns.
     void this.startCandidate(token);
@@ -185,8 +220,26 @@ export const NewPlayerScreen = {
       this.render();
       return;
     }
-    // P2 passes the resume position here (startAt).
-    this.session.attach(result.url);
+    // One context (and completion latch) per source, built after resolution like the old player.
+    this.progressContext = buildProgressContext(this.params, this.candidate);
+    // Each started source, like the old 35:233 (a synthetic link has no id and is skipped).
+    rememberSelectedStreamPreference(this.params, this.candidate);
+    saveReusableStreamLink(this, this.candidate, { url: result.url });
+    // A newer media server position wins over the route's (old player 35:44-53).
+    const restore =
+      result.serverResumeMs > 0
+        ? { timeSeconds: result.serverResumeMs / 1000 }
+        : this.pendingPlaybackRestore;
+    this.session.attach(result.url, restoreStartOptions(restore));
+  },
+
+  /** Leaving playback: save, journal, scrobble cancel, rating offer; before the decoder is freed. */
+  finishPlayback() {
+    if (!this.progress?.exit()) return;
+    maybeOfferRatingAfterPlayback(
+      { params: this.params, episodes: this.params?.episodes },
+      this.video
+    );
   },
 
   buildRoot() {
@@ -428,6 +481,7 @@ export const NewPlayerScreen = {
     if (this.playerBackNavigationInProgress) return "history";
     this.playerBackNavigationInProgress = true;
     const streamParams = this.buildReturnStreamRouteParamsFromPlayer();
+    this.finishPlayback();
     this.session?.teardown();
     const params = this.params || {};
     const toLibrary = !forceDetail && params.returnToLibraryOnBack === true;
@@ -509,9 +563,12 @@ export const NewPlayerScreen = {
     return String(stream.name || stream.title || stream.label || stream.addonName || "");
   },
 
-  // Synchronous, never throws; the decoder is freed first (NUV-089). P2 flushes progress before.
+  // Synchronous, never throws: position read and saved, then the decoder freed (NUV-089).
   cleanup() {
     this.playerMountToken += 1;
+    try {
+      this.finishPlayback();
+    } catch (_) {}
     try {
       this.session?.destroy();
     } catch (_) {
@@ -520,9 +577,10 @@ export const NewPlayerScreen = {
       this.stopTick();
       this.stopResolveCap();
       try {
-        this.listeners?.();
+        this.progress?.destroy();
       } catch (_) {}
-      this.listeners = null;
+      this.progress = null;
+      this.personalWatchRun = null;
       this.root?.remove();
       this.root = null;
       this.refs = null;

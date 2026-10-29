@@ -5,9 +5,11 @@ import {
 } from "../../../data/mediaserver/mediaServerRepository.js";
 import { getStandaloneWebPlaybackCompatibility } from "../../../core/player/webPlaybackHeaders.js";
 import { isExpiredStreamUrl } from "../../../core/player/hlsNetworkErrorPolicy.js";
+import { newerServerResume } from "../../../data/mediaserver/mediaServerUserState.js";
+import { WatchProgressStore } from "../../../data/local/watchProgressStore.js";
 
-// shortcut: duplicates playerScreenMethods-35:22-120 (media server, debrid) without P2P (not on
-// VIDAA) or the media server resume (P2); merge if the old player is retired.
+// shortcut: duplicates playerScreenMethods-35:22-120 (media server with its resume, debrid)
+// without P2P (not on VIDAA); merge if the old player is retired.
 
 export function directPlaybackUrl(value = "") {
   const url = String(value || "").trim();
@@ -52,7 +54,8 @@ function isHls(url, stream) {
 }
 
 /**
- * Playable link of a source: { url } or { errorKey, fallback } (message key for the error screen).
+ * Playable link of a source: { url, serverResumeMs? } or { errorKey, fallback } (message key for
+ * the error screen). serverResumeMs: the media server's position when newer than the local one.
  * isCurrent() guards every await: a stale answer is dropped by the caller.
  */
 export async function resolvePlayableCandidate(
@@ -62,6 +65,7 @@ export async function resolvePlayableCandidate(
   if (!stream)
     return { errorKey: "player_error_no_stream_url", fallback: "No stream URL provided" };
   let url = streamDirectPlaybackUrl(stream);
+  let serverResumeMs = 0;
   if (canResolveMediaServerStream(stream)) {
     const result = await MediaServerRepository.resolve(stream).catch(() => null);
     if (!isCurrent()) return null;
@@ -72,6 +76,15 @@ export async function resolvePlayableCandidate(
       };
     Object.assign(stream, result.stream);
     url = result.stream.url;
+    const saved = WatchProgressStore.listForProfile(result.stream.serverPlayback?.profileId).find(
+      (entry) =>
+        entry.contentId === params.itemId &&
+        (entry.season ?? null) === (params.season ?? null) &&
+        (entry.episode ?? null) === (params.episode ?? null)
+    );
+    serverResumeMs =
+      newerServerResume(result.stream.serverUserState, saved, params.startFromBeginning)
+        ?.positionMs || 0;
   }
   if (!url) {
     const context = {
@@ -127,5 +140,5 @@ export async function resolvePlayableCandidate(
       fallback:
         "This source requires network features that are not available on this device. Try a different source."
     };
-  return { url };
+  return serverResumeMs > 0 ? { url, serverResumeMs } : { url };
 }

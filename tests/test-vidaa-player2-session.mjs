@@ -322,11 +322,54 @@ function setup(options = {}) {
   assert.equal(session.state, "idle");
 }
 
+// 10b. Resume (P2): one seek at loadedmetadata, a second only if the first landed short.
+{
+  const { video, session } = setup();
+  session.attach(URL_A, { startAt: 3600 });
+  assert.equal(session.played, false);
+  video.duration = 7200;
+  video.emit("loadedmetadata");
+  assert.equal(video.currentTime, 3600, "seek at loadedmetadata");
+  video.emit("playing");
+  video.currentTime = 3600.2;
+  video.emit("timeupdate");
+  assert.equal(session.firstFrame && session.played, true);
+  video.currentTime = 3601;
+  video.emit("playing");
+  assert.equal(video.currentTime, 3601, "a landed seek is not repeated");
+}
+{
+  const { video, session } = setup();
+  session.attach(URL_A, { startAt: 600 });
+  video.duration = 7200;
+  video.emit("loadedmetadata");
+  video.currentTime = 0; // a large MKV ignored the early seek
+  video.emit("playing");
+  assert.equal(video.currentTime, 600, "one second seek after a short landing");
+  video.currentTime = 0;
+  video.emit("playing");
+  assert.equal(video.currentTime, 0, "never a third seek");
+}
+{
+  // Percent resume uses the real duration and never lands in the last 3 s.
+  const { video, session } = setup();
+  session.attach(URL_A, { startAt: 0, startPercent: 50 });
+  video.duration = 1000;
+  video.emit("loadedmetadata");
+  assert.equal(video.currentTime, 500);
+  const late = setup();
+  late.session.attach(URL_A, { startAt: 9999 });
+  late.video.duration = 100;
+  late.video.emit("loadedmetadata");
+  assert.equal(late.video.currentTime, 97);
+}
+
 // 11. The new player never switches source by itself and never uses the forbidden paths.
 for (const file of [
   "js/ui/tv2/player/videoSession.js",
   "js/ui/tv2/player/newPlayerScreen.js",
-  "js/ui/tv2/player/resolvePlayableCandidate.js"
+  "js/ui/tv2/player/resolvePlayableCandidate.js",
+  "js/ui/tv2/player/playerProgress.js"
 ]) {
   // Code only: the comments name the old paths they replace.
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))
