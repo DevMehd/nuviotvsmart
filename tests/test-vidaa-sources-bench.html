@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv">
+  <meta charset="utf-8" />
+  <title>VIDAA Sources bench (current screen)</title>
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <body class="vidaa-tv">
+    <div id="app"><div id="stream" class="screen"></div></div>
+    <pre id="result" style="position: fixed; opacity: 0; z-index: -1">RUNNING</pre>
+    <script>
+      globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    </script>
+    <script type="module">
+      // Mounts the real Sources screen (the Router's `stream` route) with a fake
+      // repository: 400 sources from 20 addons in progressive chunks, then the
+      // completed-session replay (one large chunk). scripts/bench-vidaa-sources.mjs
+      // drives each phase under CPU throttling. Desktop Chrome, not a TV measure.
+      try {
+        const { StreamScreen, Router, streamRepository, StreamBadgeSettingsStore } =
+          await import("/js/ui/screens/stream/streamScreen.js");
+        const route = StreamScreen;
+        Router.getCurrent = () => "stream";
+        Router.navigate = () => {};
+        Router.back = () => {};
+
+        const svg = (fill, w = 160, h = 90) =>
+          "data:image/svg+xml," +
+          encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="${fill}"/></svg>`
+          );
+        const ADDONS = 20;
+        const PER_ADDON = 20;
+        const QUALITIES = ["2160p", "1080p", "720p", "480p"];
+        const TAGS = [
+          "BluRay.REMUX.HEVC.DV.HDR10+.TrueHD.Atmos.7.1",
+          "WEB-DL.HEVC.HDR10.DDP.5.1",
+          "BluRay.x264.DTS-HD.MA.5.1",
+          "WEBRip.x265.AAC.2.0",
+          "HDTV.x264.AC3"
+        ];
+        const LANGS = ["MULTi.VFF", "FRENCH", "VOSTFR", "ENGLISH", "MULTi.TRUEFRENCH"];
+        const addons = Array.from({ length: ADDONS }, (_, a) => ({
+          name: `Bench addon ${a}`,
+          displayName: `Bench addon ${a}`,
+          logo: svg(`hsl(${a * 18},60%,45%)`, 64, 64),
+          orderIndex: a
+        }));
+        const groups = addons.map((addon, a) => ({
+          addonName: addon.name,
+          addonId: `bench.addon.${a}`,
+          addonLogo: addon.logo,
+          addonOrderIndex: a,
+          streams: Array.from({ length: PER_ADDON }, (_, i) => {
+            const n = a * PER_ADDON + i;
+            const q = QUALITIES[n % 4];
+            const file = `Bench.Film.2024.${q}.${TAGS[n % 5]}.${LANGS[(n >> 2) % 5]}-GRP${n}.mkv`;
+            const gb = (((n * 7919) % 6000) + 300) / 100;
+            return {
+              name: `Bench ${a}\n${q}`,
+              description: `${file}\n💾 ${gb.toFixed(2)} GB 👤 ${n % 97} ⚙️ Tracker${n % 9}\n🔊 ${LANGS[(n >> 2) % 5]}`,
+              url: `https://bench.invalid/${n}.mkv`,
+              behaviorHints: {
+                filename: file,
+                videoSize: Math.round(gb * 1e9),
+                bingeGroup: `bench-${q}`
+              }
+            };
+          })
+        }));
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        // "same": the in-memory session replays the same objects; "cold": fresh
+        // objects, so no per-stream cache helps (worst case for one large chunk).
+        let replayCompleted = "";
+        streamRepository.setLocalPluginSearchPaused = () => {};
+        streamRepository.getStreamsFromAllAddons = async (_type, _id, options = {}) => {
+          const result = { status: "success", data: groups };
+          addons.forEach((addon) => options.onAddon?.(addon));
+          // streamSearchSessionCache.replayCompleted: one chunk holding every group.
+          if (replayCompleted) {
+            const data = replayCompleted === "cold" ? structuredClone(groups) : [...groups];
+            options.onChunk?.({ status: "success", data });
+            return result;
+          }
+          // Out-of-order arrival (7 is coprime with 20) inserts better-ranked
+          // groups above already displayed rows, as slow addons do.
+          for (let i = 0; i < ADDONS; i++) {
+            await wait(i ? 150 : 300);
+            if (options.signal?.aborted) throw Object.assign(Error("aborted"), { name: "AbortError" });
+            options.onChunk?.({ status: "success", data: [groups[(i * 7) % ADDONS]] });
+          }
+          return result;
+        };
+
+        // Layout reads and long tasks, counted per phase.
+        const counts = { rects: 0, offsets: 0 };
+        const rect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function () {
+          counts.rects++;
+          return rect.call(this);
+        };
+        for (const property of ["offsetHeight", "offsetTop"]) {
+          const { get } = Object.getOwnPropertyDescriptor(HTMLElement.prototype, property);
+          Object.defineProperty(HTMLElement.prototype, property, {
+            configurable: true,
+            get() {
+              counts.offsets++;
+              return get.call(this);
+            }
+          });
+        }
+        const longTasks = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) longTasks.push(entry.duration);
+        }).observe({ entryTypes: ["longtask"] });
+
+        const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const focusedCard = () =>
+          route.container?.querySelector('.focused[data-action="playStream"]') || null;
+        const waitFor = async (test, timeoutMs = 120000) => {
+          const start = performance.now();
+          while (!test()) {
+            if (performance.now() - start > timeoutMs) throw Error("bench wait timed out");
+            await nextFrame();
+          }
+          return performance.now();
+        };
+        // Idle once a 300 ms window has no long task and no pending render.
+        const settle = async (maxMs = 60000) => {
+          const start = performance.now();
+          for (;;) {
+            const seen = longTasks.length;
+            await wait(300);
+            await nextFrame();
+            const quiet = longTasks.length === seen && !route.renderFrame && !route.renderDelayTimer;
+            if (quiet || performance.now() - start > maxMs) return;
+          }
+        };
+        const KEYS = {
+          left: { key: "ArrowLeft", keyCode: 37 },
+          right: { key: "ArrowRight", keyCode: 39 },
+          down: { key: "ArrowDown", keyCode: 40 }
+        };
+        // Synthetic remote keys go straight to the route, as the Router forwards them.
+        const press = (name, repeat = false) =>
+          route.onKeyDown({
+            ...KEYS[name],
+            code: KEYS[name].key,
+            repeat,
+            preventDefault() {},
+            stopPropagation() {}
+          });
+        // Time from the key to the frame after it was handled.
+        const tap = async (name) => {
+          const start = performance.now();
+          press(name);
+          await nextFrame();
+          await wait(0);
+          return performance.now() - start;
+        };
+        const median = (values) => {
+          const sorted = [...values].sort((a, b) => a - b);
+          return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+        };
+        const round = (value) => Math.round(value * 10) / 10;
+        const params = {
+          itemId: "tt-bench",
+          itemType: "movie",
+          videoId: "tt-bench",
+          itemTitle: "Bench film",
+          year: "2024",
+          backdrop: svg("#223", 1920, 1080),
+          logo: svg("#eee", 400, 120),
+          startFromBeginning: true
+        };
+        const open = async (navigationContext = {}) => {
+          const start = performance.now();
+          await route.mount(params, navigationContext);
+          const firstFocusedCardMs = (await waitFor(focusedCard)) - start;
+          await waitFor(() => route.streamSearchCompleted);
+          const completeMs = performance.now() - start;
+          await settle();
+          return { firstFocusedCardMs, completeMs, streams: route.streams.length };
+        };
+        const phases = {
+          open: () => open(),
+          async filters() {
+            const latencies = [];
+            for (let i = 0; i < 5; i++) latencies.push(await tap("right"));
+            for (let i = 0; i < 5; i++) latencies.push(await tap("left"));
+            await settle();
+            return { latencyMedianMs: median(latencies), latencyMaxMs: Math.max(...latencies), filter: route.addonFilter };
+          },
+          async down10() {
+            const latencies = [];
+            for (let i = 0; i < 10; i++) {
+              latencies.push(await tap("down"));
+              await wait(120);
+            }
+            await settle();
+            return { latencyMedianMs: median(latencies), latencyMaxMs: Math.max(...latencies), row: route.focusState?.row };
+          },
+          async holdDown() {
+            // 3 s held at the remote's 90 ms repeat; late timers model a busy queue.
+            const end = performance.now() + 3000;
+            let events = 0;
+            while (performance.now() < end) {
+              press("down", events > 0);
+              events++;
+              await wait(90);
+            }
+            const released = performance.now();
+            await waitFor(() => focusedCard()?.dataset.streamRow === String(route.focusState?.row));
+            const releaseToFocusMs = performance.now() - released;
+            await settle();
+            return { events, releaseToFocusMs, row: route.focusState?.row };
+          },
+          async playerReturn() {
+            const id = focusedCard()?.dataset.streamId || "";
+            const row = route.focusState?.row;
+            const restoredState = route.captureRouteState();
+            route.cleanup();
+            const start = performance.now();
+            await route.mount(restoredState.params, {
+              isBackNavigation: true,
+              previousRoute: "player",
+              restoredState
+            });
+            const focusMs = (await waitFor(() => focusedCard()?.dataset.streamId === id)) - start;
+            await settle();
+            return { focusMs, row, sameSource: focusedCard()?.dataset.streamId === id };
+          },
+          async reopen() {
+            route.cleanup();
+            replayCompleted = "same";
+            return open();
+          },
+          async reopenCold() {
+            route.cleanup();
+            replayCompleted = "cold";
+            return open();
+          }
+        };
+        window.__bench = {
+          phases: Object.keys(phases),
+          async run(name) {
+            const seen = longTasks.length;
+            counts.rects = counts.offsets = 0;
+            const start = performance.now();
+            const data = await phases[name]();
+            const tasks = longTasks.slice(seen);
+            const result = {
+              ...data,
+              wallMs: performance.now() - start,
+              longTaskCount: tasks.length,
+              longTaskTotalMs: tasks.reduce((sum, value) => sum + value, 0),
+              longTaskMaxMs: tasks.length ? Math.max(...tasks) : 0,
+              rects: counts.rects,
+              offsets: counts.offsets,
+              domNodes: route.container.getElementsByTagName("*").length
+            };
+            for (const key of Object.keys(result))
+              if (typeof result[key] === "number") result[key] = round(result[key]);
+            return result;
+          }
+        };
+        window.__benchInfo = {
+          streams: ADDONS * PER_ADDON,
+          addons: ADDONS,
+          badgeFilters: StreamBadgeSettingsStore.snapshot().rules?.imports?.[0]?.filters?.length || 0
+        };
+        window.__benchReady = true;
+        document.getElementById("result").textContent = "READY";
+      } catch (error) {
+        window.__benchError = String(error?.stack || error);
+        document.getElementById("result").textContent = `FAIL: ${error.message}`;
+      }
+    </script>
+  </body>
+</html>
