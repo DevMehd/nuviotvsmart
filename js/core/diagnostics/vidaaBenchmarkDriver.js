@@ -264,7 +264,11 @@ export function createVidaaBenchmarkDriver({
     }
     const ready = await waitFor(() => route() === "home" && query(".home-main .focusable"), 15000);
     const cards = await waitFor(
-      () => query(".home-poster-card.focusable, .home-continue-card.focusable"),
+      // .tv2-continue-card: new Home (beta) Continue Watching cards.
+      () =>
+        query(
+          ".home-poster-card.focusable, .home-continue-card.focusable, .tv2-continue-card.focusable"
+        ),
       15000,
       250
     );

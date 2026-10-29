@@ -32,7 +32,7 @@
   z-index: 0;
   background: transparent;
   /* Copy aligned with the rails (.tv2-main padding). */
-  --home-content-start: 220px;
+  --home-content-start: var(--tv2-content-start, 220px);
 }
 
 .tv2-hero-shell .home-hero-backdrop:not([src]) {
@@ -46,7 +46,8 @@
   right: 0;
   bottom: 0;
   margin: 0;
-  /* Layout content start (railEngine cardGeometry): modern 220, classic 192, grid 168. */
+  /* Layout content start (railEngine cardGeometry): modern 220, classic 192, grid 168;
+     104, 48 and 24 with the modern sidebar pill. */
   padding: 0 0 0 var(--tv2-content-start, 220px);
   overflow: hidden;
 }

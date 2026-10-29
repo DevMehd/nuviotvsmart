@@ -157,14 +157,25 @@
               (node) => node.style.visibility !== "hidden"
             );
           const checks = [];
+          // Current Home values (headless Chrome, VIDAA UA, 1920x1080), sidebar [rail, pill]: x of
+          // the first card, modern previous-card peek and grid card width. With the rail, modern
+          // keeps its 220 px start (the current Home draws 248).
+          const CURRENT_HOME = {
+            start: { modern: [220, 104], classic: [192, 48], grid: [168, 24] },
+            modernPeek: [196, 80],
+            gridCardWidth: [236, 257]
+          };
 
           // Constrained runtimes (js/app.js: <= 4 cores, as VIDAA TVs) get the current Home's unscoped
           // card rules (components-44/49/60); the focused Continue Watching card must keep its place.
-          for (const [mode, constrained] of [
-            ["modern", false],
-            ["modern", true],
-            ["classic", true],
-            ["grid", true]
+          // Each layout also runs with the modern sidebar pill floating over the content.
+          for (const [mode, constrained, pill] of [
+            ["modern", false, false],
+            ["modern", true, true],
+            ["classic", true, false],
+            ["classic", true, true],
+            ["grid", true, false],
+            ["grid", true, true]
           ]) {
             for (const node of [document.documentElement, document.body])
               node.classList.toggle("performance-constrained", constrained);
@@ -177,8 +188,7 @@
               heroSectionEnabled: true,
               catalogAddonNameEnabled: true,
               continueWatchingCardStyle: "card",
-              // Grid also covers the modern sidebar pill; modern and classic the default sidebar.
-              modernSidebar: mode === "grid"
+              modernSidebar: pill
             };
             const geometry = cardGeometry(layout, mode);
             const rows = buildLayoutRows(modelRows(), {
@@ -193,7 +203,8 @@
               imageQueue: createImageQueue(),
               layout
             });
-            const at = (label) => `${mode}${constrained ? " constrained" : ""}: ${label}`;
+            const at = (label) =>
+              `${mode}${constrained ? " constrained" : ""}${pill ? " pill" : ""}: ${label}`;
             // The visible frame (artwork, See All or skeleton) keeps the card radius.
             const assertFrame = (card) => {
               const frame = card.classList.contains("is-seeall")
@@ -267,6 +278,24 @@
               }
             });
             checks.push(at("sizes"));
+
+            // Content start: the first card of an unfocused rail, as on the current Home.
+            {
+              const start = CURRENT_HOME.start[mode][Number(pill)];
+              const first = sections[dataRows.findIndex((row) => row.kind === "poster" && row.items.length)]
+                .querySelector('.tv2-card[data-index="0"]')
+                .getBoundingClientRect();
+              assert(first && near(first.left, start), at(`content start ${first?.left}, expected ${start}`));
+              if (mode === "grid") {
+                const width = CURRENT_HOME.gridCardWidth[Number(pill)];
+                assert(geometry.poster.width === width, at(`grid card ${geometry.poster.width}, expected ${width}`));
+              }
+              if (!legacy) {
+                const copy = container.querySelector(".home-modern-hero-copy").getBoundingClientRect();
+                assert(near(copy.left, start), at(`hero copy at ${copy.left}, expected ${start}`));
+              }
+            }
+            checks.push(at("content start"));
 
             // Skeletons: the loading row's cards are drawn, painted and on screen.
             const skeletons = [...container.querySelectorAll(".tv2-card-skeleton")];
@@ -415,6 +444,17 @@
               const node = view.focusedNode();
               assert(node, at(`no focused node after ${key} #${step}`));
               const rect = node.getBoundingClientRect();
+              // Modern camera: the card before the left-aligned focus peeks as on the current Home.
+              if (!legacy && step === 2) {
+                const prev = container
+                  .querySelector(
+                    `.tv2-card[data-row-key="${node.dataset.rowKey}"][data-index="${node.dataset.index - 1}"]`
+                  )
+                  ?.getBoundingClientRect();
+                const peek = prev && Math.max(0, prev.right) - Math.max(0, prev.left);
+                const expected = CURRENT_HOME.modernPeek[Number(pill)];
+                assert(near(peek, expected), at(`previous card peek ${peek}, expected ${expected}`));
+              }
               assert(
                 rect.left >= main.left + geometry.contentStart - 4 &&
                   rect.right <= innerWidth &&

@@ -34,6 +34,18 @@ assert.equal(cardGeometry({ homeLayout: "grid" }).layoutMode, "grid", "mode from
 assert.equal(cardGeometry({}, "classic").labelHeight, 49, "fixed label block under the cards");
 assert.equal(cardGeometry({ posterLabelsEnabled: false }, "classic").labelHeight, 0);
 assert.equal(cardGeometry({}, "modern").labelHeight, 0, "modern cards show no title (D2)");
+// Modern sidebar pill: no 144 px rail, content at the current Home's inset (components-08/16.css).
+assert.deepEqual(
+  ["modern", "classic", "grid"].map(
+    (mode) => cardGeometry({ modernSidebar: true }, mode).contentStart
+  ),
+  [104, 48, 24]
+);
+assert.equal(
+  cardGeometry({ modernSidebar: true }, "grid").poster.width,
+  257,
+  "7 columns over 1872"
+);
 
 // Old Home row rules, shared with renderLegacyCatalogRowsMarkup.
 const rowData = (count, hasMore = false, extra = {}) => ({

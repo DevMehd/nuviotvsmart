@@ -32,7 +32,13 @@ function element(classes, dataset = {}) {
   };
 }
 
-function harness({ startAccepts = true, detailOpens = true, staleFocusDecoy = false } = {}) {
+function harness({
+  startAccepts = true,
+  detailOpens = true,
+  staleFocusDecoy = false,
+  // Home whose only mounted cards carry this class (new Home Continue Watching: tv2-continue-card).
+  homeCardClass = "home-poster-card"
+} = {}) {
   let time = 0,
     next = 1;
   const timers = new Map();
@@ -134,9 +140,9 @@ function harness({ startAccepts = true, detailOpens = true, staleFocusDecoy = fa
           : focused();
       if (selector === ".home-main .focusable")
         return app.current === "home" ? element("focusable") : null;
-      if (selector.includes(".home-poster-card.focusable"))
+      if (selector.includes(`.${homeCardClass}.focusable`))
         return app.current === "home"
-          ? element("home-poster-card focusable", { action: "openDetail" })
+          ? element(`${homeCardClass} focusable`, { action: "openDetail" })
           : null;
       if (selector === '[data-action="playDefault"]')
         return app.current === "detail" ? element("focusable", { action: "playDefault" }) : null;
@@ -329,6 +335,16 @@ function harness({ startAccepts = true, detailOpens = true, staleFocusDecoy = fa
     true,
     "does not pull the viewer back to the console"
   );
+}
+
+{
+  // The new Home (beta) Continue Watching cards count as Home cards for the guided Diagnostic.
+  const h = harness({ homeCardClass: "tv2-continue-card" });
+  const run = h.driver.run();
+  await h.advance(400_000);
+  assert.equal(await run, true);
+  const journal = h.driver.getState().journal;
+  assert.ok(!journal.some((entry) => /cartes absentes/.test(entry)), journal.join("\n"));
 }
 
 {
