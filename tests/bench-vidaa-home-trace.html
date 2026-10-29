@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv vidaa-balanced-motion performance-constrained">
+  <meta charset="utf-8" />
+  <title>VIDAA Home trace bench (old Home vs new Home DOM)</title>
+  <!-- Driven by tests/bench-vidaa-home-trace.mjs (DevTools trace). Not a test, not a TV measure:
+       both Homes get the same rows, real CSS and VIDAA classes; window.bench.step(key) moves focus. -->
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <body class="vidaa-tv performance-constrained">
+    <div id="home" style="display: block"></div>
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const which = params.get("home") || "new";
+      globalThis.__NUVIO_PLATFORM__ = "vidaa";
+      const { Platform } = await import("/js/platform/index.js");
+      Platform.current = null;
+      const { Router } = await import("/js/ui/navigation/routerState.js");
+      Router.getCurrent = () => "home";
+      if (params.get("depth") === "1") {
+        const root = document.documentElement;
+        root.dataset.cardDepth = "true";
+        root.dataset.cardDepthPosters = "true";
+        root.dataset.cardDepthContinueWatching = "true";
+      }
+      await document.fonts?.ready;
+
+      // JPEGs at the sizes the TV loads (TMDB w342 posters, w500 CW, w1280 hero): real decodes.
+      const jpeg = async (w, h, hue) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        const gradient = ctx.createLinearGradient(0, 0, w, h);
+        gradient.addColorStop(0, `hsl(${hue} 60% 40%)`);
+        gradient.addColorStop(1, `hsl(${(hue + 120) % 360} 50% 15%)`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+        for (let n = 0; n < 40; n += 1) {
+          ctx.fillStyle = `hsl(${(hue + n * 9) % 360} 70% ${30 + (n % 5) * 8}%)`;
+          ctx.fillRect((n * 37) % w, (n * 53) % h, w / 6, h / 9);
+        }
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+        return URL.createObjectURL(blob);
+      };
+      // ?big=1: oversized sources a URL cannot resize (addon hosts), ~0.9 and 2 Mpx as seen on the TV.
+      const big = params.get("big") === "1";
+      const posterUrls = await Promise.all(
+        Array.from({ length: 12 }, (_, n) => (big ? jpeg(780, 1170, n * 30) : jpeg(342, 513, n * 30)))
+      );
+      const wideUrls = await Promise.all(
+        Array.from({ length: 4 }, (_, n) => (big ? jpeg(1920, 1080, n * 80) : jpeg(500, 281, n * 80)))
+      );
+      const heroUrls = await Promise.all([200, 20, 300].map((hue) => jpeg(1280, 720, hue)));
+      const heroUrl = heroUrls[0];
+      let heroTurn = 0;
+      let swapHero = () => {};
+      const ROWS = 6;
+      const PER_ROW = 30;
+      const items = (prefix) =>
+        Array.from({ length: PER_ROW }, (_, n) => ({
+          id: `${prefix}${n}`,
+          type: "movie",
+          name: `Title ${prefix} ${n}`,
+          poster: posterUrls[n % posterUrls.length],
+          background: heroUrl,
+          releaseInfo: "2024"
+        }));
+      const cwItems = Array.from({ length: 8 }, (_, n) => ({
+        id: `tt-cw-${n}`,
+        contentId: `tt-cw-${n}`,
+        type: "series",
+        name: `Continue ${n}`,
+        title: `Continue ${n}`,
+        season: 1,
+        episode: n + 1,
+        episodeTitle: `Episode ${n + 1}`,
+        progress: { position: 600, duration: 1800 },
+        // Next Up entries (no progress) get the spoiler blur when enabled.
+        ...(n % 3 === 1 ? { isNextUp: true, progress: null } : {}),
+        backdrop: wideUrls[n % wideUrls.length],
+        thumbnail: wideUrls[n % wideUrls.length]
+      }));
+      const heroItem = {
+        id: "tt-hero",
+        type: "movie",
+        name: "Hero title",
+        description: "A hero description. ".repeat(8),
+        background: heroUrl,
+        poster: posterUrls[0],
+        releaseInfo: "2024",
+        genres: ["Drama"]
+      };
+      const container = document.getElementById("home");
+      const settings = { continueWatchingBlurNextUp: true, blurContinueWatchingNextUp: true };
+      let step;
+      let counts;
+
+      if (which === "new") {
+        const { createDomHomeRenderer } = await import("/js/ui/tv2/renderer.js");
+        const { createImageQueue, HOME_IMAGE_BUDGET_PX } = await import("/js/ui/tv2/imagePipeline.js");
+        const { buildLayoutRows, cardGeometry } = await import("/js/ui/tv2/railEngine.js");
+        const { moveFocus } = await import("/js/ui/tv2/focusModel.js");
+        const layout = {
+          homeLayout: "modern",
+          heroSectionEnabled: true,
+          continueWatchingCardStyle: "card",
+          cardDepthEnabled: params.get("depth") === "1",
+          ...settings
+        };
+        const geometry = cardGeometry(layout, "modern");
+        const modelRows = [
+          { key: "continue_watching", kind: "continue", title: "Continue Watching", items: cwItems, status: "success" },
+          ...Array.from({ length: ROWS }, (_, r) => {
+            const list = items(`r${r}-`);
+            return {
+              key: `row${r}`,
+              kind: "poster",
+              title: `Catalog ${r}`,
+              items: list,
+              status: "success",
+              entry: { type: "movie", addonName: "Bench", result: { status: "success", data: { items: list } } }
+            };
+          })
+        ];
+        const rows = buildLayoutRows(modelRows, { geometry, heroEnabled: true, itemLimit: PER_ROW });
+        const view = createDomHomeRenderer(container, {
+          geometry,
+          imageQueue: createImageQueue({ concurrency: 6, budgetPx: HOME_IMAGE_BUDGET_PX }),
+          layout
+        });
+        view.setRows(rows);
+        let focus = { row: 0, columns: {} };
+        view.update(rows, focus);
+        view.setHero(heroItem, { candidates: [heroItem] });
+        swapHero = () => {
+          heroTurn += 1;
+          view.setHero({ ...heroItem, id: `tt-hero-${heroTurn}`, background: heroUrls[heroTurn % 3] });
+        };
+        step = (key) => {
+          focus = moveFocus(focus, rows, key) || focus;
+          view.update(rows, focus);
+        };
+      } else {
+        const context = await import("/js/ui/screens/home/homeScreenContext.js");
+        const { animateVidaaFocusScroll } = await import("/js/ui/navigation/vidaaFocusScroll.js");
+        const { updateHomeDom } = await import("/js/ui/screens/home/homeDomUpdate.js");
+        const catalogRows = Array.from({ length: ROWS }, (_, r) => ({
+          addonId: "bench",
+          catalogId: `c${r}`,
+          catalogName: `Catalog ${r}`,
+          type: "movie",
+          result: { status: "success", data: { items: items(`r${r}-`), hasMore: false } }
+        }));
+        const layoutPrefs = { homeLayout: "modern", heroSectionEnabled: true, ...settings };
+        const payload = context.renderModernHomeLayout({
+          rows: catalogRows,
+          heroItem: context.normalizeCatalogItem(heroItem, "movie"),
+          heroCandidates: [heroItem],
+          continueWatchingItems: cwItems,
+          continueWatchingRenderLimit: cwItems.length,
+          blurContinueWatchingNextUp: true,
+          rowItemLimit: PER_ROW,
+          showHeroSection: true,
+          focusedRowKey: "continue_watching",
+          focusedItemIndex: 0,
+          buildModernHeroPresentation: context.buildModernHeroPresentation,
+          renderHeroBackdropImage: context.renderHeroBackdropImage,
+          renderContinueWatchingSection: context.renderContinueWatchingSection,
+          createPosterCardMarkup: context.createPosterCardMarkup,
+          createSeeAllCardMarkup: context.createSeeAllCardMarkup,
+          formatCatalogRowTitle: context.formatCatalogRowTitle,
+          escapeHtml: context.escapeHtml,
+          escapeAttribute: context.escapeAttribute
+        });
+        const depth =
+          params.get("depth") === "1" ? " home-card-depth depth-posters depth-continue-watching" : "";
+        updateHomeDom(
+          container,
+          `<div class="home-shell home-screen-shell home-layout-modern${depth}" style="${context.escapeAttribute(context.buildModernHomeSizingStyle(layoutPrefs))}">
+            ${context.renderRootSidebar({ selectedRoute: "home", layout: layoutPrefs })}
+            <main class="home-main home-screen-main"><div class="home-route-content">${payload.markup}</div></main>
+          </div>`
+        );
+        // The old Home hydrates its lazy images; here all of them, once.
+        container.querySelectorAll("img[data-src]").forEach((img) => {
+          img.src = img.dataset.src;
+          img.removeAttribute("data-src");
+        });
+        const { animateHeroBackdropSwap } = await import(
+          "/js/ui/screens/home/homeScreenHelpers-03-animate-hero-backdrop-swap.js"
+        );
+        const { getTvHeroTransitionMode } = await import("/js/platform/tvRuntimePerformance.js");
+        swapHero = () => {
+          heroTurn += 1;
+          animateHeroBackdropSwap(
+            container.querySelector(".home-hero-backdrop"),
+            heroUrls[heroTurn % 3],
+            "hero",
+            200,
+            { transitionMode: getTvHeroTransitionMode() }
+          );
+        };
+        const owner = {};
+        const viewport = container.querySelector(".home-modern-rows-viewport");
+        const tracks = [...container.querySelectorAll(".home-track")];
+        const grid = tracks.map((track) => [...track.querySelectorAll(".home-content-card")]);
+        let row = 0;
+        let col = 0;
+        let focused = grid[0][0];
+        focused.classList.add("focused");
+        step = (key) => {
+          if (key === "right") col = Math.min(col + 1, grid[row].length - 1);
+          if (key === "left") col = Math.max(col - 1, 0);
+          if (key === "down") row = Math.min(row + 1, grid.length - 1);
+          if (key === "up") row = Math.max(row - 1, 0);
+          col = Math.min(col, grid[row].length - 1);
+          focused.classList.remove("focused");
+          focused = grid[row][col];
+          focused.classList.add("focused");
+          // The old Home VIDAA camera: rAF scrollLeft/scrollTop (animateVidaaFocusScroll, 140 ms).
+          const track = tracks[row];
+          animateVidaaFocusScroll(owner, track, "x", Math.max(0, focused.offsetLeft - grid[row][0].offsetLeft));
+          animateVidaaFocusScroll(owner, viewport, "y", track.closest("section").offsetTop);
+        };
+      }
+      counts = () => ({
+        nodes: document.getElementsByTagName("*").length,
+        images: [...document.images].filter((img) => img.complete && img.naturalWidth).length,
+        mpx:
+          [...document.images]
+            .filter((img) => img.complete && img.naturalWidth)
+            .reduce((sum, img) => sum + img.naturalWidth * img.naturalHeight, 0) / 1e6
+      });
+      let heroTimer = 0;
+      const moveFocusStep = step;
+      // ?hero=1: the hero follows the focus once it is calm (150 ms), as between taps on the TV.
+      if (params.get("hero") === "1")
+        step = (key) => {
+          moveFocusStep(key);
+          clearTimeout(heroTimer);
+          heroTimer = setTimeout(swapHero, 150);
+        };
+      window.bench = { which, step, counts, ready: true };
+    </script>
+  </body>
+</html>
