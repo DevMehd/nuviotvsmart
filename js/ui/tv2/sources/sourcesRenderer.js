@@ -276,6 +276,11 @@ export function createSourcesRenderer(container, { header, skeletonMarkup, moreM
       updateStatus();
       setFocus(focus);
     },
+    /** Chips alone (chipKeys, filter, chipStatus): the rows are not touched. */
+    updateChips(chipView) {
+      view = { ...view, ...chipView };
+      updateChips();
+    },
     setFocus,
     dispose() {
       container.innerHTML = "";

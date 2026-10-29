@@ -51,12 +51,21 @@ export const NewSourcesScreen = {
     const items = this.getFilteredStreams();
     const keys = rowKeys(items);
     const row = Number(this.focusState?.row);
+    // StreamScreen focuses preferredStreamId at the end of the search; here as soon as it arrives.
+    const preferredId = String(this.params?.preferredStreamId || "").trim();
+    // A party link shown first keeps the focus (StreamScreen bindStreamParty), as for a user move.
+    const preferredRow =
+      preferredId && !this.streamUserMovedFocus && !items[0]?.partyShared
+        ? items.findIndex((stream) => String(stream?.id || "") === preferredId)
+        : -1;
     // New earlier sources replace the initial first result; once the user moved, keep the source.
     const holdFirstResult =
       this.focusState?.zone === "card" && row === 0 && !this.streamUserMovedFocus;
     // As in StreamScreen, the focused row indexes the rendered list (inherited code may set it).
     const focusedKey = this.focusState?.zone === "card" ? this.sourcesView?.keys[row] || "" : "";
-    if (focusedKey && !holdFirstResult && !this.streamVirtualFocusReset) {
+    if (preferredRow >= 0 && !this.streamVirtualFocusReset) {
+      this.focusState = { zone: "card", row: preferredRow, index: preferredRow, action: "play" };
+    } else if (focusedKey && !holdFirstResult && !this.streamVirtualFocusReset) {
       const index = keys.indexOf(focusedKey);
       if (index >= 0) this.focusState = { ...this.focusState, row: index, index };
     }
@@ -66,9 +75,7 @@ export const NewSourcesScreen = {
     this.sourcesRenderer.update(
       {
         ...this.sourcesView,
-        filter: this.addonFilter,
-        chipStatus: (name) =>
-          this.sourceChips.find((chip) => chip.name === name)?.status || "success",
+        ...this.sourcesChipView(),
         isPartySource: (stream) => Boolean(this.isPartySourceStream?.(stream)),
         showAddonLogo: StreamBadgeSettingsStore.snapshot().showAddonLogo === true,
         // The empty state stays global: another addon may still provide sources.
@@ -197,11 +204,35 @@ export const NewSourcesScreen = {
     return true;
   },
 
-  // The chips and the filtered rows are a render of the memoised view (T3 updates the chips alone).
-  refreshSourceChipsOnly() {
-    return false;
+  sourcesChipView() {
+    return {
+      chipKeys: this.sourcesView.chipKeys,
+      filter: this.addonFilter,
+      chipStatus: (name) => this.sourceChips.find((chip) => chip.name === name)?.status || "success"
+    };
   },
 
+  /** Error chip cleanup: updates the chips alone; the focused chip keeps its addon. */
+  refreshSourceChipsOnly() {
+    if (!this.sourcesRenderer || !this.sourcesView) return false;
+    const names = this.getOrderedFilterNames();
+    // The selected chip is gone: render() falls back to All.
+    if (this.addonFilter !== "all" && !names.includes(this.addonFilter)) return false;
+    const focusedChip =
+      this.focusState?.zone === "filter" && this.focusState.index > 0
+        ? this.sourcesView.chipKeys[this.focusState.index - 1]
+        : null;
+    this.sourcesView = { ...this.sourcesView, chipKeys: ["all", ...names] };
+    this.sourcesRenderer.updateChips(this.sourcesChipView());
+    if (focusedChip !== null) {
+      const index = this.sourcesView.chipKeys.indexOf(focusedChip);
+      if (index >= 0) this.focusState = { zone: "filter", index: index + 1 };
+      this.applySourcesFocus();
+    }
+    return true;
+  },
+
+  // setAddonFilter's render() already restarts the window of a new filter (streamVirtualFocusReset).
   applyAddonFilterInPlace() {
     return false;
   },

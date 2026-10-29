@@ -283,4 +283,114 @@ const lastFocus = (screen) => screen.calls.focus.at(-1);
   assert.equal(empty.calls.updates.at(-1).message, "Boom");
 }
 
-console.log("PASS: new Sources screen geometry, view memo, keys, arrival focus and states.");
+// T3: progressive arrival, chips alone and preferredStreamId.
+const early = (id, addon = "A") => ({
+  id,
+  addonName: addon,
+  addonOrderIndex: addon === "A" ? 0 : 1,
+  url: `https://example.invalid/${id}`
+});
+const focusedId = (screen) => screen.calls.updates.at(-1).items[screen.focusState.row]?.id;
+
+{
+  // Better-ranked groups before the focused row: the user moved back to row 0, so it is kept.
+  const screen = createScreen();
+  screen.onKeyDown(key("ArrowDown"));
+  screen.onKeyDown(key("ArrowUp"));
+  screen.streams = [early("e1"), early("e2"), ...streams];
+  screen.render();
+  assert.equal(focusedId(screen), "s0", "after a user move row 0 follows its source");
+  // Without a user move, row 0 shows the best-ranked source.
+  const fresh = createScreen();
+  fresh.streams = [early("e1"), ...streams];
+  fresh.render();
+  fresh.streams = [early("e0"), early("e1"), ...streams];
+  fresh.render();
+  assert.equal(focusedId(fresh), "e0", "the first result is replaced at each arrival");
+}
+
+{
+  // preferredStreamId is focused as soon as its source arrives, then kept by key.
+  const params = { itemId: "tt1", itemType: "movie", preferredStreamId: "late" };
+  const screen = createScreen({ params });
+  assert.equal(focusedId(screen), "s0", "first result while the preferred source is missing");
+  screen.streams = [...streams, early("late", "B")];
+  screen.render();
+  assert.equal(focusedId(screen), "late", "the preferred source takes the focus when it arrives");
+  screen.streams = [early("e1"), ...screen.streams];
+  screen.render();
+  assert.equal(focusedId(screen), "late", "better-ranked sources do not move it");
+  // The preferred source at row 0 is not replaced like a first result.
+  const top = createScreen({ params: { ...params, preferredStreamId: "s0" } });
+  top.streams = [early("e1"), ...streams];
+  top.render();
+  assert.equal(focusedId(top), "s0", "a preferred first source is not replaced");
+  // Once the user moved, the preferred source no longer takes the focus.
+  const moved = createScreen({ params });
+  moved.onKeyDown(key("ArrowDown"));
+  moved.streams = [...streams, early("late", "B")];
+  moved.render();
+  assert.equal(focusedId(moved), "s1", "the user's row is kept");
+}
+
+{
+  // Filter change while sources arrive: the window restarts at the top of the new filter.
+  const screen = createScreen();
+  for (let i = 0; i < 8; i += 1) screen.onKeyDown(key("ArrowDown"));
+  screen.onKeyDown(key("ArrowRight"));
+  assert.equal(screen.addonFilter, "A");
+  assert.equal(screen.calls.updates.at(-1).resetScroll, true, "the window restarts at 0");
+  screen.streams = [early("e1"), ...streams];
+  screen.render();
+  assert.equal(screen.calls.updates.at(-1).resetScroll, false, "only once");
+  assert.equal(focusedId(screen), "s0", "the focused source of the filter is kept");
+  // An empty filter while another addon is still loading shows the loading state.
+  const empty = createScreen({
+    streams: streams.filter((stream) => stream.addonName === "B"),
+    sourceChips: [
+      { name: "A", status: "success", orderIndex: 0 },
+      { name: "B", status: "success", orderIndex: 1 },
+      { name: "C", status: "loading", orderIndex: 2 }
+    ],
+    addonFilter: "A"
+  });
+  assert.equal(empty.calls.updates.at(-1).items.length, 0);
+  assert.equal(empty.calls.updates.at(-1).loading, true, "C may still provide sources");
+  empty.sourceChips = empty.sourceChips.map((chip) => ({ ...chip, status: "success" }));
+  empty.render();
+  assert.equal(empty.calls.updates.at(-1).loading, false, "then the empty message");
+}
+
+{
+  // The error chip cleanup only updates the chips; the focused chip keeps its addon.
+  const screen = createScreen({
+    sourceChips: [
+      { name: "A", status: "success", orderIndex: 0 },
+      { name: "Bad", status: "error", orderIndex: 1 },
+      { name: "B", status: "success", orderIndex: 2 },
+      { name: "C", status: "loading", orderIndex: 3 }
+    ]
+  });
+  const chipUpdates = [];
+  screen.sourcesRenderer.updateChips = (view) => chipUpdates.push(view);
+  assert.deepEqual(screen.calls.updates[0].chipKeys, ["all", "A", "B", "Bad", "C"]);
+  screen.onKeyDown(key("ArrowUp"));
+  for (let i = 0; i < 4; i += 1) screen.onKeyDown(key("ArrowRight"));
+  assert.equal(screen.addonFilter, "C");
+  assert.deepEqual(lastFocus(screen), { zone: "filter", index: 5 });
+  const renders = screen.calls.updates.length;
+  screen.sourceChips = screen.sourceChips.filter((chip) => chip.status !== "error");
+  assert.equal(screen.refreshSourceChipsOnly(), true);
+  assert.equal(screen.calls.updates.length, renders, "no list render");
+  assert.deepEqual(chipUpdates.at(-1).chipKeys, ["all", "A", "B", "C"]);
+  assert.equal(chipUpdates.at(-1).filter, "C");
+  assert.equal(chipUpdates.at(-1).chipStatus("C"), "loading");
+  assert.deepEqual(lastFocus(screen), { zone: "filter", index: 4 }, "the focus stays on C");
+  // A selected filter whose chip is removed needs the full render (back to All).
+  screen.sourceChips = screen.sourceChips.filter((chip) => chip.name !== "C");
+  assert.equal(screen.refreshSourceChipsOnly(), false);
+  screen.render();
+  assert.equal(screen.addonFilter, "all");
+}
+
+console.log("PASS: new Sources screen geometry, view memo, keys, arrival focus, chips and states.");

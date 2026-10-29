@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv">
+  <meta charset="utf-8" />
+  <title>VIDAA new Sources screen (beta) progressive arrival</title>
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <body class="vidaa-tv">
+    <div id="app"><div id="stream" class="screen"></div></div>
+    <pre id="result" style="position: fixed; opacity: 0; z-index: -1">RUNNING</pre>
+    <script>
+      globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    </script>
+    <script type="module">
+      // 400 sources from 20 addons arrive in 20 chunks out of order, then the search ends with the
+      // same objects in one large result, and an addon that never answers becomes an error chip.
+      // Checks: the row pool is never recreated, the preferred source takes the focus when it
+      // arrives and keeps it, the final replay and the error chip cleanup do not touch the rows,
+      // and a reopen from one large chunk reuses the same pool size without layout reads.
+      const result = document.getElementById("result");
+      try {
+        const { Router, streamRepository } = await import("/js/ui/screens/stream/streamScreen.js");
+        const { NewSourcesScreen } = await import("/js/ui/tv2/sources/newSourcesScreen.js");
+        const assert = (condition, message) => {
+          if (!condition) throw Error(message);
+        };
+        Router.getCurrent = () => "stream";
+        Router.navigate = () => {};
+        Router.popToExistingRoute = () => false;
+        Router.back = () => {};
+        streamRepository.setLocalPluginSearchPaused = () => {};
+        const ADDONS = 20;
+        const addons = Array.from({ length: ADDONS + 1 }, (_, a) => ({
+          name: a === ADDONS ? "Silent addon" : `Addon ${a}`,
+          orderIndex: a
+        }));
+        const groups = Array.from({ length: ADDONS }, (_, a) => ({
+          addonName: `Addon ${a}`,
+          addonId: `fixture.addon.${a}`,
+          addonOrderIndex: a,
+          streams: Array.from({ length: 20 }, (_, i) => ({
+            id: `a${a}-s${i}`,
+            name: `Addon ${a}\n${["2160p", "1080p", "720p"][i % 3]}`,
+            description: `Fixture.${a}.${i}.mkv\n💾 ${i + 1} GB`,
+            url: `https://fixture.invalid/${a}/${i}.mkv`
+          }))
+        }));
+        const PREFERRED = "a10-s3";
+        let search = null;
+        let replay = false;
+        streamRepository.getStreamsFromAllAddons = (_type, _id, options = {}) => {
+          addons.forEach((addon) => options.onAddon?.(addon));
+          const done = { status: "success", data: [...groups] };
+          if (replay) {
+            options.onChunk?.({ status: "success", data: [...groups] });
+            return Promise.resolve(done);
+          }
+          return new Promise((resolve) => (search = { options, finish: () => resolve(done) }));
+        };
+
+        const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const waitFor = async (test, label) => {
+          for (let i = 0; i < 900 && !test(); i++) await frame();
+          assert(test(), `Timed out: ${label}`);
+        };
+        const route = NewSourcesScreen;
+        const focused = () => route.container.querySelector(".focused");
+        const track = () => route.container.querySelector(".tv2-sources-track");
+        const rows = () => [...route.container.querySelectorAll(".tv2-sources-row")];
+
+        await route.mount({ itemId: "tt-arrival", itemType: "movie", itemTitle: "Arrival", preferredStreamId: PREFERRED }, {});
+        await waitFor(() => search && route.sourcesRenderer, "search started");
+        const pool = rows();
+        const elements = track().getElementsByTagName("*").length;
+        assert(pool.length > 0 && pool.length <= 9, `bounded pool, got ${pool.length}`);
+        const childChanges = [];
+        new MutationObserver((records) => childChanges.push(...records)).observe(track(), { childList: true });
+        let renders = 0;
+        const update = route.sourcesRenderer.update;
+        route.sourcesRenderer.update = (...args) => {
+          renders++;
+          return update(...args);
+        };
+
+        let preferredSeen = false;
+        for (let i = 0; i < ADDONS; i++) {
+          const group = groups[(i * 7) % ADDONS];
+          search.options.onChunk({ status: "success", data: [group] });
+          await waitFor(() => route.sourcesView?.items.length === (i + 1) * 20, `chunk ${i}`);
+          await frame();
+          preferredSeen ||= group.streams.some((stream) => stream.id === PREFERRED);
+          const expected = preferredSeen ? PREFERRED : route.sourcesView.items[0].id;
+          assert(focused()?.dataset.streamId === expected, `chunk ${i}: focus on ${expected}, got ${focused()?.dataset.streamId}`);
+          assert(route.sourcesView.items[route.focusState.row].id === expected, `chunk ${i}: focus state on ${expected}`);
+        }
+        assert(childChanges.length === 0, `no row created or removed during the arrival (${childChanges.length})`);
+        assert(rows().every((row, index) => row === pool[index]), "the same row nodes");
+        assert(track().getElementsByTagName("*").length === elements, "the same number of nodes");
+
+        // The search ends with the same objects: the rows are not written again.
+        const rowChanges = [];
+        const rowObserver = new MutationObserver((records) => rowChanges.push(...records));
+        pool.forEach((row) => rowObserver.observe(row, { childList: true, characterData: true, subtree: true }));
+        search.finish();
+        await waitFor(() => route.streamSearchCompleted, "search completed");
+        await frame();
+        await frame();
+        assert(focused()?.dataset.streamId === PREFERRED, `the preferred source keeps the focus, got ${focused()?.dataset.streamId}`);
+        assert(rowChanges.length === 0, `the final replay rewrites no row (${rowChanges.length})`);
+
+        // The silent addon becomes an error chip, removed 1.6 s later without a list render.
+        const chip = () => route.container.querySelector('.stream-route-chip[data-addon="Silent addon"]');
+        await waitFor(() => chip()?.classList.contains("error"), "error chip");
+        const rendersBefore = renders;
+        await waitFor(() => !chip(), "error chip cleanup");
+        await frame();
+        assert(renders === rendersBefore, `the chip cleanup does not render the list (${renders - rendersBefore})`);
+        assert(rowChanges.length === 0 && childChanges.length === 0, "the chip cleanup leaves the rows alone");
+        assert(focused()?.dataset.streamId === PREFERRED, "the focus is unchanged");
+        rowObserver.disconnect();
+
+        // Reopen: the in-memory session replays every group in one chunk.
+        route.cleanup();
+        replay = true;
+        let reads = 0;
+        const rect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function () {
+          reads++;
+          return rect.call(this);
+        };
+        const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+          configurable: true,
+          get() {
+            reads++;
+            return offset.get.call(this);
+          }
+        });
+        await route.mount({ itemId: "tt-arrival", itemType: "movie", itemTitle: "Arrival" }, {});
+        await waitFor(() => route.streamSearchCompleted && focused()?.dataset.action === "playStream", "reopen");
+        await frame();
+        Element.prototype.getBoundingClientRect = rect;
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", offset);
+        assert(route.sourcesView.items.length === 400, `400 sources, got ${route.sourcesView.items.length}`);
+        assert(rows().length === pool.length, `the same pool size, got ${rows().length}`);
+        assert(focused().dataset.streamId === route.sourcesView.items[0].id, "the first source is focused");
+        assert(reads === 0, `no layout read on reopen (${reads})`);
+        route.cleanup();
+        result.textContent = `PASS: 20 chunks then one replay in a fixed pool of ${pool.length} rows, preferred source kept, chips updated alone.`;
+      } catch (error) {
+        result.textContent = `FAIL: ${error?.stack || error}`;
+      }
+    </script>
+  </body>
+</html>
