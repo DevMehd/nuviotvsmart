@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <title>VIDAA new player P4 tracks (real Chrome media pipeline)</title>
+  <link rel="stylesheet" href="../css/tv2-player.css" />
+  <style>
+    #player { position: fixed; inset: 0; display: none; background: #000; }
+    #videoPlayer { position: absolute; inset: 0; width: 100%; height: 100%; }
+  </style>
+  <body>
+    <div id="app">
+      <div id="player" class="screen">
+        <video id="videoPlayer" autoplay playsinline webkit-playsinline preload="auto"></video>
+      </div>
+    </div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot P, P4: real names and choice of the audio tracks (MP4 H.264 with two AAC tracks
+      // "fre" and "eng"; video.audioTracks is enabled by the runner flag AudioVideoTracks, as on
+      // the VIDAA firmware) and an addon SubRip shown as a WebVTT <track>. Desktop Chrome checks
+      // behavior only; the TV names, TrueHD/AC3 and count-mismatch are checked on the TV.
+      import { Router } from "../js/ui/navigation/routerState.js";
+      import { NewPlayerScreen } from "../js/ui/tv2/player/newPlayerScreen.js";
+      import { subtitleRepository } from "../js/data/repository/subtitleRepository.js";
+
+      const result = document.getElementById("result");
+      const video = document.getElementById("videoPlayer");
+      const container = document.getElementById("player");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (predicate, ms, label) => {
+        const until = performance.now() + ms;
+        while (!predicate()) {
+          if (performance.now() > until) throw Error(`timeout: ${label}`);
+          await sleep(25);
+        }
+      };
+      const key = (keyCode) => NewPlayerScreen.onKeyDown({ keyCode, preventDefault() {} });
+      const enabled = () => [...video.audioTracks].map((track) => track.enabled);
+      const mp4 = new URL("fixtures/player2/two-audio.mp4", location.href).href;
+      const srt = new URL("fixtures/player2/fr.srt", location.href).href;
+      const notes = [];
+      try {
+        assert(video.audioTracks, "runner flag AudioVideoTracks");
+        Router.current = "player";
+        Router.popToExistingRoute = () => true;
+        Router.navigate = async () => {};
+        subtitleRepository.getSubtitles = async () => [];
+        await NewPlayerScreen.mount({
+          itemId: "tt0000002",
+          itemType: "movie",
+          playerTitle: "Tracks",
+          streamUrl: mp4,
+          preferredStreamId: "local",
+          streamCandidates: [
+            {
+              id: "local",
+              url: mp4,
+              title: "Local MP4",
+              addonName: "Fixture",
+              subtitles: [{ id: "s-fr", url: srt, lang: "fre" }]
+            }
+          ],
+          // The phone's choice wins: English, applied once at loadedmetadata.
+          handoffAudio: { language: "eng", name: null, trackId: null }
+        });
+        await waitFor(() => NewPlayerScreen.session?.firstFrame, 6000, "first image");
+        const root = container.querySelector(".p2-root");
+
+        // 1. Real names from the TV-like native tracks, not "Audio N"; preference applied once.
+        const entries = NewPlayerScreen.getAudioEntries();
+        assert(entries.length === 2, `2 audio tracks (${entries.length})`);
+        assert(entries[0].track.language === "fre" && entries[1].track.language === "eng", "languages");
+        assert(entries.every((entry) => entry.named && !/^Audio \d/.test(entry.label)), entries.map((e) => e.label).join("/"));
+        assert(!entries.some((entry) => /SoundHandler/i.test(entry.label)), "MP4 handler name hidden");
+        assert(enabled().join() === "false,true", `English at start (${enabled()})`);
+        notes.push(entries.map((entry) => entry.label).join(" / "));
+
+        // 2. OSD: Down twice reaches the Audio button, OK opens the panel on the selected track.
+        key(40);
+        key(40);
+        assert(root.querySelector('[data-p2-osd="audio"]').classList.contains("focused"), "Audio button focused");
+        key(13);
+        const panel = root.querySelector(".p2-panel");
+        assert(!panel.hidden && NewPlayerScreen.trackPanel === "audio", "audio panel open");
+        const rows = () => [...panel.querySelectorAll(".p2-panel-item")];
+        assert(rows().length === 2 && rows()[1].classList.contains("selected"), "selected row");
+        assert(rows()[1].classList.contains("focused"), "focus on the selected track");
+
+        // 3. Choose French: one change, confirmed, the video keeps advancing; remembered.
+        key(38);
+        const before = video.currentTime;
+        key(13);
+        await waitFor(() => enabled().join() === "true,false", 1000, "French enabled");
+        await sleep(2400);
+        assert(!NewPlayerScreen.tracks.audioError, "the change was kept");
+        assert(enabled().join() === "true,false", "no revert");
+        assert(video.currentTime > before + 0.5 || video.ended, `the video advanced (${before} -> ${video.currentTime}, paused ${video.paused}, rs ${video.readyState}, state ${NewPlayerScreen.session.state})`);
+        assert(NewPlayerScreen.session.state !== "error", "no error");
+
+        // 4. Back closes the panel first, without leaving the player.
+        assert(NewPlayerScreen.hasBackDismissableOverlay(), "panel is a Back overlay");
+        assert(NewPlayerScreen.consumeBackRequest() === true && panel.hidden, "Back closes the panel");
+
+        // 5. Addon subtitle: SubRip fetched, converted, shown as a WebVTT <track> blob.
+        await waitFor(() => NewPlayerScreen.tracks.addonSubtitlesLoaded, 3000, "addon list");
+        NewPlayerScreen.openSubtitleDialog();
+        assert(NewPlayerScreen.subtitleDialogVisible, "subtitle panel open");
+        const items = NewPlayerScreen.trackPanelItems();
+        const index = items.findIndex((item) => item.subtitle?.id === "s-fr");
+        assert(items[0].id === "off" && index > 0, "Off then the addon entry");
+        NewPlayerScreen.chooseTrack(index);
+        await waitFor(() => video.querySelector("track"), 3000, "track element");
+        const element = video.querySelector("track");
+        assert(element.src.startsWith("blob:"), "blob URL, not the addon link");
+        await waitFor(() => element.track.mode === "showing" && element.track.cues?.length > 0, 3000, "cues");
+        assert(element.track.cues[0].text.includes("voilà"), "UTF-8 text kept");
+        assert(NewPlayerScreen.selectedAddonSubtitleId === "s-fr", "stream info sees the addon");
+
+        // 6. Off disables every output; cleanup removes the track and frees the decoder.
+        NewPlayerScreen.chooseTrack(0);
+        await waitFor(() => [...video.textTracks].every((track) => track.mode === "disabled"), 2000, "off");
+        NewPlayerScreen.cleanup();
+        assert(!video.querySelector("track"), "added track removed");
+        assert(!video.getAttribute("src"), "decoder freed");
+
+        result.dataset.status = "passed";
+        result.textContent = `PASS: new player P4 tracks (${notes.join(", ")}; desktop, not a TV measure)`;
+      } catch (error) {
+        result.dataset.status = "failed";
+        result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;
+      }
+    </script>
+  </body>
+</html>

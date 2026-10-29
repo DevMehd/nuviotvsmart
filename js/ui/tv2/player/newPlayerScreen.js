@@ -19,15 +19,32 @@ import { maybeOfferRatingAfterPlayback } from "../../screens/player/persoRatingO
 import { StreamInfoMethods, isStreamInfoKey } from "../../screens/player/streamInfoOverlay.js";
 import { deltaMsForKeyRepeat } from "../../../core/player/playerScrubRates.js";
 import { VidaaBenchmark } from "../../../core/diagnostics/vidaaBenchmark.js";
-import { OSD_HIDE_MS, OSD_HTML, createPlayerOsd, resolveMediaAction } from "./playerOsd.js";
+import {
+  OSD_ACTIONS,
+  OSD_HIDE_MS,
+  OSD_HTML,
+  createPlayerOsd,
+  resolveMediaAction
+} from "./playerOsd.js";
+import {
+  audioNamesLine,
+  createPlayerTracks,
+  startupTargets,
+  trackPreferenceContentId
+} from "./playerTracks.js";
+import { TrackPreferencesStore } from "../../../data/local/trackPreferencesStore.js";
+import { PlayerSettingsStore } from "../../../data/local/playerSettingsStore.js";
+import { subtitleRepository } from "../../../data/repository/subtitleRepository.js";
+import { resolveStreamFilename } from "../../screens/player/streamFilename.js";
 
 // New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
 // switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js); OSD, seek preview,
-// media keys, buffering and the Back order (P3, playerOsd.js). Same route "player", params and
-// screen contract as the old player (router facade). Never imports playerScreenMethods-* or
-// playerScreenContext (asserted by the VIDAA build).
-// Deferred to later slices: tracks (P4), in-player Sources (P5), next episode and skip intro
-// (P6), Watch Party (P7, whose restore will take priority over the route's).
+// media keys, buffering and the Back order (P3, playerOsd.js); audio and subtitle tracks with
+// their real names (P4, playerTracks.js). Same route "player", params and screen contract as
+// the old player (router facade). Never imports playerScreenMethods-* or playerScreenContext
+// (asserted by the VIDAA build).
+// Deferred to later slices: in-player Sources (P5), next episode and skip intro (P6), Watch
+// Party (P7, whose restore will take priority over the route's).
 
 const t = (key, params = [], fallback = key) => I18n.t(key, params, { fallback });
 const ERROR_ACTIONS = ["sources", "retry", "back"];
@@ -36,6 +53,11 @@ const BUFFERING_DELAY_MS = 600;
 const SEEK_COMMIT_FALLBACK_MS = 1000;
 // Real media key codes of the remote, written once each to the Diagnostic (P3 risk).
 const notedMediaKeys = new Set();
+// File header reader (Matroska/MP4 demux), loaded only when the TV leaves a track unnamed.
+let headerReader = null;
+const loadHeaderReader = async () =>
+  (headerReader ||= (await import("../../../platform/vidaa/vidaaEmbeddedTextProvider.js"))
+    .vidaaEmbeddedTextProvider);
 
 function normalizeItemType(value) {
   return (
@@ -164,6 +186,9 @@ export const NewPlayerScreen = {
   seekCommitTimer: null,
   bufferingTimer: null,
   bufferingShown: false,
+  tracks: null,
+  trackPanel: "",
+  trackPanelFocus: 0,
 
   get paused() {
     return this.session?.state === "paused";
@@ -192,7 +217,28 @@ export const NewPlayerScreen = {
     this.session = createVideoSession(this.video, {
       prepare: (url) => Platform.prepareMediaRequest(url),
       onChange: () => token === this.playerMountToken && this.render(),
-      note: (name) => VidaaBenchmark.notePlayerEvent?.(name)
+      note: (name) => VidaaBenchmark.notePlayerEvent?.(name),
+      onTrackSwitchError: () => this.tracks?.revertAudio()
+    });
+    const contentId = trackPreferenceContentId(this.params);
+    this.tracks = createPlayerTracks(this.video, {
+      // The phone's choice ("Envoyer à la TV") wins over the title's, then the profile language.
+      preferences: () => ({
+        audio: this.params.handoffAudio || TrackPreferencesStore.getAudio(contentId),
+        subtitle: this.params.handoffSubtitle || TrackPreferencesStore.getSubtitle(contentId),
+        targets: startupTargets(PlayerSettingsStore.get(), I18n.getLocale?.() || "", this.params)
+      }),
+      remember: {
+        audio: (preference) => contentId && TrackPreferencesStore.setAudio(contentId, preference),
+        subtitle: (preference) =>
+          contentId && TrackPreferencesStore.setSubtitle(contentId, preference)
+      },
+      probe: async (url) => (await loadHeaderReader()).getTracks(url, { audioOnly: true }),
+      probeDiagnostics: () => headerReader?.diagnostics().audio || {},
+      loadAddonSubtitles: () => this.loadAddonSubtitles(),
+      guardSwitch: () => this.session?.guardTrackSwitch(),
+      onChange: () => token === this.playerMountToken && this.renderTrackPanel(),
+      note: (status) => VidaaBenchmark.noteAudioNames?.(status)
     });
     this.candidate = pickInitialCandidate(this.params);
     this.initialFilenameStreamCandidate = this.candidate;
@@ -259,6 +305,7 @@ export const NewPlayerScreen = {
       result.serverResumeMs > 0
         ? { timeSeconds: result.serverResumeMs / 1000 }
         : this.pendingPlaybackRestore;
+    this.tracks.reset(result.url);
     this.session.attach(result.url, restoreStartOptions(restore));
   },
 
@@ -336,12 +383,16 @@ export const NewPlayerScreen = {
     // The error owns the keys: stream info (above it) or a pending seek must not stay behind.
     if (
       error &&
-      (this.streamInfoVisible || this.controlsVisible || this.seekCommitTimer !== null)
+      (this.streamInfoVisible ||
+        this.controlsVisible ||
+        this.seekCommitTimer !== null ||
+        this.trackPanel)
     ) {
       this.closeStreamInfo({ restore: false });
       this.resetOsdState();
     }
     const loading = !error && !session.firstFrame;
+    if (session.firstFrame) this.tracks?.onFirstFrame();
     refs.loading.hidden = !loading;
     if (loading) {
       // The backdrop goes at the first image: a hardware video plane may sit under it.
@@ -440,6 +491,20 @@ export const NewPlayerScreen = {
       this.applyMediaAction(action, event);
       return;
     }
+    if (this.trackPanel) {
+      event?.preventDefault?.();
+      this.onTrackPanelKey(keyCode, event);
+      return;
+    }
+    if (
+      this.controlsVisible &&
+      this.controlFocusZone === "actions" &&
+      [13, 23, 37, 38, 39, 40].includes(keyCode)
+    ) {
+      event?.preventDefault?.();
+      this.onActionKey(keyCode, event);
+      return;
+    }
     if (isSelectKey(keyCode)) {
       event?.preventDefault?.();
       if (event?.repeat) return;
@@ -454,8 +519,144 @@ export const NewPlayerScreen = {
     }
     if (keyCode === 38 || keyCode === 40) {
       event?.preventDefault?.();
+      // A visible OSD: Down goes to the Audio and Subtitles buttons.
+      if (keyCode === 40 && this.controlsVisible && this.seekPreviewSeconds == null) {
+        this.controlFocusZone = "actions";
+        this.controlFocusIndex = 0;
+      }
       this.setControlsVisible(true);
     }
+  },
+
+  onActionKey(keyCode, event) {
+    if (keyCode === 37 || keyCode === 39) {
+      const step = keyCode === 39 ? 1 : -1;
+      this.controlFocusIndex = Math.max(
+        0,
+        Math.min(OSD_ACTIONS.length - 1, this.controlFocusIndex + step)
+      );
+    } else if (keyCode === 38) this.controlFocusZone = "";
+    else if (isSelectKey(keyCode) && !event?.repeat) {
+      this.openTrackPanel(OSD_ACTIONS[this.controlFocusIndex]);
+      return;
+    }
+    this.resetControlsAutoHide();
+    this.renderOsd();
+  },
+
+  // Audio or Subtitles panel: Up/Down move, OK chooses (and remembers), Back closes.
+  openTrackPanel(kind) {
+    if (!this.session?.firstFrame || this.isErrorVisible() || !this.tracks) return;
+    if (!this.controlsVisible) this.setControlsVisible(true);
+    this.trackPanel = kind;
+    // Opening Audio reads the header again after a transient failure.
+    if (kind === "audio") this.tracks.probeAgain();
+    this.trackPanelFocus = Math.max(
+      0,
+      this.trackPanelItems().findIndex((item) => item.selected)
+    );
+    this.clearControlsAutoHide();
+    this.renderTrackPanel();
+  },
+
+  closeTrackPanel() {
+    if (!this.trackPanel) return;
+    this.trackPanel = "";
+    this.osd?.renderPanel(null);
+    this.resetControlsAutoHide();
+  },
+
+  trackPanelItems() {
+    if (!this.tracks) return [];
+    if (this.trackPanel === "audio") return this.tracks.audioEntries();
+    return [...this.tracks.subtitleEntries("builtIn"), ...this.tracks.subtitleEntries("addons")];
+  },
+
+  renderTrackPanel() {
+    const tracks = this.tracks;
+    if (!this.trackPanel || !tracks || !this.osd) return;
+    const items = this.trackPanelItems();
+    this.trackPanelFocus = Math.max(0, Math.min(items.length - 1, this.trackPanelFocus));
+    const audio = this.trackPanel === "audio";
+    const status = audio
+      ? !tracks.supported
+        ? t("player2_audio_tv_managed", [], "Track choice is handled by the TV.")
+        : tracks.audioError
+          ? t("player2_audio_refused", [], "The TV did not keep this track.")
+          : audioNamesLine(tracks.status())
+      : tracks.subtitleError
+        ? t("player2_subtitle_failed", [], "This subtitle could not be loaded.")
+        : tracks.addonSubtitlesLoaded
+          ? ""
+          : t("player2_subtitles_loading", [], "Loading addon subtitles…");
+    this.osd.renderPanel({
+      title: audio
+        ? t("audio_dialog_title", [], "Audio")
+        : t("subtitle_dialog_title", [], "Subtitles"),
+      status,
+      items,
+      focus: this.trackPanelFocus
+    });
+  },
+
+  onTrackPanelKey(keyCode, event) {
+    if (keyCode === 38 || keyCode === 40) {
+      this.trackPanelFocus += keyCode === 40 ? 1 : -1;
+      this.renderTrackPanel();
+    } else if (isSelectKey(keyCode) && !event?.repeat) this.chooseTrack(this.trackPanelFocus);
+  },
+
+  chooseTrack(index) {
+    const item = this.trackPanelItems()[index];
+    if (!item) return;
+    this.trackPanelFocus = index;
+    if (this.trackPanel === "audio") void this.applyAudioTrack(index, { rememberSelection: true });
+    else void this.tracks?.selectSubtitle(item, { rememberSelection: true });
+  },
+
+  // Same lookup as the old player (playerScreenMethods-07/68): stream sidecars, then addons.
+  async loadAddonSubtitles() {
+    const params = this.params || {};
+    const type = normalizeItemType(params.itemType);
+    const imdb = [params.imdbId, params.imdb_id, params.videoId, params.itemId]
+      .map((value) => String(value || "").split(":")[0])
+      .find((value) => /^tt\d+$/i.test(value));
+    const rawItemId = String(params.itemId || "").trim();
+    const id = imdb || rawItemId.split(":")[0] || rawItemId;
+    const candidate = this.candidate || {};
+    const raw = candidate.raw || candidate;
+    const hints = { ...raw.behaviorHints, ...candidate.behaviorHints };
+    const sidecars = (candidate.subtitles || raw.subtitles || [])
+      .filter((subtitle) => subtitle?.url)
+      .map((subtitle, index) => ({
+        id: subtitle.id || `sidecar-${index}`,
+        url: subtitle.url,
+        lang: subtitle.lang || subtitle.language || "",
+        addonName: candidate.addonName || raw.addonName || ""
+      }));
+    if (!id) return sidecars;
+    let videoId = null;
+    if (type === "series") {
+      const season = Number(params.season);
+      const episode = Number(params.episode);
+      videoId =
+        String(params.videoId || "").trim() ||
+        (season > 0 && episode > 0 ? `${id}:${season}:${episode}` : null);
+    }
+    const found = await subtitleRepository.getSubtitles(type, id, videoId, {
+      season: params.season ?? null,
+      episode: params.episode ?? null,
+      title: params.playerTitle || params.itemTitle || null,
+      year: params.playerReleaseYear || params.year || null,
+      videoHash: hints.videoHash || candidate.videoHash || params.videoHash || null,
+      videoSize: hints.videoSize || candidate.videoSize || params.videoSize || null,
+      filename: resolveStreamFilename(
+        candidate,
+        this.initialFilenameStreamCandidate,
+        params.filename
+      )
+    });
+    return [...sidecars, ...(Array.isArray(found) ? found : [])];
   },
 
   // Android parity: preview while a direction is held, one seek on release.
@@ -481,6 +682,10 @@ export const NewPlayerScreen = {
     this.seekRepeatCount = 0;
     this.seekOpenedOsd = false;
     this.bufferingShown = false;
+    this.controlFocusZone = "";
+    this.controlFocusIndex = 0;
+    this.trackPanel = "";
+    this.osd?.renderPanel(null);
   },
 
   stopOsdTimers() {
@@ -498,7 +703,8 @@ export const NewPlayerScreen = {
       paused: Boolean(this.video?.paused),
       current: this.getPlaybackCurrentSeconds(),
       duration: this.getPlaybackDurationSeconds(),
-      preview: this.seekPreviewSeconds
+      preview: this.seekPreviewSeconds,
+      action: this.controlFocusZone === "actions" ? this.controlFocusIndex : -1
     });
   },
 
@@ -507,6 +713,8 @@ export const NewPlayerScreen = {
     this.controlsVisible = Boolean(visible);
     if (!this.controlsVisible) {
       this.seekOpenedOsd = false;
+      this.controlFocusZone = "";
+      this.closeTrackPanel();
       if (this.osdTickTimer !== null) clearInterval(this.osdTickTimer);
       this.osdTickTimer = null;
     } else if (this.osdTickTimer === null) {
@@ -527,7 +735,8 @@ export const NewPlayerScreen = {
       !this.controlsVisible ||
       this.paused ||
       this.seekPreviewSeconds != null ||
-      this.streamInfoVisible
+      this.streamInfoVisible ||
+      this.trackPanel
     )
       return;
     this.osdHideTimer = setTimeout(() => {
@@ -597,6 +806,10 @@ export const NewPlayerScreen = {
   onPointerActivate(target) {
     const action = target?.closest?.("[data-p2-action]")?.dataset?.p2Action;
     if (action && this.isErrorVisible()) this.runErrorAction(action);
+    const panel = target?.closest?.("[data-p2-osd]")?.dataset?.p2Osd;
+    if (panel && !this.isErrorVisible()) this.openTrackPanel(panel);
+    const item = target?.closest?.("[data-p2-item]")?.dataset?.p2Item;
+    if (item != null && this.trackPanel) this.chooseTrack(Number(item));
   },
 
   onPointerFocus() {},
@@ -607,6 +820,10 @@ export const NewPlayerScreen = {
   consumeBackRequest() {
     if (this.isErrorVisible() || !this.session?.firstFrame || this.playerBackNavigationInProgress)
       return this.navigateBackToStreamScreen();
+    if (this.trackPanel) {
+      this.closeTrackPanel();
+      return true;
+    }
     if (this.streamInfoVisible) {
       this.closeStreamInfo();
       return true;
@@ -624,7 +841,7 @@ export const NewPlayerScreen = {
 
   // Same list as the old player: a visible OSD alone lets a history Back return to Sources.
   hasBackDismissableOverlay() {
-    return Boolean(this.streamInfoVisible || this.seekPreviewSeconds != null);
+    return Boolean(this.trackPanel || this.streamInfoVisible || this.seekPreviewSeconds != null);
   },
 
   cancelSourceLoad() {},
@@ -817,19 +1034,32 @@ export const NewPlayerScreen = {
   playNextEpisode() {
     return false;
   },
-  subtitleDialogVisible: false,
-  openSubtitleDialog() {},
-  closeSubtitleDialog() {},
-  getSubtitleEntries() {
-    return [];
+  // Tracks (P4): read by the phone remote and Stream info.
+  get subtitleDialogVisible() {
+    return this.trackPanel === "subtitles";
+  },
+  get selectedAddonSubtitleId() {
+    return this.tracks?.selectedAddonSubtitleId || "";
+  },
+  openSubtitleDialog() {
+    this.openTrackPanel("subtitles");
+  },
+  closeSubtitleDialog() {
+    if (this.trackPanel === "subtitles") this.closeTrackPanel();
+  },
+  getSubtitleEntries(kind = "builtIn") {
+    return this.tracks?.subtitleEntries(kind === "addons" ? "addons" : "builtIn") || [];
   },
   getAudioEntries() {
-    return [];
+    return this.tracks?.audioEntries() || [];
   },
-  applyAudioTrack() {
-    return false;
+  applyAudioTrack(index, { rememberSelection = false } = {}) {
+    if (!this.session?.firstFrame || !this.tracks) return Promise.resolve(false);
+    return this.tracks.selectAudio(Number(index), { rememberSelection });
   },
-  openAudioDialog() {},
+  openAudioDialog() {
+    this.openTrackPanel("audio");
+  },
   getCurrentStreamCandidate() {
     return this.candidate || null;
   },
@@ -860,6 +1090,12 @@ export const NewPlayerScreen = {
         this.progress?.destroy();
       } catch (_) {}
       this.progress = null;
+      // Added subtitle <track> elements and their blobs, and any header read in flight.
+      try {
+        this.tracks?.destroy();
+        headerReader?.dispose();
+      } catch (_) {}
+      this.tracks = null;
       this.personalWatchRun = null;
       this.root?.remove();
       this.root = null;

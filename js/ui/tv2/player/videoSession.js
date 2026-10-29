@@ -54,7 +54,10 @@ export function createVideoSession(
     freezeReloads = 2,
     probeStatus = probeHttpStatus,
     // Diagnostic counter by event name (freeze reloads); never a link.
-    note = () => {}
+    note = () => {},
+    // A media error just after an audio track change (P4): the screen goes back to the last
+    // kept track before the same-link reload.
+    onTrackSwitchError = () => {}
   } = {}
 ) {
   const now = () => root.performance?.now?.() ?? Date.now();
@@ -71,6 +74,7 @@ export function createVideoSession(
   let startPercent = 0;
   let watch = null;
   let still = null;
+  let trackSwitchUntil = 0;
   const s = {
     state: "idle",
     error: null,
@@ -315,6 +319,15 @@ export function createVideoSession(
   function onMediaError() {
     const code = Number(video.error?.code || 0);
     if (!code || code === 1) return;
+    // VIDAA may fail the pipeline on an audio track change (old filter
+    // isTransientVidaaTrackSwitchError, 1.5 s): one same-link reload at the same position.
+    if (s.firstFrame && now() < trackSwitchUntil) {
+      trackSwitchUntil = 0;
+      note("trackSwitchError");
+      onTrackSwitchError();
+      load(url, s.position);
+      return;
+    }
     if (code === 2 && s.networkRetries < 1) {
       // One retry of the same link: from the start before the first image, else in place.
       s.networkRetries += 1;
@@ -348,6 +361,7 @@ export function createVideoSession(
   // Frees the decoder synchronously, in this order, and never throws (NUV-089).
   function teardown() {
     token += 1;
+    trackSwitchUntil = 0;
     stopGuard();
     stopWatch();
     if (retryTimer !== null) root.clearTimeout(retryTimer);
@@ -451,6 +465,10 @@ export function createVideoSession(
       s.networkRetries = 0;
       s.freezeReloads = 0;
       load(url, s.firstFrame ? s.position : Math.max(seekTarget, s.position));
+    },
+    /** An audio track change starts: a media error in the next ms reloads instead of failing. */
+    guardTrackSwitch(ms = 1500) {
+      trackSwitchUntil = now() + ms;
     },
     restoreSound() {
       if (!s.mutedFallback) return;

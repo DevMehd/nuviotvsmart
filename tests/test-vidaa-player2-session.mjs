@@ -510,7 +510,8 @@ for (const file of [
   "js/ui/tv2/player/newPlayerScreen.js",
   "js/ui/tv2/player/resolvePlayableCandidate.js",
   "js/ui/tv2/player/playerProgress.js",
-  "js/ui/tv2/player/playerOsd.js"
+  "js/ui/tv2/player/playerOsd.js",
+  "js/ui/tv2/player/playerTracks.js"
 ]) {
   // Code only: the comments name the old paths they replace.
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))
@@ -524,9 +525,43 @@ for (const file of [
     "AudioContext",
     "playerScreenMethods-",
     "playerScreenContext",
-    "canPlayType"
+    "canPlayType",
+    // A spread of a native track loses its getters (language, label): audit point 5.
+    "...track"
   ])
     assert.ok(!source.includes(forbidden), `${file} must not use ${forbidden}`);
+}
+
+// 12. P4: a media error right after an audio track change reloads the same link at the same
+// position once (back to the last kept track), instead of the error screen; later it fails.
+{
+  const switchErrors = [];
+  const { clock, video, session } = setup({ onTrackSwitchError: () => switchErrors.push(1) });
+  session.attach(URL_A);
+  video.currentTime = 0.2;
+  video.emit("playing");
+  video.currentTime = 42;
+  video.emit("timeupdate");
+  assert.equal(session.firstFrame, true);
+  session.guardTrackSwitch();
+  video.calls.length = 0;
+  video.error = { code: 3 };
+  video.emit("error");
+  assert.equal(session.state, "loading", "no error screen for a track switch failure");
+  assert.equal(switchErrors.length, 1);
+  clock.advance(0);
+  assert.ok(video.calls.includes(`src=${URL_A}`), "same link, never another source");
+  video.emit("loadedmetadata");
+  assert.equal(video.currentTime, 42, "same position");
+  video.currentTime = 42.2;
+  video.emit("playing");
+  video.currentTime = 42.5;
+  video.emit("timeupdate");
+  clock.advance(2000);
+  video.error = { code: 3 };
+  video.emit("error");
+  assert.equal(session.state, "error", "outside the 1.5 s window a decode error is shown");
+  assert.equal(session.error.kind, "decode");
 }
 
 console.log(

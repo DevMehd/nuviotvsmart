@@ -220,3 +220,95 @@
   margin-left: auto;
   color: rgba(255, 255, 255, 0.78);
 }
+
+/* P4 Audio and Subtitles: two OSD buttons (same pills as the error buttons) and a short track
+   list on the right, rebuilt only while open. No transition or blur over the video. */
+.p2-osd-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.p2-osd-action {
+  height: 52px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.p2-osd-action.focused,
+.p2-panel-item.focused {
+  background: var(--focus-bg, #fff);
+  color: var(--on-secondary, #000);
+}
+
+.p2-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  padding: 56px 40px;
+  box-sizing: border-box;
+  background: rgba(20, 20, 22, 0.94);
+  color: #fff;
+}
+
+.p2-panel-title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.p2-panel-status {
+  margin-top: 12px;
+  font-size: 20px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.p2-panel-list {
+  flex: 1;
+  margin-top: 24px;
+  overflow: hidden;
+}
+
+.p2-panel-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 64px;
+  margin-bottom: 8px;
+  padding: 10px 24px 10px 52px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  position: relative;
+}
+
+.p2-panel-item.selected::before {
+  content: "\2713";
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  margin-top: -14px;
+  font-size: 24px;
+  line-height: 28px;
+}
+
+.p2-panel-label {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.p2-panel-secondary {
+  margin-top: 4px;
+  font-size: 18px;
+  opacity: 0.72;
+}

@@ -21,7 +21,8 @@ const defaultFixtures = [
   "test-vidaa-trailer-dom.html",
   "test-vidaa-tv2-layouts.html",
   "test-vidaa-raw-video-probe.html",
-  "test-vidaa-player2.html"
+  "test-vidaa-player2.html",
+  "test-vidaa-player2-tracks.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(
@@ -50,7 +51,10 @@ const mimeTypes = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".wasm": "application/wasm",
-  ".webm": "video/webm"
+  ".webm": "video/webm",
+  ".mp4": "video/mp4",
+  ".vtt": "text/vtt; charset=utf-8",
+  ".srt": "application/x-subrip; charset=utf-8"
 };
 
 async function findBrowser() {
@@ -120,6 +124,10 @@ async function captureBrowser(browser, profile, url) {
       "--disable-sync",
       "--metrics-recording-only",
       "--mute-audio",
+      // video.audioTracks, as on the VIDAA firmware (lot P, P4); off by default in desktop Chrome.
+      "--enable-blink-features=AudioVideoTracks",
+      // A TV key is a user gesture: unmuting after a key must not pause the video here either.
+      "--autoplay-policy=no-user-gesture-required",
       `--user-data-dir=${profile}`,
       "about:blank"
     ],

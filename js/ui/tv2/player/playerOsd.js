@@ -1,4 +1,5 @@
-// OSD of the new VIDAA player (lot P, P3): title, progress, seek preview, clock and end time.
+// OSD of the new VIDAA player (lot P, P3): title, progress, seek preview, clock and end time;
+// Audio and Subtitles buttons and their track panel (P4).
 // Hidden = hidden attribute (display:none). The progress bar moves by transform: scaleX only, and
 // the DOM is written only when a displayed string or ratio changes. No timer of its own: the
 // screen updates it at 1 Hz while it is visible.
@@ -83,8 +84,19 @@ export const OSD_HTML = `
         <span class="p2-osd-time"></span>
         <span class="p2-osd-ends"></span>
       </div>
+      <div class="p2-osd-actions">
+        <button type="button" class="p2-osd-action" data-p2-osd="audio"></button>
+        <button type="button" class="p2-osd-action" data-p2-osd="subtitles"></button>
+      </div>
     </div>
+  </div>
+  <div class="p2-panel" hidden>
+    <div class="p2-panel-title"></div>
+    <div class="p2-panel-status" hidden></div>
+    <div class="p2-panel-list"></div>
   </div>`;
+
+export const OSD_ACTIONS = ["audio", "subtitles"];
 
 export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
   const q = (selector) => root.querySelector(selector);
@@ -95,8 +107,18 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
     seek: q(".p2-osd-seek"),
     state: q(".p2-osd-state"),
     time: q(".p2-osd-time"),
-    ends: q(".p2-osd-ends")
+    ends: q(".p2-osd-ends"),
+    actions: [...root.querySelectorAll("[data-p2-osd]")],
+    panel: q(".p2-panel"),
+    panelTitle: q(".p2-panel-title"),
+    panelStatus: q(".p2-panel-status"),
+    panelList: q(".p2-panel-list")
   };
+  const actionLabels = {
+    audio: t("audio_dialog_title", [], "Audio"),
+    subtitles: t("subtitle_dialog_title", [], "Subtitles")
+  };
+  for (const button of refs.actions) button.textContent = actionLabels[button.dataset.p2Osd];
   q(".p2-osd-title").textContent = title;
   const subtitleNode = q(".p2-osd-subtitle");
   subtitleNode.textContent = subtitle;
@@ -112,10 +134,16 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
 
   return {
     el,
-    /** view: { visible, paused, current, duration, preview } (seconds; preview null when none). */
-    update({ visible, paused, current, duration, preview = null }) {
+    /**
+     * view: { visible, paused, current, duration, preview, action } (seconds; preview null when
+     * none; action: index of the focused button, -1 when the focus is on the bar).
+     */
+    update({ visible, paused, current, duration, preview = null, action = -1 }) {
       write("visible", Boolean(visible), (value) => (el.hidden = !value));
       if (!visible) return;
+      write("action", action, (value) =>
+        refs.actions.forEach((button, index) => button.classList.toggle("focused", index === value))
+      );
       const previewing = preview != null;
       const shown = previewing ? preview : current;
       write("fill", ratio(current, duration), (value) => {
@@ -147,6 +175,37 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
         refs.ends.textContent =
           minute < 0 ? "" : t("player_ends_at", [formatClock(new Date(endsAt))], "Ends at %1$s");
       });
+    },
+    /**
+     * Track panel, rebuilt on each call (short list, only while open). panel: null to hide, or
+     * { title, status, items: [{ label, secondary, selected }], focus }.
+     */
+    renderPanel(panel) {
+      refs.panel.hidden = !panel;
+      if (!panel) return;
+      refs.panelTitle.textContent = panel.title || "";
+      refs.panelStatus.textContent = panel.status || "";
+      refs.panelStatus.hidden = !panel.status;
+      const rows = (panel.items || []).map((item, index) => {
+        const row = document.createElement("div");
+        row.className = "p2-panel-item";
+        row.dataset.p2Item = String(index);
+        row.classList.toggle("focused", index === panel.focus);
+        row.classList.toggle("selected", Boolean(item.selected));
+        const label = document.createElement("span");
+        label.className = "p2-panel-label";
+        label.textContent = item.label || "";
+        row.appendChild(label);
+        if (item.secondary) {
+          const secondary = document.createElement("span");
+          secondary.className = "p2-panel-secondary";
+          secondary.textContent = item.secondary;
+          row.appendChild(secondary);
+        }
+        return row;
+      });
+      refs.panelList.replaceChildren(...rows);
+      rows[panel.focus]?.scrollIntoView?.({ block: "nearest" });
     }
   };
 }
