@@ -338,7 +338,8 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     let node = view.slots[slot];
     if (!node) {
       node = document.createElement("article");
-      node.className = `${view.kind === "continue" ? "home-continue-card" : "home-poster-card"} tv2-card focusable`;
+      // Not .home-continue-card: constrained runtimes force its focused transform to none (tv2-home.css).
+      node.className = `${view.kind === "continue" ? "tv2-continue-card" : "home-poster-card"} tv2-card focusable`;
       node.dataset.action = "openDetail";
       const title = `<div class="tv2-card-title" dir="auto"></div>`;
       const seeAll = view.seeAll
