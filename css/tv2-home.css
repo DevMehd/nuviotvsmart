@@ -142,6 +142,14 @@
   transition: none !important;
 }
 
+/* Nor their contents: the constrained runtimes' `.performance-constrained *` gives every element
+   a 140 ms `all` transition, so the classic/grid focus ring (box-shadow on the artwork, See All
+   frame or folder emoji) was animated and repainted on every move. The current Home sets
+   `transition: none` on its frames (components-60-vidaa.css). The folder GIF keeps its fade. */
+.tv2-home .tv2-rows .tv2-card *:not(.tv2-card-gif) {
+  transition: none !important;
+}
+
 /* Current Home loading card (home-poster-card-loading): placeholder gradient and shimmer. */
 .tv2-card-skeleton {
   pointer-events: none;
@@ -374,9 +382,10 @@ html.vidaa-tv .tv2-rows {
   transition: transform 140ms cubic-bezier(0.33, 0, 0.67, 1);
 }
 
+/* !important: `.performance-constrained *` (components-44.css) would force 140 ms. */
 html.vidaa-tv.performance-constrained .tv2-track,
 html.vidaa-tv.performance-constrained .tv2-rows {
-  transition-duration: 100ms;
+  transition-duration: 100ms !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

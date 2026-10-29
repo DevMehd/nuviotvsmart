@@ -4,18 +4,52 @@ import { getVidaaArtworkUrl } from "../screens/home/vidaaArtworkOptimization.js"
 
 // TMDB widths matching the current Home's card caps (w342 portrait, w500 landscape) and hero.
 const TMDB_SIZES = [342, 500, 780, 1280];
+// TMDB logo widths (its logo_sizes) for the card logos, ~200 px wide.
+export const TMDB_LOGO_SIZES = [300, 500];
+// Decoded card artwork, logos and folder GIFs of the Home (natural pixels; the hero is outside
+// the queue): ~8 Mpx at card sizes for the loaded rows; oversized sources are capped off screen,
+// far first (visible cards always load).
+export const HOME_IMAGE_BUDGET_PX = 10e6;
 // Anchored like tmdbImageUrl.js: a TMDB URL embedded in a proxy or a look-alike host is left as is.
 const TMDB_SIZE = /^((?:https?:)?\/\/image\.tmdb\.org\/t\/p\/)(original|w(\d+))\//i;
 
-/** URL for a display width: TMDB size bucket (never upsized), nuvio-art through the Vercel optimizer, others as is. */
-export function sizedImageUrl(url, width) {
+// Cinemeta artwork (images.metahub.space): widths of its size slots, measured on 2026-10-29
+// (poster small 300x450 WebP, medium 500x750, large 780x1170; background small 480x270, medium
+// and large 1920x1080). A card asking a 1920 px background decoded 2 Mpx for ~0.1 Mpx shown.
+const METAHUB_SIZE =
+  /^(https:\/\/images\.metahub\.space\/(poster|background)\/)(small|medium|large)\//i;
+const METAHUB_SLOTS = {
+  poster: [
+    ["small", 300],
+    ["medium", 500],
+    ["large", 780]
+  ],
+  background: [
+    ["small", 480],
+    ["medium", 1920],
+    ["large", 1920]
+  ]
+};
+
+/**
+ * URL for a display width: TMDB or Cinemeta size slot (never upsized), nuvio-art through the
+ * Vercel optimizer, others as is.
+ */
+export function sizedImageUrl(url, width, sizes = TMDB_SIZES) {
   const value = String(url || "");
   if (!value) return "";
   const match = value.match(TMDB_SIZE);
   if (match) {
-    const size =
-      TMDB_SIZES.find((candidate) => candidate >= width) || TMDB_SIZES[TMDB_SIZES.length - 1];
+    const size = sizes.find((candidate) => candidate >= width) || sizes[sizes.length - 1];
     return match[3] && Number(match[3]) <= size ? value : value.replace(TMDB_SIZE, `$1w${size}/`);
+  }
+  const metahub = value.match(METAHUB_SIZE);
+  if (metahub) {
+    const slots = METAHUB_SLOTS[metahub[2].toLowerCase()];
+    const current = slots.find(([name]) => name === metahub[3].toLowerCase());
+    const [name, slotWidth] =
+      slots.find(([, candidate]) => candidate >= width) || slots[slots.length - 1];
+    return slotWidth < current[1] ? value.replace(METAHUB_SIZE, `$1${name}/`) : value;
   }
   return getVidaaArtworkUrl(value, width <= 640 ? 640 : 1280);
 }
@@ -23,10 +57,24 @@ export function sizedImageUrl(url, width) {
 /**
  * At most `concurrency` images load at once; a node asking again replaces its pending request,
  * so a recycled card never shows an image it no longer represents. A failed image tries its
- * `fallbacks` in turn in the same slot; a `priority` request (the focused card) goes first.
+ * `fallbacks` in turn in the same slot. Requests load by `rank` (lower first; a `priority`
+ * request, the focused card, before all). Decoded pixels (natural size) stay under `budgetPx`
+ * for off-screen images only: over it, an off-screen request evicts the off-screen images of a
+ * worse rank or waits; an `onScreen` one (default, e.g. the WebGL renderer) evicts any off-screen
+ * image and never waits, and is never evicted, so the budget never blanks a visible card.
  */
-export function createImageQueue({ concurrency = 3, isBusy = () => false, retryMs = 120 } = {}) {
+export function createImageQueue({
+  concurrency = 3,
+  isBusy = () => false,
+  retryMs = 120,
+  budgetPx = Infinity
+} = {}) {
   const pending = new Map();
+  // Loaded nodes: natural pixels and the rank of their latest request.
+  const decoded = new Map();
+  const ranks = new WeakMap();
+  const offScreen = new WeakSet();
+  let decodedPx = 0;
   // Nodes holding a slot. Changing or removing src mid-load cancels it without load/error events.
   const loading = new Set();
   // Last URL each node was given, so a node showing one of its fallbacks is not reloaded.
@@ -38,17 +86,41 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
     loading.delete(node);
   }
 
+  function forget(node) {
+    decodedPx -= decoded.get(node) || 0;
+    decoded.delete(node);
+  }
+
+  // Over budget: drop off-screen loaded images ranked after `rank`, worst first. True once under budget.
+  function makeRoom(rank) {
+    if (decodedPx < budgetPx) return true;
+    const victims = [...decoded.keys()]
+      .filter((node) => offScreen.has(node) && ranks.get(node) > rank)
+      .sort((a, b) => ranks.get(b) - ranks.get(a));
+    for (const node of victims) {
+      forget(node);
+      requested.delete(node);
+      node.removeAttribute?.("src");
+      if (decodedPx < budgetPx) return true;
+    }
+    return false;
+  }
+
   function pump() {
     timer = null;
     if (isBusy()) {
       timer = setTimeout(pump, retryMs);
       return;
     }
-    for (const [node, entry] of pending) {
-      if (!loading.has(node) && loading.size >= concurrency) return;
+    const order = [...pending].sort((a, b) => a[1].rank - b[1].rank);
+    for (const [node, entry] of order) {
+      // A node already loading reuses its own slot.
+      if (!loading.has(node) && loading.size >= concurrency) continue;
+      if (!makeRoom(entry.onScreen ? -Infinity : entry.rank) && !entry.onScreen) continue;
       pending.delete(node);
       loading.add(node);
       requested.set(node, entry.url);
+      forget(node);
       load(node, entry.url, entry.fallbacks);
     }
   }
@@ -57,6 +129,11 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
   function load(node, url, fallbacks) {
     node.onload = () => {
       release(node);
+      const pixels = (node.naturalWidth || 0) * (node.naturalHeight || 0);
+      decoded.set(node, pixels);
+      decodedPx += pixels;
+      // Loads started under budget can end over it: worse-ranked off-screen images make room.
+      makeRoom(offScreen.has(node) ? ranks.get(node) : -Infinity);
       pump();
     };
     node.onerror = () => {
@@ -68,11 +145,16 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
   }
 
   return {
-    request(node, url, { fallbacks = [], priority = false } = {}) {
+    request(node, url, { fallbacks = [], priority = false, rank = 0, onScreen = true } = {}) {
       if (!node) return;
+      const order = priority ? -1 : rank;
+      ranks.set(node, order);
+      if (onScreen || priority) offScreen.delete(node);
+      else offScreen.add(node);
       if (!url) {
         pending.delete(node);
         requested.delete(node);
+        forget(node);
         if (node.getAttribute?.("src")) node.removeAttribute("src");
         if (loading.has(node)) {
           release(node);
@@ -82,15 +164,7 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
       }
       pending.delete(node);
       if (node.getAttribute?.("src") && requested.get(node) === url) return;
-      const entry = { url, fallbacks };
-      if (priority) {
-        const rest = [...pending];
-        pending.clear();
-        pending.set(node, entry);
-        rest.forEach(([other, value]) => pending.set(other, value));
-      } else {
-        pending.set(node, entry);
-      }
+      pending.set(node, { url, fallbacks, rank: order, onScreen: onScreen || priority });
       if (!timer) pump();
     },
     clear() {
@@ -107,6 +181,10 @@ export function createImageQueue({ concurrency = 3, isBusy = () => false, retryM
     },
     get pendingCount() {
       return pending.size;
+    },
+    /** Natural pixels of the loaded images (the Diagnostic's decoded-image measure). */
+    get decodedPx() {
+      return decodedPx;
     }
   };
 }

@@ -486,6 +486,34 @@
                 // VIDAA balanced motion: the focused card keeps its 1.015 scale.
                 const scale = new DOMMatrix(getComputedStyle(node).transform).a;
                 assert(near(scale * 100, 101.5), at(`${node.dataset.rowKey} focus scale ${scale}`));
+                // Effective styles on constrained VIDAA: a 2D transform (no compositor layer per
+                // card), no focus tween, a static focus ring, no will-change on cards.
+                if (constrained) {
+                  const style = getComputedStyle(node);
+                  assert(
+                    style.transform.startsWith("matrix(") && node.getAnimations().length === 0,
+                    at(`${node.dataset.rowKey} focus ${style.transform} animations ${node.getAnimations().length}`)
+                  );
+                  assert(style.willChange === "auto", at(`card will-change ${style.willChange}`));
+                  const ring = getComputedStyle(
+                    node.classList.contains("has-label")
+                      ? node.querySelector(node.classList.contains("is-seeall") ? ".tv2-seeall" : ".tv2-card-image")
+                      : node
+                  );
+                  assert(
+                    /0px 0px 0px 3px/.test(ring.boxShadow) && parseFloat(ring.transitionDuration) === 0,
+                    at(`${node.dataset.rowKey} focus ring ${ring.boxShadow} ${ring.transitionDuration}`)
+                  );
+                  // Rail camera: the current Home's 100 ms on constrained runtimes, compositor only.
+                  const track = getComputedStyle(node.closest(".tv2-track"));
+                  assert(
+                    track.transitionDuration === "0.1s" && track.willChange === "transform",
+                    at(`track ${track.transitionDuration} ${track.willChange}`)
+                  );
+                  // Pooled cards outside the window keep no image (decoded-pixel budget).
+                  for (const hidden of container.querySelectorAll(".tv2-card[style*='hidden'] img"))
+                    assert(!hidden.getAttribute("src"), at(`hidden pooled card keeps ${hidden.className}`));
+                }
               }
               assert(
                 node.contains(hit),
