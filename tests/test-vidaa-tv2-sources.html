@@ -261,8 +261,11 @@
         route.cleanup();
         counts.reads = counts.observers = 0;
         const backContext = { isBackNavigation: true, previousRoute: "player" };
-        await route.mount(restoredState.params, { ...backContext, restoredState });
-        assert(focused()?.dataset.streamId === playedId && focused().dataset.streamRow === "300", "row 300 focused on return");
+        // Two late sources inserted before it: the real mount must follow the key, not row 300.
+        const late = ["a", "b"].map((n) => ({ ...restoredState.streams[0], id: `late-${n}`, url: `https://fixture.invalid/late/${n}.mkv` }));
+        const lateState = { ...restoredState, streams: [...late, ...restoredState.streams] };
+        await route.mount(restoredState.params, { ...backContext, restoredState: lateState });
+        assert(focused()?.dataset.streamId === playedId && focused().dataset.streamRow === "302", "the played source focused on return, row 302");
         assert(counts.reads === 0 && counts.observers === 0, `no layout read on return (${counts.reads}, ${counts.observers})`);
         const returnCard = focused().getBoundingClientRect();
         const returnList = route.container.querySelector(".stream-route-list").getBoundingClientRect();
