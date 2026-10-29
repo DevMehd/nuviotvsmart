@@ -243,6 +243,25 @@ function setup(options = {}) {
   assert.equal(video.currentTime, 40, "resumed at the same position");
 }
 
+// 5b. P5 review: the in-place reload fails before its first image (src reset, time 0). The
+// position a Sources switch or a save reads stays the one that was played, never 0.
+{
+  const { clock, video, session } = setup();
+  session.attach(URL_A);
+  video.emit("playing");
+  video.currentTime = 40;
+  video.emit("timeupdate");
+  video.error = { code: 2, message: "cut" };
+  video.emit("error");
+  clock.advance(0);
+  video.currentTime = 0;
+  video.error = { code: 3, message: "PIPELINE_ERROR_DECODE" };
+  video.emit("error");
+  assert.equal(session.state, "error");
+  assert.ok(session.played, "an image was shown for this source");
+  assert.equal(session.currentSeconds(), 40, "the played position, not the reset 0");
+}
+
 // 6. Decoder error: no retry, explicit message kind.
 {
   const { video, session } = setup();

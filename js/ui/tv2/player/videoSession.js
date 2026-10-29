@@ -436,6 +436,8 @@ export function createVideoSession(
   }
 
   async function startHls(current) {
+    // The start guard covers the library load too: a hung script still ends in an error (C2).
+    startGuard();
     let Hls = null;
     try {
       Hls = await loadHls();
@@ -472,7 +474,6 @@ export function createVideoSession(
     });
     hls.attachMedia(video);
     hls.loadSource(url);
-    startGuard();
     play(current);
   }
 
@@ -539,7 +540,9 @@ export function createVideoSession(
     },
     currentSeconds() {
       const time = Number(video.currentTime);
-      return Number.isFinite(time) && s.state !== "loading" ? time : s.position;
+      // Until this load shows an image (loading, or an error after a same-link reload whose
+      // src was reset to 0), the kept position is the real one: a switch or a save never reads 0.
+      return Number.isFinite(time) && s.firstFrame ? time : s.position;
     },
     durationSeconds() {
       const duration = Number(video.duration);
