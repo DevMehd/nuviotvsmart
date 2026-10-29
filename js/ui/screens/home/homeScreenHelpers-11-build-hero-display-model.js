@@ -1,5 +1,5 @@
 import { continueWatchingRating } from "./continueWatchingRating.js";
-import { renderHeroMdbListRatings } from "./homeMdbListRatings.js";
+import { getHeroMdbListRatingItems, renderHeroMdbListRatings } from "./homeMdbListRatings.js";
 /* eslint-disable no-unused-vars */
 import { Router } from "../../navigation/routerState.js";
 
@@ -286,7 +286,8 @@ export function buildModernHeroPresentation(hero) {
       languageText: "",
       showImdbPrimary: false,
       showImdbSecondary: false,
-      imdbText: ""
+      imdbText: "",
+      mdbListItems: []
     };
   }
   const isContinueWatchingHero = hero?.heroSource === "continueWatching";
@@ -353,7 +354,9 @@ export function buildModernHeroPresentation(hero) {
     languageText,
     showImdbPrimary,
     showImdbSecondary,
-    imdbText
+    imdbText,
+    // Same ratings as mdbListMarkup, as data for the WebGL Home.
+    mdbListItems: mdbListMarkup ? getHeroMdbListRatingItems(normalized, "modern") : []
   };
 }
 

@@ -595,6 +595,20 @@ html[data-card-depth="true"][data-card-depth-posters="true"]
   display: block;
 }
 
+/* Folder focus GIF over the focused WebGL card (decision 3), placed by the renderer once the rails
+   stop; same fade as .tv2-card-gif. */
+.tv2-gl-gif {
+  position: absolute;
+  object-fit: fill;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.tv2-gl-gif.is-active[src] {
+  opacity: 1;
+}
+
 /* Focused-card mirror for openDetail and the diagnostic driver; never visible. */
 .tv2-home .tv2-gl-proxy {
   position: absolute;

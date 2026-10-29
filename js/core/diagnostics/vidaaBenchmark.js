@@ -1,4 +1,10 @@
-import { sessionNewHomeMode, homeEngine, homeEngineFallback } from "../../ui/tv2/newHomeSetting.js";
+import {
+  sessionNewHomeMode,
+  homeEngine,
+  homeEngineFallback,
+  getWebglVariant,
+  webglInfo
+} from "../../ui/tv2/newHomeSetting.js";
 import { sessionNewSourcesMode } from "../../ui/tv2/newSourcesSetting.js";
 import { VidaaFrameDiagnostics } from "./vidaaFrameDiagnostics.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
@@ -232,6 +238,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     homeEngine: homeEngine(),
     homeEngineFallback: homeEngineFallback(),
     sourcesVariant: sessionNewSourcesMode(),
+    webglVariant: getWebglVariant(),
     homeLayout: ["modern", "classic", "grid"].includes(layout) ? layout : null,
     playerVariant: PLAYER_VARIANT,
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
@@ -772,6 +779,8 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
       .concat(result)
       .slice(-8);
     report.startup = { ...readStartupTimings(root), firstHomeMountedMs };
+    // Latest WebGL facts of the run (lot W1a); kept when this run never drew in WebGL.
+    report.webgl = webglInfo() || report.webgl || null;
     save();
     updateHud(hudMessage === false ? false : hudMessage);
     notify();

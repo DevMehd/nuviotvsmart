@@ -625,7 +625,7 @@ export const NewHomeScreen = {
     });
   },
 
-  /** Watched badges: DOM only, the WebGL renderer has no setWatched. */
+  /** Watched badges of both renderers; visible cards refill on the render below. */
   applyWatched(ids) {
     this.watchedTitleIds = ids;
     this.view?.setWatched?.(ids);

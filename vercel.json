@@ -91,7 +91,7 @@
     }
   ],
   "images": {
-    "sizes": [128, 640, 1280],
+    "sizes": [128, 256, 640, 1280],
     "domains": [],
     "localPatterns": [],
     "remotePatterns": [
@@ -107,6 +107,13 @@
         "hostname": "cdn.xperience-app.com",
         "port": "",
         "pathname": "^/badges/(elite|nardbadges)/[a-zA-Z0-9_-]+\\.webp$",
+        "search": ""
+      },
+      {
+        "protocol": "https",
+        "hostname": "images.metahub.space",
+        "port": "",
+        "pathname": "^/poster/(small|medium|large)/tt\\d+/img$",
         "search": ""
       }
     ],

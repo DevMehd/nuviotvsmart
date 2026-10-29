@@ -54,11 +54,37 @@ export function sizedImageUrl(url, width, sizes = TMDB_SIZES) {
   return getVidaaArtworkUrl(value, width <= 640 ? 640 : 1280);
 }
 
+// Cinemeta posters (images.metahub.space/poster) are the only common artwork host sending no
+// CORS header (curl, 29/10), so WebGL cannot read them. TMDB, metahub logos and backgrounds,
+// trakt, imgur, fanart and GitHub send one and stay direct. Exact path, no query string: a
+// private addon URL never reaches the proxy.
+const NO_CORS_POSTER =
+  /^https:\/\/images\.metahub\.space\/poster\/(?:small|medium|large)\/tt\d+\/img$/;
+// Single width (Vercel Hobby quota): the modern poster is 229 px wide. Must be in vercel.json sizes.
+export const GL_PROXY_WIDTH = 256;
+const CLOUDINARY_CLOUD = /^[a-z0-9_-]{1,64}$/i;
+
+/**
+ * URL the WebGL Home can upload as a texture: sizedImageUrl, except a no-CORS poster, which goes
+ * through Cloudinary fetch when a public cloud name is configured, else the same-origin Vercel
+ * optimizer on Vercel, else stays as is (it then fails and shows the text tile).
+ */
+export function glImageUrl(url, width) {
+  const value = sizedImageUrl(url, width);
+  if (!NO_CORS_POSTER.test(value)) return value;
+  const cloud = globalThis.__NUVIO_CLOUDINARY_CLOUD__;
+  if (typeof cloud === "string" && CLOUDINARY_CLOUD.test(cloud))
+    return `https://res.cloudinary.com/${cloud}/image/fetch/w_${GL_PROXY_WIDTH},q_auto,f_auto/${encodeURIComponent(value)}`;
+  if (globalThis.__NUVIO_IMAGE_OPTIMIZATION__ === true)
+    return `/_vercel/image?url=${encodeURIComponent(value)}&w=${GL_PROXY_WIDTH}&q=80`;
+  return value;
+}
+
 /**
  * At most `concurrency` images load at once; a node asking again replaces its pending request,
  * so a recycled card never shows an image it no longer represents. A failed image tries its
- * `fallbacks` in turn in the same slot, then calls `onError`. Requests load by `rank` (lower first; a `priority`
- * request, the focused card, before all). Decoded pixels (natural size) stay under `budgetPx`
+ * `fallbacks` in turn in the same slot, then calls `onError`. Requests load by `rank` (lower
+ * first; a `priority` request, the focused card, before all). Decoded pixels (natural size) stay under `budgetPx`
  * for off-screen images only: over it, an off-screen request evicts the off-screen images of a
  * worse rank or waits; an `onScreen` one (default, e.g. the WebGL renderer) evicts any off-screen
  * image and never waits, and is never evicted, so the budget never blanks a visible card.

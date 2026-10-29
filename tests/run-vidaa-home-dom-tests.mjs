@@ -20,6 +20,7 @@ const defaultFixtures = [
   "test-vidaa-tracking-dom.html",
   "test-vidaa-trailer-dom.html",
   "test-vidaa-tv2-layouts.html",
+  "test-vidaa-tv2-webgl.html",
   "test-vidaa-raw-video-probe.html",
   "test-vidaa-tv2-sources.html",
   "test-vidaa-tv2-sources-arrival.html",
@@ -107,11 +108,12 @@ async function stopBrowser(child) {
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function captureBrowser(browser, profile, url) {
+async function captureBrowser(browser, profile, url, extraArgs = []) {
   const child = spawn(
     browser,
     [
       "--headless=new",
+      ...extraArgs,
       "--remote-debugging-pipe",
       "--window-size=1920,1080",
       "--no-first-run",
@@ -225,7 +227,7 @@ function fixtureResult(result) {
   throw Error(`Fixture did not complete with PASS or FAIL: ${text}`);
 }
 
-const server = http.createServer(async (request, response) => {
+async function serveFile(request, response) {
   try {
     const pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1/").pathname);
     const file = path.resolve(workspace, `.${pathname}`);
@@ -242,7 +244,11 @@ const server = http.createServer(async (request, response) => {
   } catch {
     response.writeHead(404).end();
   }
-});
+}
+const server = http.createServer(serveFile);
+// Same files from a second origin without Access-Control-Allow-Origin: what WebGL meets with
+// images.metahub.space posters (lot W1a).
+const crossOriginServer = http.createServer(serveFile);
 let profileRoot;
 try {
   const browser = await findBrowser();
@@ -252,14 +258,21 @@ try {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
+  await new Promise((resolve, reject) => {
+    crossOriginServer.once("error", reject);
+    crossOriginServer.listen(0, "127.0.0.1", resolve);
+  });
   profileRoot = await mkdtemp(path.join(os.tmpdir(), "nuvio-vidaa-dom-"));
   console.log(`Home DOM browser: ${path.basename(browser)}`);
   for (const [index, fixture] of fixtures.entries()) {
     await access(path.join(workspace, "tests", fixture.split("?")[0]));
     const profile = path.join(profileRoot, String(index));
     await mkdir(profile);
-    const url = `http://127.0.0.1:${server.address().port}/tests/${fixture}`;
-    const result = fixtureResult(await captureBrowser(browser, profile, url));
+    const webgl = fixture.startsWith("test-vidaa-tv2-webgl");
+    const url = `http://127.0.0.1:${server.address().port}/tests/${fixture}${webgl ? `?xorigin=${crossOriginServer.address().port}` : ""}`;
+    // WebGL through SwiftShader: a desktop software GPU, never a TV measure.
+    const flags = webgl ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [];
+    const result = fixtureResult(await captureBrowser(browser, profile, url, flags));
     console.log(`${fixture}: ${result}`);
   }
   console.log(
@@ -267,6 +280,10 @@ try {
   );
 } finally {
   await Promise.all([...activeBrowsers].map(stopBrowser));
+  if (crossOriginServer.listening) {
+    crossOriginServer.closeAllConnections();
+    await new Promise((resolve) => crossOriginServer.close(resolve));
+  }
   if (server.listening) {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

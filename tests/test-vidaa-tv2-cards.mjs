@@ -71,8 +71,9 @@ const { renderContinueWatchingCard, continueCardModel } =
 const { createPosterCardMarkup, posterCardModel } =
   await import("../js/ui/screens/home/homeScreenHelpers-15-create-poster-card-markup.js");
 const { cardGeometry, rowCardSize } = await import("../js/ui/tv2/railEngine.js");
-const { sizedImageUrl, createImageQueue, TMDB_LOGO_SIZES } =
+const { sizedImageUrl, glImageUrl, GL_PROXY_WIDTH, createImageQueue, TMDB_LOGO_SIZES } =
   await import("../js/ui/tv2/imagePipeline.js");
+const { readFile } = await import("node:fs/promises");
 const { createDomHomeRenderer, cardImage } = await import("../js/ui/tv2/renderer.js");
 const { loadHomeRows } = await import("../js/ui/tv2/homeModel.js");
 
@@ -171,6 +172,78 @@ try {
     assert.equal(sizedImageUrl(source, width), expected, `${source} at ${width}`);
   assert.equal(sizedImageUrl(tmdb("original"), 300, TMDB_LOGO_SIZES), tmdb("w300"));
   assert.equal(sizedImageUrl(tmdb("w185"), 300, TMDB_LOGO_SIZES), tmdb("w185"));
+
+  // WebGL URLs (lot W1a): only the no-CORS metahub posters go through the proxy, at one width.
+  const metahubPoster = "https://images.metahub.space/poster/small/tt0903747/img";
+  const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  const proxied = (url) => {
+    const target = new URL(url, "https://nuvio.invalid");
+    if (target.pathname !== "/_vercel/image") return false;
+    const source = new URL(target.searchParams.get("url"));
+    assert.ok(vercel.images.sizes.includes(Number(target.searchParams.get("w"))), url);
+    assert.ok(vercel.images.qualities.includes(Number(target.searchParams.get("q"))), url);
+    assert.ok(
+      vercel.images.remotePatterns.some(
+        (pattern) =>
+          `${pattern.protocol}:` === source.protocol &&
+          pattern.hostname === source.hostname &&
+          new RegExp(pattern.pathname).test(source.pathname) &&
+          source.search === pattern.search
+      ),
+      `${source} matches a vercel.json remotePattern`
+    );
+    return true;
+  };
+  const direct = [
+    [tmdb("original"), 229, tmdb("w342")],
+    ["https://images.metahub.space/logo/medium/tt0903747/img", 440],
+    ["https://images.metahub.space/background/medium/tt0903747/img", 1280],
+    ["https://walter-r2.trakt.tv/images/shows/000/001/388/posters/thumb/x.jpg.webp", 229],
+    [`${metahubPoster}?token=fixture`, 229],
+    ["https://images.metahub.space.evil.example/poster/small/tt0903747/img", 229],
+    ["https://image.tmdb.org.evil.example/t/p/original/poster.jpg", 229],
+    ["https://addon.example/poster/small/tt0903747/img", 229],
+    ["data:image/png;base64,fixture", 229]
+  ];
+  assert.equal(
+    glImageUrl(metahubPoster, 229),
+    metahubPoster,
+    "off Vercel: the raw URL (text tile on failure)"
+  );
+  globalThis.__NUVIO_IMAGE_OPTIMIZATION__ = true;
+  try {
+    for (const [source, width, expected = source] of direct) {
+      assert.equal(glImageUrl(source, width), expected, `${source} stays direct`);
+      assert.equal(proxied(glImageUrl(source, width)), false);
+    }
+    for (const size of ["small", "medium", "large"]) {
+      const poster = metahubPoster.replace("small", size);
+      const url = glImageUrl(poster, 229);
+      // Sized artwork (1.3.11): the proxy fetches the small slot (300 px), never a larger one.
+      assert.equal(url, `/_vercel/image?url=${encodeURIComponent(metahubPoster)}&w=256&q=80`);
+      assert.ok(proxied(url));
+      assert.ok(proxied(glImageUrl(poster, 419)), "one width for every card size");
+    }
+    assert.equal(GL_PROXY_WIDTH, 256);
+    // Cloudinary fetch instead, when a public cloud name is configured; a bad name is ignored.
+    globalThis.__NUVIO_CLOUDINARY_CLOUD__ = "nuvio-fixture";
+    assert.equal(
+      glImageUrl(metahubPoster, 229),
+      `https://res.cloudinary.com/nuvio-fixture/image/fetch/w_256,q_auto,f_auto/${encodeURIComponent(metahubPoster)}`
+    );
+    assert.equal(glImageUrl(tmdb("original"), 229), tmdb("w342"), "TMDB never proxied");
+    globalThis.__NUVIO_CLOUDINARY_CLOUD__ = "evil.example/x";
+    assert.ok(glImageUrl(metahubPoster, 229).startsWith("/_vercel/image?"));
+  } finally {
+    delete globalThis.__NUVIO_IMAGE_OPTIMIZATION__;
+    delete globalThis.__NUVIO_CLOUDINARY_CLOUD__;
+  }
+  // No wildcard host and no private addon host in the optimizer allowlist.
+  for (const pattern of vercel.images.remotePatterns) {
+    assert.match(pattern.hostname, /^[a-z0-9.-]+$/, "exact hostname");
+    assert.match(pattern.pathname, /^\^.*\$$/, "anchored path");
+    assert.equal(pattern.search, "");
+  }
 
   // Queue: a failed image tries its fallbacks in the same slot; the focused card goes first.
   const fake = () => {
