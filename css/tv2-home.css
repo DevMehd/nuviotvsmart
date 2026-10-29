@@ -32,7 +32,7 @@
   z-index: 0;
   background: transparent;
   /* Copy aligned with the rails (.tv2-main padding). */
-  --home-content-start: 220px;
+  --home-content-start: var(--tv2-content-start, 220px);
 }
 
 .tv2-hero-shell .home-hero-backdrop:not([src]) {
@@ -46,7 +46,8 @@
   right: 0;
   bottom: 0;
   margin: 0;
-  /* Layout content start (railEngine cardGeometry): modern 220, classic 192, grid 168. */
+  /* Layout content start (railEngine cardGeometry): modern 220, classic 192, grid 168;
+     104, 48 and 24 with the modern sidebar pill. */
   padding: 0 0 0 var(--tv2-content-start, 220px);
   overflow: hidden;
 }
@@ -131,6 +132,14 @@
   border-radius: var(--tv2-card-radius, 24px);
   overflow: hidden;
   background: var(--card-bg);
+}
+
+/* Pooled cards jump to their slot (renderer placeCard), even under the constrained runtimes'
+   global 140 ms transition (components-44.css `.performance-constrained *`). Continue Watching
+   cards are .tv2-continue-card: the current Home's unscoped `.home-continue-card.focused
+   { transform: none !important }` (constrained, Tizen) would drop their position. */
+.tv2-home .tv2-rows .tv2-card {
+  transition: none !important;
 }
 
 /* Current Home loading card (home-poster-card-loading): placeholder gradient and shimmer. */
@@ -258,11 +267,11 @@
 }
 
 /* Continue Watching card (components-14/17.css, modern sizes): badge, copy, progress, blur. */
-.tv2-card.home-continue-card {
+.tv2-card.tv2-continue-card {
   background: linear-gradient(145deg, #393939, #111);
 }
 
-.tv2-card.home-continue-card::after {
+.tv2-card.tv2-continue-card::after {
   content: "";
   position: absolute;
   z-index: 1;
@@ -382,7 +391,7 @@ html.vidaa-tv.performance-constrained .tv2-rows {
    (LayoutPreferences applyCardDepthPresentation). */
 html[data-card-depth="true"][data-card-depth-posters="true"] .tv2-card.home-poster-card::before,
 html[data-card-depth="true"][data-card-depth-continue-watching="true"]
-  .tv2-card.home-continue-card::before {
+  .tv2-card.tv2-continue-card::before {
   content: "";
   position: absolute;
   z-index: 10;
@@ -527,7 +536,8 @@ html[data-card-depth="true"][data-card-depth-posters="true"]
   z-index: 3;
   box-sizing: border-box;
   min-height: 56px;
-  padding: 12px 48px 12px var(--tv2-content-start, 168px);
+  /* Current Home: 48 px inside .home-main, i.e. the grid content start (24 px inset) + 24. */
+  padding: 12px 48px 12px calc(var(--tv2-content-start, 168px) + 24px);
   background: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.94) 70%, rgba(0, 0, 0, 0) 100%);
   color: #fff;
   font-size: 20px;

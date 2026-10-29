@@ -157,8 +157,29 @@
               (node) => node.style.visibility !== "hidden"
             );
           const checks = [];
+          // Current Home values (headless Chrome, VIDAA UA, 1920x1080), sidebar [rail, pill]: x of
+          // the first card, modern previous-card peek and grid card width. With the rail, modern
+          // keeps its 220 px start (the current Home draws 248).
+          const CURRENT_HOME = {
+            start: { modern: [220, 104], classic: [192, 48], grid: [168, 24] },
+            modernPeek: [196, 80],
+            gridCardWidth: [236, 257],
+            gridStickyTitle: [192, 48]
+          };
 
-          for (const mode of ["modern", "classic", "grid"]) {
+          // Constrained runtimes (js/app.js: <= 4 cores, as VIDAA TVs) get the current Home's unscoped
+          // card rules (components-44/49/60); the focused Continue Watching card must keep its place.
+          // Each layout also runs with the modern sidebar pill floating over the content.
+          for (const [mode, constrained, pill] of [
+            ["modern", false, false],
+            ["modern", true, true],
+            ["classic", true, false],
+            ["classic", true, true],
+            ["grid", true, false],
+            ["grid", true, true]
+          ]) {
+            for (const node of [document.documentElement, document.body])
+              node.classList.toggle("performance-constrained", constrained);
             const legacy = mode !== "modern";
             const layout = {
               homeLayout: mode,
@@ -168,8 +189,7 @@
               heroSectionEnabled: true,
               catalogAddonNameEnabled: true,
               continueWatchingCardStyle: "card",
-              // Grid also covers the modern sidebar pill; modern and classic the default sidebar.
-              modernSidebar: mode === "grid"
+              modernSidebar: pill
             };
             const geometry = cardGeometry(layout, mode);
             const rows = buildLayoutRows(modelRows(), {
@@ -184,7 +204,8 @@
               imageQueue: createImageQueue(),
               layout
             });
-            const at = (label) => `${mode}: ${label}`;
+            const at = (label) =>
+              `${mode}${constrained ? " constrained" : ""}${pill ? " pill" : ""}: ${label}`;
             // The visible frame (artwork, See All or skeleton) keeps the card radius.
             const assertFrame = (card) => {
               const frame = card.classList.contains("is-seeall")
@@ -257,7 +278,31 @@
                 );
               }
             });
-            checks.push(`${mode} sizes`);
+            checks.push(at("sizes"));
+
+            // Content start: the first card of an unfocused rail, as on the current Home.
+            {
+              const start = CURRENT_HOME.start[mode][Number(pill)];
+              const first = sections[dataRows.findIndex((row) => row.kind === "poster" && row.items.length)]
+                .querySelector('.tv2-card[data-index="0"]')
+                .getBoundingClientRect();
+              assert(first && near(first.left, start), at(`content start ${first?.left}, expected ${start}`));
+              if (mode === "grid") {
+                const width = CURRENT_HOME.gridCardWidth[Number(pill)];
+                assert(geometry.poster.width === width, at(`grid card ${geometry.poster.width}, expected ${width}`));
+                // Sticky section title: the current Home's 48 px padding inside .home-main.
+                const sticky = container.querySelector(".tv2-grid-sticky");
+                const titleLeft =
+                  sticky.getBoundingClientRect().left + parseFloat(getComputedStyle(sticky).paddingLeft);
+                const expected = CURRENT_HOME.gridStickyTitle[Number(pill)];
+                assert(near(titleLeft, expected), at(`sticky title at ${titleLeft}, expected ${expected}`));
+              }
+              if (!legacy) {
+                const copy = container.querySelector(".home-modern-hero-copy").getBoundingClientRect();
+                assert(near(copy.left, start), at(`hero copy at ${copy.left}, expected ${start}`));
+              }
+            }
+            checks.push(at("content start"));
 
             // Skeletons: the loading row's cards are drawn, painted and on screen.
             const skeletons = [...container.querySelectorAll(".tv2-card-skeleton")];
@@ -283,7 +328,7 @@
               skeleton.style.pointerEvents = "";
               assert(hit === skeleton, at(`skeleton covered by ${hit?.className}`));
             }
-            checks.push(`${mode} skeletons`);
+            checks.push(at("skeletons"));
 
             // Hero copy above the first rail (modern hero, or the classic/grid hero card).
             {
@@ -307,7 +352,7 @@
                   at(`hero copy bottom ${rect.bottom} over first rail top ${firstRow.top}`)
                 );
             }
-            checks.push(`${mode} hero`);
+            checks.push(at("hero"));
 
             // Labels inside their reserved block (classic/grid titles, CW copy, folder titles).
             const labels = () => {
@@ -343,7 +388,7 @@
               }
             };
             labels();
-            checks.push(`${mode} labels`);
+            checks.push(at("labels"));
 
             // Sidebar: the collapsed rail keeps its icons inside its items and on screen.
             {
@@ -378,11 +423,13 @@
                   )
                 );
             }
-            checks.push(`${mode} sidebar`);
+            checks.push(at("sidebar"));
 
             // Navigation: the focused card stays fully on screen, right of the sidebar rail.
             const main = container.querySelector(".tv2-main").getBoundingClientRect();
+            // Modern starts on Continue Watching: move along it first (classic/grid: the first down).
             const keys = [
+              ...(legacy ? [] : ["right", "right", "right"]),
               "down",
               ...Array(7).fill("right"),
               "down",
@@ -404,6 +451,17 @@
               const node = view.focusedNode();
               assert(node, at(`no focused node after ${key} #${step}`));
               const rect = node.getBoundingClientRect();
+              // Modern camera: the card before the left-aligned focus peeks as on the current Home.
+              if (!legacy && step === 2) {
+                const prev = container
+                  .querySelector(
+                    `.tv2-card[data-row-key="${node.dataset.rowKey}"][data-index="${node.dataset.index - 1}"]`
+                  )
+                  ?.getBoundingClientRect();
+                const peek = prev && Math.max(0, prev.right) - Math.max(0, prev.left);
+                const expected = CURRENT_HOME.modernPeek[Number(pill)];
+                assert(near(peek, expected), at(`previous card peek ${peek}, expected ${expected}`));
+              }
               assert(
                 rect.left >= main.left + geometry.contentStart - 4 &&
                   rect.right <= innerWidth &&
@@ -417,14 +475,25 @@
                 rect.left + rect.width / 2,
                 rect.top + rect.height / 2
               );
-              if (node.classList.contains("tv2-card")) assertFrame(node);
+              if (node.classList.contains("tv2-card")) {
+                assertFrame(node);
+                // Pooled cards jump to a new slot (placeCard): no CSS transition may slide them.
+                const durations = getComputedStyle(node).transitionDuration.split(",");
+                assert(
+                  durations.every((duration) => parseFloat(duration) === 0),
+                  at(`${node.dataset.rowKey} card transition ${durations}`)
+                );
+                // VIDAA balanced motion: the focused card keeps its 1.015 scale.
+                const scale = new DOMMatrix(getComputedStyle(node).transform).a;
+                assert(near(scale * 100, 101.5), at(`${node.dataset.rowKey} focus scale ${scale}`));
+              }
               assert(
                 node.contains(hit),
                 at(`focus ${node.dataset.rowKey} covered by ${hit?.className}`)
               );
             }
             labels();
-            checks.push(`${mode} navigation`);
+            checks.push(at("navigation"));
             view.destroy();
             container.innerHTML = "";
           }
