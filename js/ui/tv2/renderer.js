@@ -51,7 +51,7 @@ import {
   rowLabelHeight
 } from "./railEngine.js";
 import { focusedIndex } from "./focusModel.js";
-import { sizedImageUrl } from "./imagePipeline.js";
+import { sizedImageUrl, TMDB_LOGO_SIZES } from "./imagePipeline.js";
 
 // Renderers of the new TV Home (nuv-091) share one interface:
 //   setRows(rows), update(rows, focus, { sidebarIndex, hideFocus }), setHero(item, { loading, candidates }),
@@ -261,8 +261,10 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   if (!legacy && layout.modernHeroFullScreenBackdropEnabled)
     container.querySelector(".tv2-hero-shell").classList.add("home-modern-fullscreen-backdrop");
   // Current Home VIDAA balanced motion (components-60-vidaa.css), same gate as its hero swaps:
-  // the focused card scales to 1.015 in 160 ms, never under reduced motion.
+  // the focused card scales to 1.015, never under reduced motion. Tweened in 160 ms except on
+  // constrained runtimes (VIDAA TVs): a tween gives the card a compositor layer for each move.
   const motion = useVidaaHeroTransition(root);
+  const tween = motion && !document.documentElement.classList.contains("performance-constrained");
   root.style.setProperty("--tv2-card-radius", `${geometry.radius ?? 24}px`);
   root.style.setProperty("--tv2-content-start", `${geometry.contentStart ?? 220}px`);
 
@@ -442,7 +444,8 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
       card.subtitle.textContent = cw.subtitle;
       card.progress.style.width = `${cw.progressPct}%`;
     }
-    const logo = landscape ? model.normalized.logo || "" : "";
+    // Card logos at most ~200 px wide (68% of the overlay): TMDB w300.
+    const logo = landscape ? sizedImageUrl(model.normalized.logo, 300, TMDB_LOGO_SIZES) : "";
     card.overlayTitle.textContent = landscape && !logo ? model.normalized.name || "Untitled" : "";
     card.overlaySubtitle.textContent = landscape ? model.subtitle || "" : "";
     card.source = { url: source.url, fallbacks: source.fallbacks, logo };
@@ -450,15 +453,16 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
 
   /**
    * Card position and focus scale. Only a card staying in place tweens its scale (Web Animations,
-   * transform only): a placed or recycled card jumps instead of sliding across the rail.
+   * transform only): a placed or recycled card jumps instead of sliding across the rail. A 2D
+   * translate: cards paint into their track's layer (translate3d made one layer per card).
    */
   function placeCard(node, x, scaled) {
     const card = cards.get(node);
     if (card.x === x && card.scaled === scaled) return;
-    const transform = `translate3d(${x}px,0,0)${scaled ? " scale(1.015)" : ""}`;
+    const transform = `translate(${x}px,0)${scaled ? " scale(1.015)" : ""}`;
     card.tween?.cancel();
     card.tween =
-      card.x === x
+      tween && card.x === x
         ? node.animate([{ transform: node.style.transform }, { transform }], {
             duration: 160,
             easing: "cubic-bezier(0.2, 0, 0, 1)"
@@ -482,8 +486,13 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         return;
       }
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
+      // Image rank (lower loads first and is evicted last): focused row, the next, the previous,
+      // then two below; in a row, visible cards from the left, then the left margin.
+      const away = rowIndex - focus.row;
+      const rowRank = (away > 0 ? 2 * away - 1 : -2 * away) * 1000;
+      const left = Math.round(-win.offset / pitch);
       const navRow = navRowOf(rows, rowIndex);
-      view.slots.forEach((node) => (node.style.visibility = "hidden"));
+      const used = new Set();
       for (let i = win.start; i < win.end; i += 1) {
         const node = slotNode(view, slotFor(i, win.poolSize));
         const version =
@@ -491,23 +500,34 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
         if (fillCard(node, row.items[i], i, row, version))
           fillContent(node, row, row.items[i], view.size);
         setNavPosition(node, navRow, i);
-        node.style.visibility = "";
+        used.add(node);
+        if (node.style.visibility) node.style.visibility = "";
         placeCard(
           node,
           i * pitch,
           motion && focusShown && rowIndex === focus.row && i === focusIndex
         );
         const { image, logo, source } = cards.get(node);
+        const rank = rowRank + (i >= left ? i - left : 50 + left - i);
         imageQueue.request(image, loadImages ? source.url : "", {
           fallbacks: source.fallbacks,
-          priority: rowIndex === focus.row && i === focusIndex
+          priority: rowIndex === focus.row && i === focusIndex,
+          rank
         });
-        logos.push([logo, loadImages ? source.logo : ""]);
+        logos.push([logo, loadImages ? source.logo : "", rank + 500]);
+      }
+      // Pooled cards outside the window: hidden, their images released (decoded-pixel budget).
+      for (const node of view.slots) {
+        if (!node || used.has(node)) continue;
+        if (node.style.visibility !== "hidden") node.style.visibility = "hidden";
+        const card = cards.get(node);
+        imageQueue.request(card.image, "");
+        imageQueue.request(card.logo, "");
       }
       view.track.style.transform = `translate3d(${win.offset}px,0,0)`;
     });
-    // Landscape logos after every artwork: the lowest priority in the same bounded queue.
-    logos.forEach(([node, url]) => imageQueue.request(node, url));
+    // Landscape logos after their row's artwork, in the same bounded queue.
+    logos.forEach(([node, url, rank]) => imageQueue.request(node, url, { rank }));
     rowsHost.style.transform = `translate3d(0,${placed.offsetY}px,0)`;
     if (gridSticky) {
       // The last title stays while the header fades out.

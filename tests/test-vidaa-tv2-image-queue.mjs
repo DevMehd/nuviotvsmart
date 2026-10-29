@@ -66,4 +66,43 @@ assert.equal(done.onload, null, "a loaded image is not requested again");
 cut.onerror();
 assert.equal(cut.src, "cut-fallback.jpg", "the reloaded image tries its fallback");
 
-console.log("PASS: VIDAA new Home image queue never leaks loading slots.");
+// Decoded-pixel budget: over it, a better-ranked request evicts the worst-ranked loaded image;
+// a worse one waits instead of evicting (no load/evict loop between two cards).
+const sized = (width, height) =>
+  Object.assign(node(), { naturalWidth: width, naturalHeight: height });
+const q4 = createImageQueue({ concurrency: 4, budgetPx: 1e6 });
+const near = sized(500, 750); // 0.375 Mpx
+const mid = sized(500, 750);
+const far = sized(500, 750);
+q4.request(near, "near.jpg", { rank: 0 });
+q4.request(mid, "mid.jpg", { rank: 1 });
+q4.request(far, "far.jpg", { rank: 3000 });
+[near, mid, far].forEach(finish);
+assert.equal(q4.decodedPx, 1125000, "three images decoded, now over budget");
+const focusNext = sized(500, 750);
+q4.request(focusNext, "next.jpg", { rank: 2 });
+assert.equal(far.getAttribute("src"), undefined, "the worst-ranked image is evicted");
+assert.equal(focusNext.src, "next.jpg", "the better-ranked image loads");
+finish(focusNext);
+assert.equal(q4.decodedPx, 1125000);
+q4.request(far, "far.jpg", { rank: 3000 });
+assert.equal(far.getAttribute("src"), undefined, "a worse-ranked image waits over budget");
+assert.equal(near.src, "near.jpg", "better-ranked images stay");
+assert.equal(q4.pendingCount, 1);
+// Focus moved: the waiting card is now the best; it evicts the now worst-ranked one.
+q4.request(near, "near.jpg", { rank: 4000 });
+q4.request(far, "far.jpg", { rank: 0 });
+assert.equal(near.getAttribute("src"), undefined, "the image now ranked last is evicted");
+assert.equal(far.src, "far.jpg");
+q4.request(mid, "");
+assert.equal(q4.decodedPx, 375000, "a released image leaves the budget");
+// Unranked callers (the WebGL renderer) are never held back by the budget.
+const q5 = createImageQueue({ concurrency: 2, budgetPx: 1 });
+const one = sized(500, 750);
+const two = sized(500, 750);
+q5.request(one, "one.jpg");
+finish(one);
+q5.request(two, "two.jpg");
+assert.equal(two.src, "two.jpg", "rank 0 loads over budget");
+
+console.log("PASS: VIDAA new Home image queue never leaks loading slots and keeps its Mpx budget.");

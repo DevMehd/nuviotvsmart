@@ -86,7 +86,7 @@ import {
   focusSnapshot,
   restoreFocus
 } from "./focusModel.js";
-import { createImageQueue } from "./imagePipeline.js";
+import { createImageQueue, HOME_IMAGE_BUDGET_PX } from "./imagePipeline.js";
 import { createDomHomeRenderer } from "./renderer.js";
 import { createLightningHomeRenderer } from "./render/lightning/lightningHomeRenderer.js";
 import {
@@ -182,7 +182,10 @@ export const NewHomeScreen = {
     const reuse = Boolean(kept) && !reload && this.layoutKey === layoutKey(layout);
     if (!reuse) {
       kept?.destroy();
-      this.imageQueue = createImageQueue({ isBusy: () => isVidaaNavigationBusy() });
+      this.imageQueue = createImageQueue({
+        isBusy: () => isVidaaNavigationBusy(),
+        budgetPx: HOME_IMAGE_BUDGET_PX
+      });
       this.profile = null;
       this.watchedTitleIds = null;
       this.heroItem = null;

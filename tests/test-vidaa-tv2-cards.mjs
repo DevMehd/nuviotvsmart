@@ -71,7 +71,8 @@ const { renderContinueWatchingCard, continueCardModel } =
 const { createPosterCardMarkup, posterCardModel } =
   await import("../js/ui/screens/home/homeScreenHelpers-15-create-poster-card-markup.js");
 const { cardGeometry, rowCardSize } = await import("../js/ui/tv2/railEngine.js");
-const { sizedImageUrl, createImageQueue } = await import("../js/ui/tv2/imagePipeline.js");
+const { sizedImageUrl, createImageQueue, TMDB_LOGO_SIZES } =
+  await import("../js/ui/tv2/imagePipeline.js");
 const { createDomHomeRenderer, cardImage } = await import("../js/ui/tv2/renderer.js");
 const { loadHomeRows } = await import("../js/ui/tv2/homeModel.js");
 
@@ -157,6 +158,19 @@ try {
     "data:image/png;base64,fixture"
   ])
     assert.equal(sizedImageUrl(source, 229), source, "foreign URLs stay byte-identical");
+  // Cinemeta (images.metahub.space) size slots, never upsized; logos use TMDB logo sizes.
+  const metahub = (path) => `https://images.metahub.space/${path}/tt0111161/img`;
+  for (const [source, width, expected] of [
+    [metahub("poster/medium"), 229, metahub("poster/small")],
+    [metahub("poster/large"), 400, metahub("poster/medium")],
+    [metahub("poster/small"), 780, metahub("poster/small")],
+    [metahub("background/medium"), 419, metahub("background/small")],
+    [metahub("background/large"), 1280, metahub("background/large")],
+    [metahub("logo/medium"), 300, metahub("logo/medium")]
+  ])
+    assert.equal(sizedImageUrl(source, width), expected, `${source} at ${width}`);
+  assert.equal(sizedImageUrl(tmdb("original"), 300, TMDB_LOGO_SIZES), tmdb("w300"));
+  assert.equal(sizedImageUrl(tmdb("w185"), 300, TMDB_LOGO_SIZES), tmdb("w185"));
 
   // Queue: a failed image tries its fallbacks in the same slot; the focused card goes first.
   const fake = () => {
@@ -565,20 +579,20 @@ try {
         track.children.find(
           (node) => node.dataset.index === String(index) && node.style.visibility !== "hidden"
         );
-      assert.equal(card(0).style.transform, "translate3d(0px,0,0) scale(1.015)");
-      assert.equal(card(1).style.transform, `translate3d(${pitch}px,0,0)`);
+      assert.equal(card(0).style.transform, "translate(0px,0) scale(1.015)");
+      assert.equal(card(1).style.transform, `translate(${pitch}px,0)`);
       assert.equal(animations.length, 0, "first placement: no tween");
       view.update(rows, { row: 0, columns: { r: 1 } });
-      assert.equal(card(0).style.transform, "translate3d(0px,0,0)");
-      assert.equal(card(1).style.transform, `translate3d(${pitch}px,0,0) scale(1.015)`);
+      assert.equal(card(0).style.transform, "translate(0px,0)");
+      assert.equal(card(1).style.transform, `translate(${pitch}px,0) scale(1.015)`);
       assert.deepEqual(
         animations.map((a) => [a.node.dataset.index, a.keyframes.at(-1).transform]),
         [
-          ["0", "translate3d(0px,0,0)"],
-          ["1", `translate3d(${pitch}px,0,0) scale(1.015)`]
+          ["0", "translate(0px,0)"],
+          ["1", `translate(${pitch}px,0) scale(1.015)`]
         ]
       );
-      assert.deepEqual(animations[1].keyframes[0], { transform: `translate3d(${pitch}px,0,0)` });
+      assert.deepEqual(animations[1].keyframes[0], { transform: `translate(${pitch}px,0)` });
       assert.equal(animations[1].options.duration, 160);
       // Recycled cards (pool slots reused further right) jump: no tween, a running one stops.
       animations.length = 0;
@@ -593,8 +607,57 @@ try {
       );
       // Under a hold menu: no focused card, no scale.
       view.update(rows, { row: 0, columns: { r: 8 } }, { hideFocus: true });
-      assert.equal(card(8).style.transform, `translate3d(${8 * pitch}px,0,0)`);
+      assert.equal(card(8).style.transform, `translate(${8 * pitch}px,0)`);
       assert.equal(view.focusedNode(), null);
+
+      // Constrained runtimes (VIDAA TVs): the 1.015 scale without a tween, so no card gets a
+      // compositor layer for a move.
+      animations.length = 0;
+      document.documentElement.classList.add("performance-constrained");
+      const tight = new El();
+      const constrainedView = createDomHomeRenderer(tight, {
+        geometry,
+        imageQueue: { request() {} },
+        layout: {}
+      });
+      constrainedView.setRows(rows);
+      constrainedView.update(rows, { row: 0, columns: {} });
+      constrainedView.update(rows, { row: 0, columns: { r: 1 } });
+      const tightCards = tight
+        .querySelector(".tv2-rows")
+        .children[0].querySelector(".tv2-track").children;
+      assert.equal(tightCards[1].style.transform, `translate(${pitch}px,0) scale(1.015)`);
+      assert.equal(animations.length, 0, "constrained: no focus tween");
+      document.documentElement.classList.remove("performance-constrained");
+
+      // Pooled cards leaving the window release their images (decoded-pixel budget); visible
+      // ones load by rank: the focused row's cards from the left first.
+      const released = [];
+      const pooled = new El();
+      const pooledView = createDomHomeRenderer(pooled, {
+        geometry,
+        imageQueue: { request: (node, url, options) => released.push({ node, url, options }) },
+        layout: {}
+      });
+      pooledView.setRows(rows);
+      pooledView.update(rows, { row: 0, columns: {} });
+      assert.deepEqual(
+        released.slice(0, 3).map((r) => r.options.rank),
+        [0, 1, 2],
+        "artwork ranks from the left"
+      );
+      released.length = 0;
+      pooledView.update(rows, { row: 0, columns: { r: 29 } });
+      const hiddenSlots = pooled
+        .querySelector(".tv2-rows")
+        .children[0].querySelector(".tv2-track")
+        .children.filter((node) => node.style.visibility === "hidden");
+      assert.ok(hiddenSlots.length > 0, "the end of the rail leaves pooled cards unused");
+      for (const node of hiddenSlots)
+        assert.ok(
+          released.some((r) => r.node === node.querySelector(".tv2-card-image") && r.url === ""),
+          "a hidden pooled card drops its image"
+        );
 
       // Reduced performance mode (no vidaa-balanced-motion): no scale.
       document.documentElement.classList.remove("vidaa-balanced-motion");
@@ -608,7 +671,7 @@ try {
       still.update(rows, { row: 0, columns: {} });
       const first = plain.querySelector(".tv2-rows").children[0].querySelector(".tv2-track")
         .children[0];
-      assert.equal(first.style.transform, "translate3d(0px,0,0)");
+      assert.equal(first.style.transform, "translate(0px,0)");
 
       // modernHeroFullScreenBackdropEnabled: the current Home class on the modern hero shell.
       const full = new El();
