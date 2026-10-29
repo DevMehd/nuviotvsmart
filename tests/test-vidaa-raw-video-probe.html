@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <title>VIDAA raw video probe (real Chrome media pipeline)</title>
+  <body>
+    <video id="videoPlayer" muted playsinline></video>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot P, P0: the raw probe on a local 5 s VP9/Opus WebM reaches a first image in a real
+      // browser, releases #videoPlayer first and its stored ring entry carries no link.
+      // Desktop Chrome checks the logic and the event order only; no TV timing is measured here.
+      import { runRawVideoProbe } from "../js/core/diagnostics/rawVideoProbe.js";
+      import { createVidaaBenchmark } from "../js/core/diagnostics/vidaaBenchmark.js";
+
+      const result = document.getElementById("result");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const url = new URL("fixtures/player2/probe-5s.webm", location.href).href;
+      try {
+        const shared = document.getElementById("videoPlayer");
+        shared.src = url;
+        await new Promise((resolve) => shared.addEventListener("loadeddata", resolve, { once: true }));
+        const entry = await runRawVideoProbe({ url, observeMs: 3000 });
+        assert(
+          !shared.getAttribute("src") && shared.networkState === HTMLMediaElement.NETWORK_EMPTY,
+          `#videoPlayer released first (${shared.networkState})`
+        );
+        assert(entry.probe.released >= 1, `released ${entry.probe.released}`);
+        assert(!document.querySelector(".vidaa-raw-probe-video"), "probe element removed");
+        assert(entry.outcome === "playing", `outcome ${entry.outcome} ${JSON.stringify(entry.marks)}`);
+        const m = entry.marks;
+        for (const name of ["srcSet", "playCalled", "loadstart", "loadedmetadata", "playing"])
+          assert(Number.isFinite(m[name]), `${name} marked`);
+        assert(m.srcSet <= m.loadstart && m.loadstart <= m.loadedmetadata, "load order");
+        assert(m.loadedmetadata <= m.playing, "metadata before playing");
+        assert(Number.isFinite(entry.firstFrameMs) && entry.firstFrameMs < 3000, "first image");
+        assert(entry.width === 320 && entry.height === 180, `size ${entry.width}x${entry.height}`);
+        assert(entry.container === "webm", entry.container);
+        assert(entry.probe.playedSeconds > 0, "time advanced");
+        const service = createVidaaBenchmark(window);
+        service.initialize({ enabled: true, getRoute: () => "debugConsole", version: "test" });
+        service.reset();
+        const stored = service.noteStartup(entry);
+        assert(stored.variant === "raw" && stored.outcome === "playing", "ring entry");
+        assert(stored.probe && !stored.probe.dropped, "probe details kept");
+        const json = JSON.stringify(service.getState().report);
+        assert(!/https?:|127\.0\.0\.1|localhost|fixtures/.test(json), "no link in the report");
+        // Panel: the button starts the probe on the session's last link, Back stops it.
+        const { createVidaaBenchmarkPanel } = await import(
+          "../js/ui/screens/debug/vidaaBenchmarkPanel.js"
+        );
+        const container = document.createElement("div");
+        document.body.append(container);
+        const panel = createVidaaBenchmarkPanel({
+          router: { back() {} },
+          onLogs() {},
+          service: { ...service, lastMediaSource: () => url },
+          driver: { getState: () => ({ active: false }), subscribe: () => () => {}, cancel() {} }
+        });
+        panel.mount(container);
+        const button = (action) => container.querySelector(`[data-benchmark-action="${action}"]`);
+        const clicked = panel.click({ target: button("probe-basic"), preventDefault() {} });
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        assert(/Lecture brute en cours/.test(container.textContent), "running status");
+        assert(button("probe-stop") && !button("probe-basic"), "stop button while running");
+        assert(panel.consumeBack() === true, "Back stops the probe");
+        await clicked;
+        assert(button("probe-basic"), "probe buttons back");
+        assert(
+          /lecture brute · lecture · 1re image/.test(container.textContent),
+          container.textContent.slice(0, 400)
+        );
+        assert(/Dernière lecture brute \(basic\)/.test(container.textContent), "details page");
+        panel.cleanup();
+        service.reset();
+        result.dataset.status = "passed";
+        result.textContent = `PASS: raw probe first image ${entry.firstFrameMs} ms (desktop, not a TV measure), ${entry.probe.muted ? "muted fallback" : "sound"}, rVFC ${entry.probe.rvfcFired ? "fired" : "not fired"}`;
+      } catch (error) {
+        result.dataset.status = "failed";
+        result.textContent = `FAIL: ${error?.message || error}`;
+      }
+    </script>
+  </body>
+</html>

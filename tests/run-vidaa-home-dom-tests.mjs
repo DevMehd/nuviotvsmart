@@ -19,7 +19,8 @@ const defaultFixtures = [
   "test-vidaa-account-dom.html",
   "test-vidaa-tracking-dom.html",
   "test-vidaa-trailer-dom.html",
-  "test-vidaa-tv2-layouts.html"
+  "test-vidaa-tv2-layouts.html",
+  "test-vidaa-raw-video-probe.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(
@@ -47,7 +48,8 @@ const mimeTypes = {
   ".ttf": "font/ttf",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
-  ".wasm": "application/wasm"
+  ".wasm": "application/wasm",
+  ".webm": "video/webm"
 };
 
 async function findBrowser() {

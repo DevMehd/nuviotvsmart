@@ -90,6 +90,72 @@ const ROUTES = new Set([
 const safeRoute = (value) => (ROUTES.has(value) ? value : "other");
 const finite = (value) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+// P0 has only the existing player; lot P P1 replaces this with the session mode of its setting.
+const PLAYER_VARIANT = "old";
+const STARTUP_RING = 10;
+const STARTUP_OUTCOMES = ["pending", "playing", "error", "abandoned", "timeout"];
+const STARTUP_EVENTS = [
+  "loadstart",
+  "progress",
+  "loadedmetadata",
+  "canplay",
+  "playing",
+  "timeupdate",
+  "waiting",
+  "stalled",
+  "suspend",
+  "error"
+];
+const CONTAINERS = ["mkv", "mp4", "m4v", "webm", "m3u8", "mpd", "ts", "avi", "mov"];
+const count = (value, max = 999) =>
+  Number.isSafeInteger(value) && value >= 0 ? Math.min(value, max) : null;
+// Media error texts may echo a link or a host: keep the wording, never the address.
+export function scrubDiagnosticText(value, max = 200) {
+  return String(value ?? "")
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S*/gi, "[lien]")
+    .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\b/gi, "[hôte]")
+    .slice(0, max);
+}
+// File extension only (never the address): "mkv", "mp4"…, "other" or "unknown".
+export function mediaContainer(url) {
+  const ext = String(url || "")
+    .split(/[?#]/)[0]
+    .match(/\.([a-z0-9]{2,4})$/i)?.[1]
+    ?.toLowerCase();
+  return CONTAINERS.includes(ext) ? ext : ext ? "other" : "unknown";
+}
+function cleanStartup(entry) {
+  const marks = {};
+  for (const [name, value] of Object.entries(entry.marks || {}).slice(0, 30))
+    if (/^[a-zA-Z]{1,24}$/.test(name) && finite(value) !== null) marks[name] = Math.round(value);
+  const clean = {
+    at: new Date().toISOString(),
+    variant: /^[a-z0-9-]{1,16}$/.test(entry.variant) ? entry.variant : "other",
+    outcome: STARTUP_OUTCOMES.includes(entry.outcome) ? entry.outcome : "pending",
+    marks,
+    firstFrameMs: finite(entry.firstFrameMs) === null ? null : Math.round(entry.firstFrameMs),
+    errorCode: count(entry.errorCode, 99),
+    errorMessage: entry.errorMessage ? scrubDiagnosticText(entry.errorMessage) : null,
+    networkState: count(entry.networkState, 9),
+    readyState: count(entry.readyState, 9),
+    autoSourceSwitches: count(entry.autoSourceSwitches) ?? 0,
+    container:
+      CONTAINERS.includes(entry.container) || entry.container === "other"
+        ? entry.container
+        : "unknown",
+    audioTracks: count(entry.audioTracks),
+    textTracks: count(entry.textTracks),
+    width: count(entry.width, 99999),
+    height: count(entry.height, 99999)
+  };
+  if (entry.probe && typeof entry.probe === "object") {
+    const text = JSON.stringify(entry.probe);
+    // The raw probe builds its own fields; this is the last guard against an address.
+    clean.probe =
+      text.length <= 8000 && !/:\/\//.test(text) ? JSON.parse(text) : { dropped: "taille-ou-lien" };
+  }
+  return clean;
+}
 
 // Fixed-size histograms retain the whole step, not just the last 30 seconds.
 // Quantiles are upper bounds rounded to 1 ms; overflow uses the observed max.
@@ -163,6 +229,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     homeEngine: homeEngine(),
     homeEngineFallback: homeEngineFallback(),
     homeLayout: ["modern", "classic", "grid"].includes(layout) ? layout : null,
+    playerVariant: PLAYER_VARIANT,
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
     screen: [finite(root.screen?.width), finite(root.screen?.height)],
     pixelRatio: finite(root.devicePixelRatio),
@@ -230,6 +297,9 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
   let videoStates = new WeakMap();
   let storageAvailable = true;
   let firstHomeMountedMs = null;
+  // Startup recorder of the player route; its last link stays in memory for the raw probe only.
+  let startup = null,
+    lastMediaSource = "";
   const notify = () => {
     for (const listener of listeners) {
       try {
@@ -528,6 +598,100 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
     observedAfter = lastTick;
   }
 
+  function pushStartup(entry) {
+    const report = currentReport();
+    const clean = cleanStartup(entry);
+    report.startups = (report.startups || []).concat(clean).slice(-STARTUP_RING);
+    save();
+    notify();
+    return clean;
+  }
+
+  // Observes the player's own <video> from the document, without touching the player.
+  function startStartup() {
+    finishStartup("abandoned");
+    startup = {
+      entry: pushStartup({ variant: PLAYER_VARIANT, outcome: "pending" }),
+      t0: now(),
+      src: "",
+      base: null
+    };
+    for (const type of STARTUP_EVENTS)
+      root.document?.addEventListener?.(type, onStartupMedia, true);
+  }
+
+  function finishStartup(outcome, video = null) {
+    if (!startup) return;
+    const { entry } = startup;
+    startup = null;
+    for (const type of STARTUP_EVENTS)
+      root.document?.removeEventListener?.(type, onStartupMedia, true);
+    if (entry.outcome === "pending")
+      entry.outcome = outcome === "abandoned" && entry.errorCode !== null ? "error" : outcome;
+    if (video) {
+      entry.networkState = count(video.networkState, 9);
+      entry.readyState = count(video.readyState, 9);
+    }
+    save();
+    notify();
+  }
+
+  function onStartupMedia(event) {
+    const video = event.target;
+    if (!startup || video?.tagName !== "VIDEO") return;
+    if (route() !== "player") {
+      finishStartup("abandoned");
+      return;
+    }
+    const current = startup,
+      entry = current.entry,
+      type = event.type,
+      t = Math.round(now() - current.t0);
+    const mark = (name) => {
+      if (entry.marks[name] === undefined) entry.marks[name] = t;
+    };
+    const reached = (name) => {
+      mark(name);
+      entry.firstFrameMs = t;
+      finishStartup("playing", video);
+    };
+    if (type === "timeupdate") {
+      if (current.base !== null && Number(video.currentTime) - current.base > 0.05)
+        reached("firstTimeAdvance");
+      return;
+    }
+    if (type === "loadstart") {
+      const src = String(video.currentSrc || video.src || "");
+      if (current.src && src !== current.src) entry.autoSourceSwitches += 1;
+      current.src = src;
+      current.base = null;
+      // hls.js plays from a blob: the raw probe can only replay a direct http link.
+      if (/^https?:/i.test(src)) lastMediaSource = src;
+      entry.container = mediaContainer(src);
+    }
+    if (type === "playing" && current.base === null) current.base = Number(video.currentTime) || 0;
+    mark(type === "progress" ? "firstProgress" : type);
+    if (type === "loadedmetadata") {
+      entry.audioTracks = count(video.audioTracks?.length);
+      entry.textTracks = count(video.textTracks?.length);
+      entry.width = count(video.videoWidth, 99999);
+      entry.height = count(video.videoHeight, 99999);
+      try {
+        // rVFC may never fire on a hardware video plane; time advance is the fallback.
+        video.requestVideoFrameCallback?.(() => {
+          if (startup === current) reached("firstFrame");
+        });
+      } catch (_) {}
+    }
+    if (type === "error") {
+      entry.errorCode = count(video.error?.code, 99);
+      entry.errorMessage = video.error?.message ? scrubDiagnosticText(video.error.message) : null;
+      entry.networkState = count(video.networkState, 9);
+      entry.readyState = count(video.readyState, 9);
+      save();
+    }
+  }
+
   function cleanup() {
     if (timer !== null) root.clearTimeout?.(timer);
     timer = null;
@@ -784,7 +948,10 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
     stop,
     reset() {
       if (running) stop();
+      // The startup ring survives a new guided run of the same build.
+      const startups = report?.startups;
       report = makeReport();
+      if (startups) report.startups = startups;
       removeStorage(REPORT_KEY);
       removeStorage(ARM_KEY);
       updateHud();
@@ -805,22 +972,36 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
       save();
       notify();
     },
-    // VIDAA audio-name evidence of the video step: categories and counts only, no URL.
+    // VIDAA audio-name evidence: categories and counts only, no URL. Kept in the video
+    // step and, outside any step, on the latest startup of the ring.
     noteAudioNames(status) {
-      if (!running || running.id !== "video" || !status) return;
-      const count = (value) =>
-        Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 999) : 0;
-      running.video.audioNames = {
+      if (!enabled || !status) return;
+      const names = {
         result: /^[a-z0-9-]{1,32}$/.test(status.result) ? status.result : "other",
         probeStarted: status.probeStarted === true,
-        headerCount: count(status.headerCount),
-        nativeCount: count(status.nativeCount),
-        namedCount: count(status.namedCount),
+        headerCount: count(status.headerCount) ?? 0,
+        nativeCount: count(status.nativeCount) ?? 0,
+        namedCount: count(status.namedCount) ?? 0,
         mapped: status.mapped === true,
         redirected: status.redirected === true,
         elapsedMs: Number.isFinite(status.elapsedMs) ? Math.round(status.elapsedMs) : null
       };
+      if (running?.id === "video") running.video.audioNames = names;
+      const last = report?.startups?.[report.startups.length - 1];
+      if (last && JSON.stringify(last.audioNames) !== JSON.stringify(names)) {
+        last.audioNames = names;
+        save();
+      }
     },
+    // One player startup (variant, marks relative to the player opening, outcome).
+    noteStartup(entry) {
+      return enabled && entry ? pushStartup(entry) : null;
+    },
+    lastStartup() {
+      return startup?.entry || report?.startups?.[report.startups.length - 1] || null;
+    },
+    // In memory only, for "Lecture brute de la dernière source"; never written to the report.
+    lastMediaSource: () => lastMediaSource,
     isRunning(id) {
       return Boolean(running) && (id === undefined || running.id === id);
     },
@@ -855,6 +1036,8 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
       if (!running && typeof message === "string" && message) updateHud(message);
     },
     beginRoute(routeName = "") {
+      if (enabled && routeName === "player") startStartup();
+      else if (startup) finishStartup("abandoned");
       if (running?.waiting && getStep(running.id).trigger === `route:${routeName}`)
         resolveTrigger();
       return measuring() ? { epoch, time: now() } : null;
@@ -862,6 +1045,8 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
     endRoute(token, routeName) {
       if (enabled && routeName === "home" && firstHomeMountedMs === null)
         firstHomeMountedMs = now();
+      if (routeName === "player" && startup && startup.entry.marks.routeMounted === undefined)
+        startup.entry.marks.routeMounted = Math.round(now() - startup.t0);
       if (token?.epoch === epoch && measuring())
         running.routeMount.add(Math.max(0, now() - token.time));
     },
