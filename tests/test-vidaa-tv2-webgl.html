@@ -377,10 +377,17 @@
           view.update(tall, scrolled, { sidebarIndex: -1 });
           assert(!artworkOf(1).length, `off-screen row keeps ${artworkOf(1).length} textures`);
           // Lot W6 idle loop: about 10 fps once the scene rests, the display rate again on a key.
-          for (const until = performance.now() + 8000; lightning.targetFPS !== IDLE_FPS; ) {
-            assert(performance.now() < until, `idle loop never throttled: ${lightning.targetFPS}`);
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
+          const throttled = async (label) => {
+            for (const until = performance.now() + 8000; lightning.targetFPS !== IDLE_FPS; ) {
+              assert(performance.now() < until, `${label}: ${lightning.targetFPS}`);
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+          };
+          await throttled("idle loop never throttled");
+          // The same hero again (enrichment, applyHeroToDom): the display rate, then the idle rate.
+          view.setHero({ id: "tt8", type: "movie", name: "Next", background: blue, poster: red });
+          assert(lightning.targetFPS === 0, `setHero restores the display rate: ${lightning.targetFPS}`);
+          await throttled("idle loop stuck at the display rate after setHero");
           scrolled.row = 5;
           view.update(tall, scrolled, { sidebarIndex: -1 });
           assert(lightning.targetFPS === 0, `a key restores the display rate: ${lightning.targetFPS}`);
