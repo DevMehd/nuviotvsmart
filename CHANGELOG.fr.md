@@ -1,5 +1,10 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-29 — 1.3.10
+
+- Lecteur sur la télé VIDAA : les noms des pistes audio sont aussi lus quand le lien de la source passe par une redirection (cas fréquent des liens debrid ou fournis par un addon). La lecture se fait en arrière-plan et ne retarde pas le démarrage de la vidéo.
+- Quand les noms restent indisponibles, le panneau Audio indique pourquoi, par exemple « le serveur refuse la lecture partielle » ou un nombre de pistes différent entre la télé et le fichier. Le Diagnostic guidé enregistre aussi cette raison, sans aucune adresse.
+
 ## 2026-10-29 — 1.3.9
 
 - Lecteur sur la télé VIDAA : les pistes audio portent leur vrai nom (langue, format, canaux, ou titre de la piste) au lieu de « Audio 1, Audio 2… ». Cela marche aussi quand la télé affiche ses propres sous-titres et pour les fichiers MP4.
