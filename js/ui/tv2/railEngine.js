@@ -28,20 +28,25 @@ export function homeLayoutMode(layoutPrefs = {}) {
 /**
  * Card sizes and spacing in px per layout, never measured. Modern: same formulas as
  * buildModernHomeSizingStyle (homeScreenHelpers-01). Classic and grid: the current Home's fixed
- * CSS sizes (components-14/15.css), with a fixed label block under catalog cards.
+ * CSS sizes (components-14/15.css), with a fixed label block under catalog cards. The modern
+ * sidebar pill floats over the content: like the current Home (components-08.css drops
+ * .home-main's 144 px rail margin), the content then starts at the layout's own inset.
  */
 export function cardGeometry(layoutPrefs = {}, layoutMode = layoutPrefs?.homeLayout || "modern") {
   const baseWidthDp = Math.max(72, Number(layoutPrefs?.posterCardWidthDp ?? 126) || 126);
   const radiusDp = Math.max(0, Number(layoutPrefs?.posterCardCornerRadiusDp ?? 12) || 12);
   const landscapeWidth = Math.round(baseWidthDp * 1.24 * 1.34 * 2);
   const mode = String(layoutMode).toLowerCase();
+  const rail = layoutPrefs?.modernSidebar ? 0 : 144;
+  // Modern: 104 px inset of the current Home with the pill (components-16.css); 220 with the rail.
+  const modernStart = rail ? 220 : 104;
   const shared = {
     layoutMode: "modern",
     landscape: { width: landscapeWidth, height: Math.round(landscapeWidth / 1.77) },
     // "wide" renders at the card size on TV (min/max-width win, components-29.css).
     continuePosterStyle: layoutPrefs?.continueWatchingCardStyle === "poster",
-    contentStart: 220,
-    viewport: RAIL_VIEWPORT,
+    contentStart: modernStart,
+    viewport: 1920 - modernStart,
     labelHeight: 0,
     gridColumns: 0
   };
@@ -57,13 +62,13 @@ export function cardGeometry(layoutPrefs = {}, layoutMode = layoutPrefs?.homeLay
       rowGap: 64,
       radius: 24,
       landscapePosters: false,
-      contentStart: 192,
-      viewport: 1920 - 192,
+      contentStart: rail + 48,
+      viewport: 1920 - rail - 48,
       labelHeight: labels ? CLASSIC_LABEL_HEIGHT : 0
     };
   if (mode === "grid") {
     // repeat(auto-fill, minmax(232px, 1fr)) with a 12 px column gap over 1920 - rail - 2 * 24.
-    const width = 1920 - 144 - 48;
+    const width = 1920 - rail - 48;
     const columns = Math.max(1, Math.floor((width + 12) / (232 + 12)));
     const cardWidth = Math.floor((width - 12 * (columns - 1)) / columns);
     return {
@@ -75,8 +80,8 @@ export function cardGeometry(layoutPrefs = {}, layoutMode = layoutPrefs?.homeLay
       rowGap: 16,
       radius: 24,
       landscapePosters: false,
-      contentStart: 168,
-      viewport: 1920 - 168,
+      contentStart: rail + 24,
+      viewport: 1920 - rail - 24,
       // Grid shows the title only (buildPosterSubtitle returns "").
       labelHeight: labels ? 30 : 0,
       gridColumns: columns
