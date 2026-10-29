@@ -4,6 +4,7 @@ import * as internals from "./settingsScreenContext.js";
 import { Platform } from "../../../platform/index.js";
 import { getTvPerformanceMode } from "../../../platform/tvRuntimePerformance.js";
 import { getNewHomeMode } from "../../tv2/newHomeSetting.js";
+import { getNewSourcesMode, newSourcesAvailable } from "../../tv2/newSourcesSetting.js";
 
 export function renderLayoutMarkup(model) {
   const { isModernSidebarBlurAvailable, HOME_LAYOUT_OPTIONS, SECTION_META, t } = internals;
@@ -423,6 +424,7 @@ export function renderLayoutMarkup(model) {
               })}
               ${this.renderCollapsibleRow({ focusKey: "layout:toggle:cardAppearance", title: t("settings_card_depth_title", {}, "Card appearance"), subtitle: t("settings_card_depth_description", {}, "Size, corners and depth surfaces"), expanded: Boolean(expanded.cardAppearance), bodyHtml: cardAppearanceBody })}
               ${this.renderActionRow({ focusKey: "layout:newHome", title: t("layout_new_home", {}, "New Home (beta)"), subtitle: t("layout_new_home_sub", {}, "Faster Home being rebuilt for TVs; applies at next launch"), value: t(`layout_new_home_${getNewHomeMode()}`, {}, getNewHomeMode()) })}
+              ${newSourcesAvailable() ? this.renderActionRow({ focusKey: "layout:newSources", title: t("layout_new_sources", {}, "New Sources screen (beta)"), subtitle: t("layout_new_sources_sub", {}, "Faster Sources list being rebuilt for TVs; applies at next launch"), value: t(`layout_new_sources_${getNewSourcesMode()}`, {}, getNewSourcesMode()) }) : ""}
               ${Platform.isVidaa() ? this.renderActionRow({ focusKey: "layout:performanceMode", title: t("layout_animations_effects", {}, "Animations & effects"), subtitle: t("layout_animations_effects_sub", {}, "Reduce visual effects if the TV feels slow"), value: t(`layout_perf_${getTvPerformanceMode()}`, {}, getTvPerformanceMode()) }) : ""}
             </div>
           </div>

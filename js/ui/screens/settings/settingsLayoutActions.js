@@ -2,6 +2,7 @@
 import * as internals from "./settingsScreenContext.js";
 import { getTvPerformanceMode, setTvPerformanceMode } from "../../../platform/tvRuntimePerformance.js";
 import { getNewHomeMode, setNewHomeMode } from "../../tv2/newHomeSetting.js";
+import { getNewSourcesMode, setNewSourcesMode } from "../../tv2/newSourcesSetting.js";
 
 export function registerLayoutActions(model) {
   const { HomeCatalogStore, LayoutPreferences, HOME_LAYOUT_OPTIONS, t } = internals;
@@ -34,6 +35,18 @@ export function registerLayoutActions(model) {
       selectedId: getNewHomeMode(),
       returnFocusKey: "layout:newHome",
       onSelect: (option) => setNewHomeMode(option.id)
+    });
+  });
+  this.actionMap.set("layout:newSources", () => {
+    this.openOptionDialog({
+      title: t("layout_new_sources", {}, "New Sources screen (beta)"),
+      options: [
+        { id: "off", labelKey: "layout_new_sources_off" },
+        { id: "on", labelKey: "layout_new_sources_on" }
+      ],
+      selectedId: getNewSourcesMode(),
+      returnFocusKey: "layout:newSources",
+      onSelect: (option) => setNewSourcesMode(option.id)
     });
   });
   this.actionMap.set("layout:performanceMode", () => {

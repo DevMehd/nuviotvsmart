@@ -124,6 +124,43 @@ assert.equal(Router.routes.settings, SettingsScreen, "a later attempt loads agai
 assert.equal(store.size, 0, "success clears the reload flag");
 assert.deepEqual(mounts.at(-1)[0], "settings");
 
+// A route behind a session switch (router "stream": getter + setter over two slots) gets
+// the loaded screen in the slot of the session mode, without a strict-mode TypeError.
+{
+  const OldSources = makeScreen("oldSources");
+  const NewSources = makeScreen("newSources");
+  const slots = {
+    off: lazyRouteScreen(async () => OldSources),
+    on: lazyRouteScreen(async () => NewSources)
+  };
+  const offPlaceholder = slots.off;
+  let mode = "on";
+  homeGetterCalls = 0;
+  Router.routes = {
+    get home() {
+      homeGetterCalls++;
+      return HomeScreen;
+    },
+    get stream() {
+      return slots[mode];
+    },
+    set stream(screen) {
+      slots[mode] = screen;
+    }
+  };
+  mounts.length = 0;
+  Router.current = "stream";
+  Router.currentParams = params = { id: "tt3" };
+  await Router.routes.stream.mount(params, {});
+  assert.equal(Router.routes.stream, NewSources, "the session slot holds the loaded screen");
+  assert.equal(slots.off, offPlaceholder, "the other mode's slot is untouched");
+  assert.equal(homeGetterCalls, 0, "the home getter is still never read");
+  assert.deepEqual(mounts.at(-1)[0], "newSources");
+  mode = "off";
+  await Router.routes.stream.mount(params, {});
+  assert.equal(Router.routes.stream, OldSources);
+}
+
 console.log(
   "PASS: VIDAA lazy route screens load once, ignore stale navigation and recover from a missing chunk."
 );

@@ -3353,4 +3353,8 @@
     <string name="layout_new_home_off">Off</string>
     <string name="layout_new_home_dom">On, DOM</string>
     <string name="layout_new_home_webgl">On, WebGL (prototype)</string>
+    <string name="layout_new_sources">New Sources screen (beta)</string>
+    <string name="layout_new_sources_sub">Faster Sources list being rebuilt for TVs; applies at next launch</string>
+    <string name="layout_new_sources_off">Off</string>
+    <string name="layout_new_sources_on">On</string>
 </resources>
