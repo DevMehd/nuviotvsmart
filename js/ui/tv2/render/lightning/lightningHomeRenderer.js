@@ -102,7 +102,7 @@ export function tween(node, prop, value, settings, done) {
     return void done?.();
   }
   const ctrl = node.animate({ [prop]: value }, settings);
-  running.set(node, { ctrl, value });
+  running.set(node, { ctrl, prop, value });
   ctrl.once("stopped", () => {
     if (running.get(node)?.ctrl === ctrl) running.delete(node);
     done?.();
@@ -110,8 +110,13 @@ export function tween(node, prop, value, settings, done) {
   ctrl.start();
 }
 
-/** Ends a running animation of `node` now, at its current value (its `done` runs). */
-const settle = (node) => running.get(node)?.ctrl.stop(false);
+/** Ends a running animation of `node` now, at its target (its `done` runs): never half-faded. */
+export function settle(node) {
+  const run = running.get(node);
+  if (!run) return;
+  run.ctrl.stop(false);
+  node[run.prop] = run.value;
+}
 
 function hostClass(url) {
   if (/^(?:\/_vercel\/image\?|https:\/\/res\.cloudinary\.com\/)/.test(url)) return "proxy";
@@ -690,7 +695,15 @@ export function createLightningHomeRenderer(
       const view = views.get(row.key);
       if (!view) return;
       view.node.y = top;
-      if (rowIndex < firstRow || rowIndex > lastRow) return;
+      if (rowIndex < firstRow || rowIndex > lastRow) {
+        // Off screen: its artwork goes once, as outside the DOM renderer's loading window.
+        view.slots.forEach((card) => {
+          if (!card.wanted) return;
+          card.wanted = "";
+          imageQueue.request(card.image, "");
+        });
+        return;
+      }
       view.track.y = height - size.height - rowLabelHeight(row, geo) - geo.rowGap;
       const loadImages = rowIndex >= focus.row - 1 && rowIndex <= focus.row + 2;
       view.slots.forEach((card) => (card.node.alpha = 0));

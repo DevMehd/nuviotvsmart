@@ -244,6 +244,11 @@
           await settle("focus scale", () => cardAt(trackOf(0), 0)?.scale === 1.015);
           const ring = cardAt(trackOf(0), 0).children.at(-1);
           assert(ring.w === width + 6 && ring.x === -3 && ring.alpha === 1, "3 px ring on the focus");
+          // Drawn, not only placed: the border shows left of the scaled card, the dark background beyond.
+          const ringY = 560 + rowsLayer().y + rowsLayer().children[0].y + trackOf(0).y + height / 2;
+          lightning.stage.drawFrame();
+          const [ringPixel, outside] = [216, 212].map((x) => pixelsAt(x, Math.round(ringY)));
+          assert(ringPixel[0] > 200 && ringPixel[1] > 200 && outside[0] < 40, `ring drawn: ${ringPixel} / ${outside}`);
 
           // Horizontal, one key (one recycled card: a cheap frame, even on SwiftShader): the rail
           // slides in 140 ms, the new focus scales in place, the old one back.
@@ -300,6 +305,17 @@
           lightning.stage.drawFrame();
           const shown = pixelsAt(1600, 120);
           assert(shown[2] > 200 && shown[0] < 40, `new hero shown: ${shown}`);
+
+          // A row left by a jump (Back to the top, restore) lets its artwork go, not kept on the GPU.
+          const tall = Array.from({ length: 8 }, (_, n) => many(`t${n}`));
+          const scrolled = { row: 0, columns: {} };
+          view.setRows(tall);
+          view.update(tall, scrolled, { sidebarIndex: -1 });
+          const artwork = () => trackOf(0).children.filter((card) => card.children[0].src);
+          assert(artwork().length > 0, "first row artwork requested");
+          scrolled.row = 6;
+          view.update(tall, scrolled, { sidebarIndex: -1 });
+          assert(!artwork().length, `off-screen row keeps ${artwork().length} textures`);
           view.destroy();
 
           // Final positions equal homeLayout for each preference (pill, landscape posters, poster-style Continue Watching).

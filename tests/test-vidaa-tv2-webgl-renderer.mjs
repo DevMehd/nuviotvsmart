@@ -18,7 +18,7 @@ globalThis.document = {
 let reducedMotion = false;
 globalThis.matchMedia = () => ({ matches: reducedMotion });
 
-const { imageSlot, heroNodeProps, glInfo, homeMotion, tween } =
+const { imageSlot, heroNodeProps, glInfo, homeMotion, tween, settle } =
   await import("../js/ui/tv2/render/lightning/lightningHomeRenderer.js");
 const { createImageQueue } = await import("../js/ui/tv2/imagePipeline.js");
 const setting = await import("../js/ui/tv2/newHomeSetting.js");
@@ -203,6 +203,14 @@ assert.deepEqual(
   tween(node, "x", 40, rail, () => (done += 1));
   assert.equal(calls.length, 5, "already there: no animation");
   assert.equal(done, 2);
+  // An interrupted hero fade ends at its target, never stuck half-faded over the background.
+  tween(node, "x", 90, rail, () => (done += 1));
+  node.x = 60;
+  settle(node);
+  assert.equal(node.x, 90, "settled at the target");
+  assert.equal(done, 3);
+  settle(node);
+  assert.equal(done, 3, "nothing left to settle");
   rootClasses.clear();
 }
 
