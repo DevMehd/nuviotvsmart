@@ -403,6 +403,55 @@ const enabledIndexes = (list) =>
   );
 }
 
+// 9. Review fixes: audio tracks that only appear after the first image (a same-link reload)
+// never switch the language; a reload puts the built-in subtitle back; "und" is not a name.
+{
+  assert.equal(meaningfulLabel("und"), "");
+  assert.equal(meaningfulLabel("Unknown"), "");
+  const clock = createClock();
+  const video = fakeVideo([]);
+  const player = createPlayerTracks(video, {
+    root: clock.root,
+    locale: () => "en",
+    preferences: () => ({ audio: { language: "eng" }, targets: { audio: [], subtitles: [] } })
+  });
+  player.reset("http://media.invalid/d.mkv");
+  video.emit("loadedmetadata"); // the TV has not listed the audio tracks yet
+  player.onFirstFrame();
+  const late = [
+    new NativeAudioTrack("1", { language: "fre", enabled: true }),
+    new NativeAudioTrack("2", { language: "eng" })
+  ];
+  video.audioTracks.push(...late);
+  video.audioTracks.emit("addtrack");
+  video.emit("loadedmetadata");
+  assert.deepEqual(enabledIndexes(late), [0], "no language switch after the first image");
+
+  const text = (id, language) => ({ id, kind: "subtitles", label: "", language, mode: "disabled" });
+  video.textTracks.push(text("1", "eng"), text("2", "fre"));
+  video.textTracks.emit("addtrack");
+  const [, , fre] = player.subtitleEntries("builtIn");
+  assert.equal(await player.selectSubtitle(fre), true);
+  assert.equal(video.textTracks[1].mode, "showing");
+  // Same-link reload: new in-band track objects, all disabled.
+  video.textTracks.splice(0, 2, text("1", "eng"), text("2", "fre"));
+  video.textTracks.emit("addtrack");
+  assert.deepEqual(
+    video.textTracks.map((track) => track.mode),
+    ["disabled", "showing"],
+    "the built-in subtitle comes back"
+  );
+  const [off] = player.subtitleEntries("builtIn");
+  await player.selectSubtitle(off);
+  video.textTracks.splice(0, 2, text("1", "eng"), text("2", "fre"));
+  video.textTracks.emit("addtrack");
+  assert.ok(
+    video.textTracks.every((track) => track.mode === "disabled"),
+    "Off stays off"
+  );
+  player.destroy();
+}
+
 console.log(
-  "PASS: new VIDAA player tracks (getter-safe names, header order, MKV eng, preference once, revert)"
+  "PASS: new VIDAA player tracks (getter-safe names, header order, MKV eng, preference once, revert, reload keeps choices)"
 );

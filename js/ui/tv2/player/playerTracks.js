@@ -51,7 +51,12 @@ export function languageName(value, locale) {
 /** A label worth showing: not "Audio 2", "SoundHandler" or a bare language code. */
 export function meaningfulLabel(value) {
   const text = String(value || "").trim();
-  return text && !GENERIC_LABEL.test(text) && !languageKey(text) ? text : "";
+  return text &&
+    !GENERIC_LABEL.test(text) &&
+    !NO_LANGUAGE.has(text.toLowerCase()) &&
+    !languageKey(text)
+    ? text
+    : "";
 }
 
 /** AudioTrackList / TextTrackList read field by field; null when the list is absent. */
@@ -381,6 +386,8 @@ export function createPlayerTracks(
   let subtitleDecided = false;
   let addonSubtitles = null;
   let addonSelected = "";
+  // Built-in subtitle shown (preference shape), put back after a same-link reload.
+  let builtInChoice = null;
   let subtitleError = false;
   let audioError = false;
   let lastNote = "";
@@ -431,10 +438,12 @@ export function createPlayerTracks(
     }
   }
 
-  function onMetadata() {
+  function syncAudio() {
     const list = video.audioTracks;
     if (list?.length) {
-      if (!audioPrefApplied) {
+      // Before the first image only: tracks that appear later (a same-link reload) must not
+      // change the language being heard.
+      if (!audioPrefApplied && !started) {
         audioPrefApplied = true;
         const prefs = preferences() || {};
         const index = findAudioIndex(audioEntries(), {
@@ -447,12 +456,22 @@ export function createPlayerTracks(
       if (audioChoice !== null && list[audioChoice] && !list[audioChoice].enabled)
         writeChoice(list, audioChoice);
     }
-    applySubtitlePreference();
-    onChange();
+  }
+
+  // A same-link reload drops the in-band text tracks: the built-in subtitle shown comes back.
+  function restoreBuiltIn() {
+    if (!builtInChoice || addonSelected) return;
+    const tracks = builtInTracks();
+    if (tracks.some((track) => track.mode === "showing")) return;
+    const language = languageKey(builtInChoice.language);
+    const track = tracks.find((item) => subtitleMatches(item, builtInChoice, language));
+    if (track) void selectBuiltIn(track);
   }
 
   function onTracksChanged() {
+    syncAudio();
     applySubtitlePreference();
+    restoreBuiltIn();
     onChange();
   }
 
@@ -482,6 +501,7 @@ export function createPlayerTracks(
     const preference = prefs.subtitle || null;
     if (preference?.type === "DISABLED") {
       subtitleDecided = true;
+      builtInChoice = null;
       selectVidaaTextTrack(subtitleTracks(), -1, { getTracks: subtitleTracks });
       return;
     }
@@ -515,6 +535,7 @@ export function createPlayerTracks(
   function selectBuiltIn(track) {
     addonSelected = "";
     subtitleError = false;
+    builtInChoice = { trackId: track.id || "", name: track.label, language: track.language };
     const tracks = subtitleTracks();
     return selectVidaaTextTrack(tracks, tracks.indexOf(track), { getTracks: subtitleTracks });
   }
@@ -522,6 +543,7 @@ export function createPlayerTracks(
   async function selectAddon(subtitle) {
     const current = generation;
     addonSelected = subtitle.id;
+    builtInChoice = null;
     subtitleError = false;
     onChange();
     let element = added.get(subtitle.id);
@@ -593,7 +615,7 @@ export function createPlayerTracks(
   }
 
   for (const [target, type, handler] of [
-    [video, "loadedmetadata", onMetadata],
+    [video, "loadedmetadata", onTracksChanged],
     [video.audioTracks, "addtrack", onTracksChanged],
     [video.audioTracks, "removetrack", onTracksChanged],
     [video.textTracks, "addtrack", onTracksChanged],
@@ -620,6 +642,7 @@ export function createPlayerTracks(
       subtitleDecided = false;
       addonSubtitles = null;
       addonSelected = "";
+      builtInChoice = null;
       subtitleError = audioError = false;
       lastNote = "";
       removeAdded();
@@ -776,6 +799,7 @@ export function createPlayerTracks(
         };
       } else {
         addonSelected = "";
+        builtInChoice = null;
         subtitleError = false;
         ok = await selectVidaaTextTrack(subtitleTracks(), -1, { getTracks: subtitleTracks });
         preference = { type: "DISABLED" };
