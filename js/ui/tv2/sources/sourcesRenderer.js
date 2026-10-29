@@ -194,9 +194,10 @@ export function createSourcesRenderer(
       requestImage(slot.image, slot.url, url, {
         fallbacks: fallbacksFor(badge.url),
         priority,
+        // Checked by URL: a slot recycled to the same image keeps this handler (no new request).
         onError() {
           rememberFailedAddonLogo(badge.url);
-          if (slot.badge === badge) slot.node.hidden = true;
+          if (slot.url === url) slot.node.hidden = true;
         }
       });
       slot.url = url;

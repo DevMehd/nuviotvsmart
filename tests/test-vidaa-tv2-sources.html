@@ -255,6 +255,36 @@
         assert(navigations.at(-1).route === "detail", `Back opens the detail, got ${navigations.at(-1).route}`);
         route.cleanup();
         assert(!route.container.querySelector(".tv2-sources-row") && !route.sourcesRenderer, "cleanup releases the pool");
+
+        // A slot recycled to another badge with the same image, while that image is still loading,
+        // hides it when it fails.
+        const { createSourcesRenderer } = await import("/js/ui/tv2/sources/sourcesRenderer.js");
+        const host = document.createElement("div");
+        document.body.appendChild(host);
+        const failing = "/assets/icons/missing-recycled-badge.webp";
+        const recycler = createSourcesRenderer(host, { header: { title: "Recycle" }, skeletonMarkup: "", moreMarkup: "" });
+        const badgeView = (id) => ({
+          items: [{ id, name: id }],
+          keys: [id],
+          chipKeys: ["all"],
+          filter: "all",
+          chipStatus: () => "success",
+          isPartySource: () => false,
+          showAddonLogo: false,
+          badgesFor: () => [{ kind: "image", url: failing, alt: id, style: "" }],
+          logoFor: () => "",
+          loading: false,
+          more: false,
+          message: "",
+          resetScroll: true
+        });
+        recycler.update(badgeView("first"), { zone: "card", row: 0 });
+        recycler.update(badgeView("second"), { zone: "card", row: 0 });
+        await waitFor(() => hasFailedAddonLogo(failing));
+        await frame();
+        assert(host.querySelector(".tv2-sources-row:not([hidden]) .stream-route-stream-badge").hidden, "a recycled broken badge is hidden");
+        recycler.dispose();
+        host.remove();
         result.textContent = `PASS: 500 sources in a pool of ${poolSize} rows, no layout read while navigating, recycled badges and logos (≤${maxInflight} loading), OK/pointer/Back on the right source.`;
       } catch (error) {
         result.textContent = `FAIL: ${error?.stack || error}`;
