@@ -48,6 +48,7 @@
           const { WebGlCoreRenderer, SdfTextRenderer } = await import(`${lib}/webgl.js`);
           const { WebPlatform, WebPlatformLegacy } = await import(`${lib}/platform.js`);
           const { RoundedWithBorder } = await import(`${lib}/webgl-shaders.js`);
+          const { CanvasTextRenderer } = await import(`${lib}/canvas.js`);
           let lightning = null;
           // Same modules as lightningLib.js; the subclass only exposes the instance to this page.
           class Captured extends RendererMain {
@@ -60,6 +61,7 @@
             RendererMain: Captured,
             WebGlCoreRenderer,
             SdfTextRenderer,
+            CanvasTextRenderer,
             WebPlatform,
             WebPlatformLegacy,
             RoundedWithBorder
@@ -348,12 +350,87 @@
             });
             prefView.destroy();
           }
+          // Lot W3: hero copy. Skeleton while loading, logo fitted bottom left (title hidden),
+          // title without logo or after a failed logo, canvas text for a title outside the atlas.
+          const heroView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern" },
+            onFailure: (reason) => failures.push(reason)
+          });
+          heroView.setRows([row]);
+          heroView.update([row], focus, { sidebarIndex: -1 });
+          heroView.setHero(null, { loading: true });
+          await settle("hero scene", () => document.querySelector(".tv2-gl-canvas") && sceneNode()?.children.length > 4);
+          const skeleton = sceneNode().children[1];
+          await nextFrame();
+          lightning.stage.drawFrame();
+          const loadingPixel = pixelsAt(1600, 300);
+          assert(skeleton.alpha > 0.5 && loadingPixel[0] > 18 && loadingPixel[0] < 50, `skeleton drawn: ${skeleton.alpha} ${loadingPixel}`);
+          const wideLogo = await blobUrl(1000, 200, (ctx) => {
+            ctx.fillStyle = "#ff0000";
+            ctx.fillRect(0, 0, 1000, 200);
+          });
+          const findText = (node, value) =>
+            node.text === value ? node : node.children.map((child) => findText(child, value)).find(Boolean);
+          const heroItem = (name, extra) => ({
+            id: `tt7${name.length}`,
+            type: "movie",
+            name,
+            description: "Une description « française » sur deux lignes au maximum, comme sur le mobile.",
+            genres: ["Drama"],
+            releaseInfo: "2024",
+            background: blue,
+            ...extra
+          });
+          const lum = (data) => Math.max(...Array.from({ length: data.length / 4 }, (_, i) => data[i * 4]));
+          heroView.setHero(heroItem("Fixture hero", { logo: wideLogo }));
+          let title = null;
+          let logoNode = null;
+          await settle("hero logo", () => {
+            title = findText(sceneNode(), "Fixture hero");
+            logoNode = title?.parent.children[0];
+            return title && title.parent.alpha === 1 && logoNode.alpha === 1 && skeleton.alpha === 0;
+          });
+          assert(title.alpha === 0, "title hidden behind the logo");
+          assert(logoNode.w === 600 && logoNode.h === 120, `logo fitted ${logoNode.w}×${logoNode.h}`);
+          lightning.stage.drawFrame();
+          const logoPixel = pixelsAt(300, Math.round(logoNode.y + 60));
+          assert(logoPixel[0] > 200 && logoPixel[1] < 40, `logo drawn: ${logoPixel}`);
+          const describe = findText(sceneNode(), heroItem("").description);
+          assert(describe.y + describe.h === 486 && describe.h <= 72, `description ${describe.y}+${describe.h}`);
+          assert(lum(pixelsAt(220, Math.round(describe.y), 300, 30)) > 90, "description drawn");
+
+          // No logo, then a logo that fails: the title is drawn in the 600 atlas.
+          for (const extra of [{}, { logo: `/missing-logo-${Date.now()}.png` }]) {
+            const name = extra.logo ? "Failed logo" : "No logo";
+            heroView.setHero(heroItem(name, extra));
+            await settle(`${name} title`, () => {
+              title = findText(sceneNode(), name);
+              return title && title.parent.alpha === 1 && title.alpha === 1 && !title.parent.children[0].src;
+            });
+            lightning.stage.drawFrame();
+            assert(lum(pixelsAt(230, Math.round(title.y + 10), 300, 50)) > 150, `${name}: title drawn`);
+          }
+          // A title outside the atlas (Japanese) goes to the canvas renderer, not "?" glyphs.
+          heroView.setHero(heroItem("東京物語"));
+          await settle("canvas title", () => {
+            title = findText(sceneNode(), "東京物語");
+            return title && title.parent.alpha === 1;
+          });
+          assert(title.props.textRendererOverride === "canvas" || title.textRenderer?.type === "canvas", "canvas text renderer");
+          await settle("canvas title drawn", () => {
+            lightning.stage.drawFrame();
+            return lum(pixelsAt(230, Math.round(title.y + 10), 300, 50)) > 150;
+          });
+          heroView.destroy();
+
           assert(!failures.length, `WebGL fell back to DOM: ${failures.join(",")}`);
           // Failures are forgotten on leaving Home: the kept engine retries them on the next visit.
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale and hero fade (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade and hero copy (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;

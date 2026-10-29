@@ -7,11 +7,12 @@ import { createImageQueue, glImageUrl } from "../../imagePipeline.js";
 import { cardImage, fillCard, navRowOf, setNavPosition } from "../../renderer.js";
 import { getWebglVariant, markWebglFailed, setWebglInfoSource } from "../../newHomeSetting.js";
 import { buildModernHeroPresentation } from "../../../screens/home/homeScreenHelpers-11-build-hero-display-model.js";
-import { buildSdfAtlas } from "./sdfAtlas.js";
+import { ATLAS_WEIGHTS, atlasUrls, glText } from "./sdfAtlas.js";
+import { createHeroCopy } from "./heroCopy.js";
 import { useVidaaHeroTransition } from "../../../screens/home/vidaaHeroTransition.js";
 
 // New TV Home (nuv-091, lot B2), 100 % WebGL prototype on Lightning: hero, rails, text (SDF
-// atlas) and focus are drawn in one canvas. Same interface as createDomHomeRenderer. The
+// atlases, canvas text for characters outside them) and focus are drawn in one canvas. Same interface as createDomHomeRenderer. The
 // sidebar stays the shared DOM component; a hidden DOM proxy of the focused card keeps
 // openDetail and the diagnostic driver selectors working. Any failure reports to `onFailure`
 // and the screen swaps to the DOM renderer for the rest of the run.
@@ -32,11 +33,14 @@ const HERO_LOADING_ALPHA = 0.01;
 // Fixed GPU budget: the image windows of renderer.js need about 45 MB (poster ~0.7 MB, hero
 // 3.7 MB). Still above it after Lightning's own cleanup means the TV cannot hold the scene.
 export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
-// Memory outside the image textures: the SDF font atlas (1024 px wide, RGBA). Lightning assumes
-// 26 MB by default, which would leave a 40-card window too little room before criticalCleanup.
-const BASELINE_BYTES = 4 * 1024 * 1024;
+// Memory outside the image textures: the two SDF font atlases (1024×276 px each, about 1.2 MB as
+// RGBA) and the hero copy's few canvas texts. Lightning assumes 26 MB by default, which would
+// leave a 40-card window too little room before criticalCleanup.
+const BASELINE_BYTES = 5 * 1024 * 1024;
 // Mobile text fallback of a failed image (ShelfComponents.kt:194-203): textMuted, 16 sp → 28 px.
 const FALLBACK_TEXT = 0x969ca3ff;
+// Hero skeleton (lot W3): the DOM loading gradient, shimmering outside constrained runtimes.
+const SKELETON = { colorTop: 0x262626ff, colorBottom: 0x101010ff };
 const COVER = { resizeMode: { type: "cover" } };
 
 /**
@@ -64,7 +68,8 @@ let liveEngine = null;
  * Motion of the current Home on VIDAA, as the DOM renderer: rails and rows slide in 140 ms (100
  * on constrained runtimes, tv2-home.css); the focused card scales and the hero fades behind
  * useVidaaHeroTransition (vidaa-balanced-motion), which animateHeroBackdropSwap checks before its
- * transition mode. Nothing under reduced motion. `null` means a direct jump.
+ * transition mode; the hero copy fades in over 150 ms (mobile). Nothing under reduced motion.
+ * `null` means a direct jump.
  */
 export function homeMotion(root) {
   const html = globalThis.document?.documentElement?.classList;
@@ -80,7 +85,8 @@ export function homeMotion(root) {
           }
         : null,
     scale: balanced ? { duration: 160, easing: standard } : null,
-    hero: balanced ? { duration: 200, easing: standard } : null
+    hero: balanced ? { duration: 200, easing: standard } : null,
+    copy: balanced ? { duration: 150, easing: standard } : null
   };
 }
 
@@ -221,38 +227,15 @@ export function createEngineKeeper(create) {
   return keeper;
 }
 
-let fontPromise = null;
-/** Atlas built once per run; its blob URLs also serve an engine rebuilt after a context loss. */
-function fontUrls() {
-  fontPromise =
-    fontPromise ||
-    buildSdfAtlas().then(
-      ({ canvas, data }) =>
-        new Promise((resolve, reject) =>
-          canvas.toBlob((blob) => {
-            if (!blob) return reject(new Error("font-atlas"));
-            resolve({
-              atlasUrl: URL.createObjectURL(blob),
-              atlasDataUrl: URL.createObjectURL(
-                new Blob([JSON.stringify(data)], { type: "application/json" })
-              )
-            });
-          }, "image/png")
-        )
-    );
-  fontPromise.catch(() => (fontPromise = null));
-  return fontPromise;
-}
-
 async function createEngine(report) {
   if (!globalThis.NuvioLightning) await loadScript(LIB_URL).catch(() => {});
   const L = globalThis.NuvioLightning;
   if (!L) throw new Error("lightning-missing");
-  const urls = await fontUrls();
   const variant = getWebglVariant();
   // Lightning keeps SDF fonts in a module cache: a rebuilt engine needs its own family name.
   engineCount += 1;
   const font = `${FONT}${engineCount}`;
+  const fonts = Object.fromEntries(ATLAS_WEIGHTS.map((weight) => [weight, `${font}-${weight}`]));
   let renderer;
   try {
     renderer = new L.RendererMain(
@@ -262,7 +245,8 @@ async function createEngine(report) {
         deviceLogicalPixelRatio: (globalThis.innerWidth || APP_WIDTH) / APP_WIDTH,
         devicePhysicalPixelRatio: 1,
         renderEngine: L.WebGlCoreRenderer,
-        fontEngines: [L.SdfTextRenderer],
+        // Canvas text only for a text the atlases lack (glText): one texture per node.
+        fontEngines: [L.SdfTextRenderer, L.CanvasTextRenderer].filter(Boolean),
         platform:
           variant === "platform-legacy" && L.WebPlatformLegacy
             ? L.WebPlatformLegacy
@@ -297,7 +281,7 @@ async function createEngine(report) {
   const dispose = () => {
     if (liveEngine?.renderer === renderer) liveEngine = null;
     try {
-      L.SdfTextRenderer.font.unloadFont(font);
+      Object.values(fonts).forEach((family) => L.SdfTextRenderer.font.unloadFont(family));
       renderer.close();
     } catch (_) {}
     canvas.remove();
@@ -307,12 +291,25 @@ async function createEngine(report) {
     } catch (_) {}
   };
   try {
-    await renderer.stage.preloadFont("sdf", { fontFamily: font, ...urls });
+    await Promise.all(
+      ATLAS_WEIGHTS.map((weight) =>
+        renderer.stage.preloadFont("sdf", {
+          fontFamily: fonts[weight],
+          // Absolute: Lightning decodes images in a blob worker, where a relative URL fails.
+          ...Object.fromEntries(
+            Object.entries(atlasUrls(weight)).map(([key, url]) => [
+              key,
+              new URL(url, document.baseURI).href
+            ])
+          )
+        })
+      )
+    );
   } catch (_) {
     dispose();
     throw new Error("font-atlas");
   }
-  liveEngine = { renderer, canvas, dispose, font, variant };
+  liveEngine = { renderer, canvas, dispose, fonts, variant };
   return liveEngine;
 }
 
@@ -433,7 +430,7 @@ export function createLightningHomeRenderer(
     if (!closed) onFailure?.(reason);
   }
 
-  function buildScene({ renderer, font }) {
+  function buildScene({ renderer, fonts }) {
     const colors = {
       bg: themeColor(root, "--bg-color", "#0d0d0d"),
       bgClear: themeColor(root, "--bg-color", "#0d0d0d", 0),
@@ -441,20 +438,48 @@ export function createLightningHomeRenderer(
       secondary: themeColor(root, "--text-secondary", "#b3b3b3"),
       tertiary: themeColor(root, "--text-tertiary", "#808080"),
       card: themeColor(root, "--card-bg", "#222222"),
-      focus: themeColor(root, "--focus-color", "#ffffff")
+      focus: themeColor(root, "--focus-color", "#ffffff"),
+      // Mobile hero meta: dots at alpha 0.7, badge outline at 0.55 (HomeHeroMetaRows.kt).
+      dot: themeColor(root, "--text-color", "#ffffff", 0.7),
+      badge: themeColor(root, "--focus-color", "#ffffff", 0.55)
     };
     const node = (props) => renderer.createNode(props);
     // Lightning paints any sized node white unless its color is 0: containers stay transparent.
     const group = (props) => renderer.createNode({ color: 0, ...props });
-    const text = (props) =>
-      renderer.createTextNode({
-        fontFamily: font,
+    /**
+     * Text node in the SDF atlas of `weight` (400 or 600); a text with a character outside the
+     * atlases goes to the canvas renderer with the system sans-serif instead of showing "?".
+     */
+    const text = ({ weight = 400, ...props }) => {
+      const { text: value, canvas } = glText(props.text);
+      const created = renderer.createTextNode({
+        fontFamily: fonts[weight],
         color: colors.text,
         contain: "width",
         maxLines: 1,
         overflowSuffix: "…",
-        ...props
+        ...props,
+        text: value,
+        ...(canvas
+          ? { textRendererOverride: "canvas", fontFamily: "sans-serif", fontStyle: String(weight) }
+          : {})
       });
+      created.glProps = { weight, ...props };
+      created.glCanvas = canvas;
+      return created;
+    };
+    /** Sets a text node's text; returns the node to keep (a new one when the renderer changes). */
+    const retext = (current, value) => {
+      const { text: normalized, canvas } = glText(value);
+      if (canvas === current.glCanvas) {
+        current.text = normalized;
+        return current;
+      }
+      const { x, y, alpha, parent } = current;
+      const next = text({ ...current.glProps, parent, x, y, alpha, text: value });
+      current.destroy();
+      return next;
+    };
     const sceneRoot = node({
       parent: renderer.root,
       w: APP_WIDTH,
@@ -470,6 +495,8 @@ export function createLightningHomeRenderer(
       slot.node = image;
       return slot;
     });
+    // Over the hero images until the first backdrop is loaded (setHero loading).
+    const skeleton = node({ parent: sceneRoot, ...hero, ...SKELETON, alpha: 0 });
     // Left and bottom fades of the hero media (components-16.css ::before/::after), two stops.
     node({
       parent: sceneRoot,
@@ -495,25 +522,28 @@ export function createLightningHomeRenderer(
       h: APP_HEIGHT - MAIN_TOP,
       clipping: true
     });
+    const heroCopy = createHeroCopy({
+      parent: sceneRoot,
+      node,
+      text,
+      shader: (props) => renderer.createShader("RoundedWithBorder", props),
+      slot: imageSlot,
+      tween,
+      settle,
+      colors,
+      fade: motion.copy
+    });
     return {
       renderer,
       colors,
       node,
       group,
       text,
+      retext,
       root: sceneRoot,
       hero: { front: heroSlots[0], back: heroSlots[1], shown: "", wanted: "" },
-      heroTitle: text({ parent: sceneRoot, x: RAIL_LEFT, y: 300, fontSize: 64, maxWidth: 900 }),
-      heroDescription: text({
-        parent: sceneRoot,
-        x: RAIL_LEFT,
-        y: 390,
-        fontSize: 26,
-        lineHeight: 36,
-        maxWidth: 900,
-        maxLines: 3,
-        color: colors.secondary
-      }),
+      skeleton: { node: skeleton, on: false, ctrl: null },
+      heroCopy,
       rowsLayer: group({ parent: rowsClip }),
       // Child of the focused card, so it follows its slide and scale; transparent inside.
       ring: node({
@@ -574,7 +604,7 @@ export function createLightningHomeRenderer(
         };
         views.set(row.key, view);
       }
-      view.title.text = row.title || "";
+      view.title = scene.retext(view.title, row.title || "");
       // Loading rows stay empty, without skeleton cards (lot C12); no error text (D1).
       view.status.text =
         row.items.length || row.status !== "loading" ? "" : t("common.loading", {}, "Loading");
@@ -715,7 +745,9 @@ export function createLightningHomeRenderer(
           card.item = item;
           card.index = i;
           card.rowKey = row.key;
-          card.title.text = card.fallback.text = String(item.name || item.title || "");
+          const name = String(item.name || item.title || "");
+          card.title = scene.retext(card.title, name);
+          card.fallback = scene.retext(card.fallback, name);
           card.source = cardImage(row, item, size, layout, glImageUrl);
         }
         card.node.alpha = 1;
@@ -762,6 +794,7 @@ export function createLightningHomeRenderer(
   function heroState(slot, state) {
     const hero = scene?.hero;
     if (!hero || slot !== hero.back) return;
+    if (state !== "loading") setSkeleton(false);
     if (state === "loaded") {
       const old = hero.front;
       hero.front = slot;
@@ -777,13 +810,32 @@ export function createLightningHomeRenderer(
     }
   }
 
-  function setHero(item) {
+  /** DOM home-modern-hero-media-loading: the gradient shimmers (static when constrained). */
+  function setSkeleton(on) {
+    const skeleton = scene?.skeleton;
+    if (!skeleton || skeleton.on === on) return;
+    skeleton.on = on;
+    skeleton.ctrl?.stop(false);
+    skeleton.ctrl = null;
+    skeleton.node.alpha = on ? 1 : 0;
+    const constrained =
+      globalThis.document?.documentElement?.classList?.contains("performance-constrained");
+    if (!on || !motion.copy || constrained) return;
+    skeleton.ctrl = skeleton.node.animate(
+      { alpha: 0.55 },
+      { duration: 1100, easing: "ease-in-out", loop: true, stopMethod: "reverse" }
+    );
+    skeleton.ctrl.start();
+  }
+
+  function setHero(item, { loading = false } = {}) {
     last.hero = item;
+    last.heroLoading = loading;
     if (!scene) return;
-    scene.heroTitle.text = item?.name || item?.title || "";
-    scene.heroDescription.text = item?.description || "";
-    // DOM backdrop order (buildHeroBackdropSources), without the poster: cover would crop it to a strip.
     const display = item ? buildModernHeroPresentation(item) : null;
+    if (!item) setSkeleton(loading);
+    scene.heroCopy.set(display);
+    // DOM backdrop order (buildHeroBackdropSources), without the poster: cover would crop it to a strip.
     const width = engine.variant === "hero-780" ? 780 : 1280;
     const [url = "", ...fallbacks] = [
       ...new Set(
@@ -792,6 +844,8 @@ export function createLightningHomeRenderer(
           .map((source) => glImageUrl(source, width))
       )
     ];
+    // No backdrop at all for this title: nothing will end the skeleton.
+    if (item && !url) setSkeleton(false);
     const { hero } = scene;
     if (url === hero.shown) {
       if (hero.wanted !== url) heroQueue.request(hero.back, "");
@@ -831,7 +885,7 @@ export function createLightningHomeRenderer(
       scene = buildScene(engine);
       setRows(last.rows);
       if (last.focus) update(last.rows, last.focus, last.options);
-      setHero(last.hero);
+      setHero(last.hero, { loading: last.heroLoading });
     })
     .catch((error) => fail(error?.message || "init"));
 

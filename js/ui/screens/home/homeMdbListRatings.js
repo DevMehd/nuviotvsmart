@@ -34,9 +34,8 @@ export function getHeroMdbListRatings(hero, layoutMode = "modern") {
     .map((provider) => ({ provider, value: Number(ratings[provider]) }));
 }
 
-export function renderHeroMdbListRatings(hero, layoutMode = "modern") {
-  const items = getHeroMdbListRatings(hero, layoutMode);
-  if (!items.length) return "";
+/** Hero ratings as data (provider, formatted value, icon): the WebGL Home draws them as nodes. */
+export function getHeroMdbListRatingItems(hero, layoutMode = "modern") {
   const icons = {
     imdb: "assets/icons/imdb_logo_2016.svg",
     trakt: "assets/icons/mdblist_trakt.svg",
@@ -45,16 +44,25 @@ export function renderHeroMdbListRatings(hero, layoutMode = "modern") {
     metacritic: "assets/icons/mdblist_metacritic.png",
     mal: "assets/icons/mdblist_mal.svg"
   };
+  return getHeroMdbListRatings(hero, layoutMode).map(({ provider, value }) => {
+    const fixed = ["imdb", "tmdb", "letterboxd"].includes(provider) || value % 1 !== 0;
+    const text = new Intl.NumberFormat(I18n.getLocale(), {
+      minimumFractionDigits: fixed ? 1 : 0,
+      maximumFractionDigits: fixed ? 1 : 0,
+      useGrouping: false
+    }).format(value);
+    const icon = icons[provider] || mdbListRatingIcon(provider, value, hero.mdbListRatings);
+    return { provider, text, icon };
+  });
+}
+
+export function renderHeroMdbListRatings(hero, layoutMode = "modern") {
+  const items = getHeroMdbListRatingItems(hero, layoutMode);
+  if (!items.length) return "";
   return `<span class="home-mdb-rating-items">${items
-    .map(({ provider, value }) => {
-      const fixed = ["imdb", "tmdb", "letterboxd"].includes(provider) || value % 1 !== 0;
-      const text = new Intl.NumberFormat(I18n.getLocale(), {
-        minimumFractionDigits: fixed ? 1 : 0,
-        maximumFractionDigits: fixed ? 1 : 0,
-        useGrouping: false
-      }).format(value);
-      const icon = icons[provider] || mdbListRatingIcon(provider, value, hero.mdbListRatings);
-      return `<span class="home-mdb-rating-item"><img class="${provider === "imdb" ? "is-imdb" : ""}" src="${icon}" alt="${escapeHtml(provider)}" /><span>${escapeHtml(text)}</span></span>`;
-    })
+    .map(
+      ({ provider, text, icon }) =>
+        `<span class="home-mdb-rating-item"><img class="${provider === "imdb" ? "is-imdb" : ""}" src="${icon}" alt="${escapeHtml(provider)}" /><span>${escapeHtml(text)}</span></span>`
+    )
     .join("")}</span>`;
 }
