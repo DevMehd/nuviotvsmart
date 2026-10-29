@@ -1,9 +1,13 @@
 # Nuvio personnel — Historique des modifications
 
-## 2026-10-27 — 1.3.6
+## 2026-10-29 — 1.3.7
 
 - Démarrage plus rapide sur la télé VIDAA : au lancement, l’application ne charge plus que l’accueil et la sélection du profil. Les autres écrans (fiche, lecteur, paramètres, recherche…) sont chargés la première fois que tu les ouvres, puis restent disponibles hors ligne. Si une mise à jour arrive pendant l’utilisation, l’application se recharge une fois d’elle-même au lieu de rester bloquée.
 - Le code envoyé à la télé est préparé pour son navigateur (Chromium 111) : moins de code à lire au démarrage. Les autres télés (Samsung, LG) gardent la version actuelle.
+
+## 2026-10-27 — 1.3.6
+
+- « Nouvel accueil (bêta) » : choisir le réglage ouvre bien la liste Désactivé / DOM / WebGL dans le navigateur (et sur les télés autres que VIDAA) ; en 1.3.5, le clic ne faisait rien.
 
 ## 2026-10-27 — 1.3.5
 
