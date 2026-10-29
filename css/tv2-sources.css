@@ -41,8 +41,15 @@
 
 .tv2-sources-row[hidden],
 .tv2-sources-more[hidden],
-.tv2-sources-track[hidden] {
+.tv2-sources-track[hidden],
+.stream-route-shell.tv2-sources .stream-route-content[hidden] {
   display: none;
+}
+
+/* Loading cards stay still on VIDAA, constrained or not: no shimmer loop while sources arrive. */
+html.vidaa-tv .tv2-sources .stream-route-skeleton-line {
+  animation: none;
+  opacity: 0.7;
 }
 
 .stream-route-shell.tv2-sources .tv2-sources-row .stream-route-card,

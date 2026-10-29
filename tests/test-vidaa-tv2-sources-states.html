@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" class="vidaa-tv">
+  <meta charset="utf-8" />
+  <title>VIDAA new Sources screen (beta) states and overlays</title>
+  <base href="/" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <body class="vidaa-tv">
+    <div id="app"><div id="stream" class="screen"></div></div>
+    <pre id="result" style="position: fixed; opacity: 0; z-index: -1">RUNNING</pre>
+    <script>
+      globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    </script>
+    <script type="module">
+      // States of the new Sources screen (T6) with the real mount, CSS and DOM: still loading cards
+      // on VIDAA; the Continue Watching resume overlay over the kept shell, no row drawn and no key
+      // acting under it, then the list in the same shell; the automatic play loading screen, its
+      // error and the explicit manual choice opening the pool with a single empty message.
+      const result = document.getElementById("result");
+      try {
+        const { Router, streamRepository, PlayerSettingsStore, StreamPreferencesStore } =
+          await import("/js/ui/screens/stream/streamScreen.js");
+        const { NewSourcesScreen } = await import("/js/ui/tv2/sources/newSourcesScreen.js");
+        const assert = (condition, message) => {
+          if (!condition) throw Error(message);
+        };
+        const navigations = [];
+        Router.getCurrent = () => "stream";
+        Router.navigate = (route, params) => navigations.push({ route, params });
+        Router.popToExistingRoute = () => false;
+        Router.back = () => {};
+        streamRepository.setLocalPluginSearchPaused = () => {};
+        const settings = (values) =>
+          PlayerSettingsStore.set(
+            {
+              streamAutoPlayMode: "MANUAL",
+              streamAutoPlayTimeoutSeconds: 0,
+              streamAutoPlaySource: "ALL_SOURCES",
+              streamAutoPlaySelectedAddons: [],
+              streamAutoPlaySelectedPlugins: [],
+              streamAutoPlayPreferBingeGroupForNextEpisode: false,
+              streamAutoPlayReuseBingeGroup: false,
+              streamReuseLastLinkEnabled: false,
+              ...values
+            },
+            { silentSync: true }
+          );
+        const group = {
+          addonName: "Addon",
+          addonId: "fixture.addon",
+          addonOrderIndex: 0,
+          streams: Array.from({ length: 12 }, (_, i) => ({
+            id: `s${i}`,
+            name: `Addon\n1080p`,
+            description: `Fixture.${i}.mkv`,
+            url: `https://fixture.invalid/${i}.mkv`
+          }))
+        };
+        let search = null;
+        streamRepository.getStreamsFromAllAddons = (_type, _id, options = {}) => {
+          options.onAddon?.({ name: "Addon", orderIndex: 0 });
+          return new Promise((resolve) => (search = { options, finish: (data) => resolve({ status: "success", data }) }));
+        };
+        const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const waitFor = async (test, label) => {
+          for (let i = 0; i < 600 && !test(); i++) await frame();
+          assert(test(), `Timed out: ${label}`);
+        };
+        const route = NewSourcesScreen;
+        const press = (key, keyCode) =>
+          route.onKeyDown({ key, code: key, keyCode, repeat: false, preventDefault() {}, stopPropagation() {} });
+        const $ = (selector) => route.container.querySelector(selector);
+        const shown = (node) => Boolean(node) && getComputedStyle(node).display !== "none";
+        const drawnRows = () => route.container.querySelectorAll(".tv2-sources-row:not([hidden])").length;
+
+        // Loading: the loading cards stand still on VIDAA.
+        settings({});
+        search = null;
+        await route.mount({ itemId: "tt-load", itemType: "movie", itemTitle: "Load", startFromBeginning: true }, {});
+        await waitFor(() => search && $(".tv2-sources-status .stream-route-skeleton-line"), "loading cards");
+        const lines = [...route.container.querySelectorAll(".stream-route-skeleton-line")];
+        assert(lines.every((line) => getComputedStyle(line).animationName === "none"), "no shimmer loop on VIDAA");
+        assert(!$(".stream-route-empty"), "no message while loading");
+        search.finish([]);
+        await waitFor(() => route.streamSearchCompleted, "empty search");
+        await frame();
+        assert(route.container.querySelectorAll(".stream-route-empty").length === 1, "a single empty message");
+        assert(!$(".tv2-sources-status .stream-route-skeleton-line") && !shown($(".tv2-sources-more")) && !drawnRows(), "no loading card nor row");
+        route.cleanup();
+
+        // Continue Watching resume on a fresh open: its overlay covers the shell while the
+        // remembered source is searched; rows are not drawn and only Back would act.
+        settings({ streamReuseLastLinkEnabled: true, streamReuseLastLinkCacheHours: 24 });
+        StreamPreferencesStore.set("tt-resume", "tt-resume", "gone");
+        search = null;
+        await route.mount(
+          {
+            itemId: "tt-resume",
+            itemType: "movie",
+            itemTitle: "Resume title",
+            continueWatchingBackHome: true,
+            preferredStreamId: "gone",
+            startFromBeginning: true
+          },
+          {}
+        );
+        await waitFor(() => search && $(".tv2-sources-overlay .stream-route-autoplay"), "resume overlay");
+        const shell = $(".stream-route-shell.tv2-sources");
+        assert(route.autoResumeUiActive && /Resume title/.test($(".stream-route-autoplay").textContent), "the resume overlay names the title");
+        assert(!shown($(".stream-route-content")), "the list is hidden");
+        search.options.onChunk({ status: "success", data: [group] });
+        await waitFor(() => route.streams.length === 12, "first chunk");
+        await frame();
+        assert(route.autoResumeUiActive && drawnRows() === 0 && !$(".focused"), "no row drawn nor focused under the overlay");
+        press("ArrowDown", 40);
+        press("Enter", 13);
+        await frame();
+        assert(navigations.length === 0, "keys do not play a hidden source");
+        // The remembered source is gone at the end of the search: the list replaces the overlay.
+        search.finish([group]);
+        await waitFor(() => !route.autoResumeUiActive && $(".focused")?.dataset.action === "playStream", "list after resume");
+        assert($(".stream-route-shell.tv2-sources") === shell, "the same shell");
+        assert(!$(".stream-route-autoplay") && shown($(".stream-route-content")), "the overlay is gone, the list shown");
+        assert($(".focused").dataset.streamId === "s0" && drawnRows() > 0, "the first source is focused");
+        assert(navigations.length === 0, "nothing played");
+        route.cleanup();
+
+        // Automatic play: only the player loading screen, then its error and the manual choice.
+        settings({ streamAutoPlayMode: "FIRST_STREAM" });
+        search = null;
+        await route.mount({ itemId: "tt-auto", itemType: "movie", itemTitle: "Auto", startFromBeginning: true }, {});
+        await waitFor(() => search && $(".player-loading-overlay"), "automatic play loading");
+        assert(!$(".tv2-sources") && !route.sourcesRenderer, "no picker under the loading screen");
+        search.finish([]);
+        await waitFor(() => $("[data-action='chooseManualStream']"), "automatic play error");
+        assert(!$(".tv2-sources"), "still no picker");
+        press("Enter", 13);
+        await waitFor(() => $(".stream-route-shell.tv2-sources"), "manual picker");
+        await frame();
+        assert(!$(".player-loading-overlay"), "the loading screen is replaced");
+        assert(route.container.querySelectorAll(".stream-route-empty").length === 1, "a single empty message");
+        assert($(".focused")?.classList.contains("stream-route-chip"), "the focus is on the chips");
+        assert(navigations.length === 0, "nothing played");
+        route.cleanup();
+        settings({});
+        result.textContent =
+          "PASS: still loading cards, one empty message, resume overlay over the kept shell without rows or keys, automatic play loading then manual pool.";
+      } catch (error) {
+        result.textContent = `FAIL: ${error?.stack || error}`;
+      }
+    </script>
+  </body>
+</html>

@@ -173,6 +173,7 @@ function createScreen(overrides = {}) {
       setFocus(focus) {
         calls.focus.push({ ...focus });
       },
+      setOverlay() {},
       dispose() {}
     },
     playStream(id) {
@@ -540,6 +541,58 @@ const capturable = { contains: () => true, querySelector: () => null };
   assert.equal(focusedId(evicted), "s9", "the source played first is focused");
 }
 
+// T6: watch party link, Continue Watching resume overlay.
+{
+  // The host's link is item 0 with the stable key partyShared: the same source of an addon keeps
+  // its key, so a link arriving does not move the focus by occurrence.
+  const shared = {
+    ...streams[3],
+    id: "party-shared:tt1:x",
+    partyShared: true,
+    addonOrderIndex: -1
+  };
+  const withLink = [shared, ...streams];
+  assert.deepEqual(rowKeys(withLink), ["partyShared", ...rowKeys(streams)]);
+  let link = null;
+  const screen = createScreen({ getPartySharedEntry: () => link });
+  for (let i = 0; i < 3; i += 1) screen.onKeyDown(key("ArrowDown"));
+  link = shared;
+  screen._filteredStreamsCache = null;
+  screen.render();
+  assert.equal(screen.calls.updates.at(-1).items[0], shared, "the link is listed first");
+  assert.equal(focusedId(screen), "s3", "the browsing user keeps the source");
+  screen.onKeyDown(key("Enter"));
+  assert.deepEqual(screen.calls.played, ["s3"]);
+}
+
+{
+  // While the remembered Continue Watching source is searched, its overlay covers the list: no
+  // rows are drawn and only Back acts. Without it the list is drawn as usual.
+  const overlays = [];
+  const screen = createScreen({
+    autoResumeUiActive: true,
+    params: { itemId: "tt1", itemType: "movie", itemTitle: "Film" }
+  });
+  screen.sourcesRenderer.setOverlay = (markup) => overlays.push(markup);
+  screen.calls.updates.length = 0;
+  screen.render();
+  assert.match(overlays.at(-1), /stream-route-autoplay/);
+  assert.match(overlays.at(-1), /Film/);
+  assert.equal(screen.calls.updates.length, 0, "no list under the overlay");
+  const focusBefore = screen.calls.focus.length;
+  screen.onKeyDown(key("ArrowDown"));
+  screen.onKeyDown(key("Enter"));
+  assert.equal(screen.calls.focus.length, focusBefore, "the hidden list does not move");
+  assert.deepEqual(screen.calls.played, [], "nor play");
+  screen.onKeyDown(key("Escape"));
+  assert.equal(screen.calls.back, 1, "Back leaves");
+  // The remembered source is gone at the end of the search: the list replaces the overlay.
+  screen.autoResumeUiActive = false;
+  screen.render();
+  assert.equal(overlays.at(-1), "");
+  assert.equal(screen.calls.updates.length, 1);
+}
+
 console.log(
-  "PASS: new Sources screen geometry, view memo, keys, arrival focus, chips, states and player return."
+  "PASS: new Sources screen geometry, view memo, keys, arrival focus, chips, states, player return, party link and resume overlay."
 );

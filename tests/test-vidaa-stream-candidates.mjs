@@ -9,6 +9,11 @@ globalThis.fetch = async () => {
 
 const { StreamScreen, Router, streamRepository, watchProgressRepository } =
   await import("../js/ui/screens/stream/streamScreen.js");
+// --new-sources: the same cases against the new TV Sources screen (beta), which inherits this logic.
+const newSources = process.argv.includes("--new-sources");
+const Screen = newSources
+  ? (await import("../js/ui/tv2/sources/newSourcesScreen.js")).NewSourcesScreen
+  : StreamScreen;
 
 const navigations = [];
 const originalNavigate = Router.navigate;
@@ -26,7 +31,7 @@ const streams = [
 ];
 function screen(overrides = {}) {
   return {
-    ...StreamScreen,
+    ...Screen,
     streams: streams.slice(),
     sourceChips: [],
     addonFilter: "Source B",

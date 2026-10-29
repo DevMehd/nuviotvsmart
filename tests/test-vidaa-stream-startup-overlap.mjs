@@ -29,7 +29,11 @@ const { TraktAuthService } = await import("../js/data/repository/traktAuthServic
 const { watchedItemsRepository } = await import("../js/data/repository/watchedItemsRepository.js");
 const { WatchProgressStore } = await import("../js/data/local/watchProgressStore.js");
 
-let methods = StreamScreen;
+// --new-sources: the same cases against the new TV Sources screen (beta), which inherits this logic.
+const newSources = process.argv.includes("--new-sources");
+let methods = newSources
+  ? (await import("../js/ui/tv2/sources/newSourcesScreen.js")).NewSourcesScreen
+  : StreamScreen;
 if (process.argv.includes("--baseline")) {
   const relativePath = "js/ui/screens/stream/streamScreenMethods-04-load-streams.js";
   const moduleUrl = new URL(`../${relativePath}`, import.meta.url);
@@ -39,7 +43,7 @@ if (process.argv.includes("--baseline")) {
   const baseline = await import(
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
-  methods = { ...StreamScreen, ...baseline.createStreamScreenMethods04() };
+  methods = { ...methods, ...baseline.createStreamScreenMethods04() };
 }
 
 const timers = new Map();

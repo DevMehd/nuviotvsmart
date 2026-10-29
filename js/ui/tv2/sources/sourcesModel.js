@@ -52,11 +52,16 @@ export function sourcesWindow({ count, focusRow = -1, first = 0 }) {
 }
 
 const rowKeysCache = new WeakMap();
-/** streamRowKeys of a filtered list, computed once per list. */
+/**
+ * streamRowKeys of a filtered list, computed once per list. The watch party link, always first
+ * (getFilteredStreams), is keyed partyShared: the same source of an addon keeps its own key.
+ */
 export function rowKeys(items) {
   let keys = rowKeysCache.get(items);
   if (!keys) {
-    keys = streamRowKeys(items);
+    keys = items[0]?.partyShared
+      ? ["partyShared", ...streamRowKeys(items.slice(1))]
+      : streamRowKeys(items);
     rowKeysCache.set(items, keys);
   }
   return keys;

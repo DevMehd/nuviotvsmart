@@ -20,13 +20,15 @@ import { filterNames, findSourceRow, rowBadges, rowKeys } from "./sourcesModel.j
 export const NewSourcesScreen = {
   ...StreamScreen,
 
+  // The view factory, a property so Node tests can run the inherited logic with a recording view.
+  createSourcesRenderer,
+
   render() {
     this.cancelScheduledRender();
     this.syncAutoPlayUiState();
-    if (this.autoPlayUiActive || this.autoResumeUiActive) {
-      // shortcut: the automatic play and resume overlays keep the current screen's markup, until T6.
+    if (this.autoPlayUiActive) {
+      // The automatic play loading screen replaces the whole view, with the StreamScreen markup.
       this.disposeSourcesView();
-      this.hasRenderedStreamRouteShell = false;
       StreamScreen.render.call(this);
       return;
     }
@@ -37,7 +39,7 @@ export const NewSourcesScreen = {
     });
     if (!this.sourcesRenderer) {
       this.renderedMarkup = null;
-      this.sourcesRenderer = createSourcesRenderer(this.container, {
+      this.sourcesRenderer = this.createSourcesRenderer(this.container, {
         header: {
           ...this.getHeaderMeta(),
           backdrop: this.getBackdropUrl(),
@@ -48,6 +50,9 @@ export const NewSourcesScreen = {
         badgesOnTop: badgeSettings.badgePlacement === "TOP"
       });
     }
+    // Continue Watching resume: its StreamScreen overlay covers the shell; no rows are drawn under it.
+    this.sourcesRenderer.setOverlay(this.renderContinueWatchingResumeOverlay());
+    if (this.autoResumeUiActive) return;
     const names = this.getOrderedFilterNames();
     if (this.addonFilter !== "all" && !names.includes(this.addonFilter)) {
       // An error chip can disappear after the user selected it (StreamScreen.refreshSourceChipsOnly).
@@ -175,6 +180,8 @@ export const NewSourcesScreen = {
       StreamScreen.onKeyDown.call(this, event);
       return;
     }
+    // The resume overlay hides the list: only Back acts, as in StreamScreen.
+    if (this.autoResumeUiActive) return;
     // Inherited data code may have set the focus since the last render.
     this.normalizeSourcesFocus();
     const direction = getDpadDirection(event);

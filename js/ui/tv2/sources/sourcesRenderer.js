@@ -95,6 +95,7 @@ function shellMarkup({ title, logo, episodeLabel, subtitle, detailLine, isSeries
           </div>
         </section>
       </div>
+      <div class="tv2-sources-overlay"></div>
     </div>`;
 }
 
@@ -114,6 +115,9 @@ export function createSourcesRenderer(
   const track = container.querySelector(".tv2-sources-track");
   const more = container.querySelector(".tv2-sources-more");
   more.innerHTML = moreMarkup;
+  const content = container.querySelector(".stream-route-content");
+  const overlay = container.querySelector(".tv2-sources-overlay");
+  let overlayMarkup = "";
   const chips = new Map();
   let chipOrder = [refreshChip];
   const pool = [];
@@ -399,9 +403,16 @@ export function createSourcesRenderer(
       updateChips();
     },
     setFocus,
+    /** A screen overlay over the shell (Continue Watching resume); it hides the list. "" removes it. */
+    setOverlay(markup) {
+      if (markup === overlayMarkup) return;
+      overlayMarkup = markup;
+      overlay.innerHTML = markup;
+      content.hidden = Boolean(markup);
+    },
+    /** Releases the pool and its images; the markup stays for the next screen state to replace. */
     dispose() {
       images.clear();
-      container.innerHTML = "";
       pool.length = 0;
       chips.clear();
       view = null;
