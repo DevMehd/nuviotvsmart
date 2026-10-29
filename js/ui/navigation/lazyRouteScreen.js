@@ -54,8 +54,10 @@ export function lazyRouteScreen(load) {
     },
     // Back while the chunk loads: history still holds the caller, so a plain
     // history.back() would skip it. Return to the caller like a pending Detail.
+    // Before the first screen (cold launch) there is no caller: ignore Back, so
+    // sign-in or onboarding is not replaced by Home; the mounted screen handles it.
     consumeBackRequest() {
-      void Router.backFromPendingNavigation();
+      if (Router.historyInitialized) void Router.backFromPendingNavigation();
       return true;
     }
   };

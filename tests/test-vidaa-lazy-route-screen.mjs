@@ -74,6 +74,12 @@ Router.currentParams = params = { id: "tt2" };
 mounts.length = 0;
 const slowMount = slow.mount(params, {});
 assert.equal(Router.getCurrentScreen?.() ?? Router.routes.detail, slow);
+// Cold launch: the first screen (sign-in, onboarding) has no caller yet. Back must not
+// open Home in its place; the screen handles the next Back once mounted.
+Router.historyInitialized = false;
+assert.equal(slow.consumeBackRequest(), true, "Back is consumed before the first screen");
+assert.deepEqual(pendingBacks, [], "no caller to return to before the first screen");
+Router.historyInitialized = true;
 assert.equal(slow.consumeBackRequest(), true, "Back is consumed while the chunk loads");
 assert.deepEqual(pendingBacks, ["detail"], "the caller is restored from history");
 Router.current = "stream"; // backFromPendingNavigation navigated away.
