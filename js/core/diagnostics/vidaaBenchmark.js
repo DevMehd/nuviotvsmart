@@ -110,10 +110,12 @@ const CONTAINERS = ["mkv", "mp4", "m4v", "webm", "m3u8", "mpd", "ts", "avi", "mo
 const count = (value, max = 999) =>
   Number.isSafeInteger(value) && value >= 0 ? Math.min(value, max) : null;
 // Media error texts may echo a link or a host: keep the wording, never the address.
+// Local streaming servers and private addons are often reached by a bare IPv4.
 export function scrubDiagnosticText(value, max = 200) {
   return String(value ?? "")
     .replace(/[a-z][a-z0-9+.-]*:\/\/\S*/gi, "[lien]")
     .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\b/gi, "[hôte]")
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, "[hôte]")
     .slice(0, max);
 }
 // File extension only (never the address): "mkv", "mp4"…, "other" or "unknown".
