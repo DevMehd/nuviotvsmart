@@ -80,6 +80,13 @@ export const StreamLinkCacheStore = {
     LocalStore.set(KEY, all);
     return true;
   },
+  // Newest still-valid http link of the profile, for the Diagnostic raw playback only.
+  latest(profileId = activeStreamLinkProfile()) {
+    const entries = readAll()[profileId];
+    return Array.isArray(entries)
+      ? entries.find((item) => item?.url && validPayload(item, Infinity)) || null
+      : null;
+  },
   getValid(params, maxAgeMs, profileId = activeStreamLinkProfile()) {
     const key = contentKey(params);
     if (!key || !Number.isFinite(maxAgeMs) || maxAgeMs <= 0) return null;

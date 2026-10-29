@@ -451,16 +451,40 @@ export function createVidaaBenchmarkDriver({
 
   async function runVideo(until) {
     if (!(await openSources())) return false;
-    if (!matches(focused(), STREAM_SELECTOR)) await tap("down", 500);
+    // Slow addons fill the list late; the header rows (filters, addons) sit above the cards.
+    if (!(await waitFor(() => query(STREAM_SELECTOR), 20000, 250))) {
+      log(`aucun lien vidéo affiché après 20 s : focus sur ${describeNode(focused())}`);
+      return false;
+    }
+    for (let i = 1; i <= 6 && !matches(focused(), STREAM_SELECTOR); i += 1) {
+      log(`vers le premier lien (appui ${i}) : focus sur ${describeNode(focused())}`);
+      await tap("down", 500);
+    }
     if (!matches(focused(), STREAM_SELECTOR)) {
       log(`aucun lien vidéo sélectionnable : focus sur ${describeNode(focused())}`);
       return false;
     }
+    const previous = service.lastStartup?.() || null;
     await press("ok");
     if (!(await waitFor(() => route() === "player", 20000))) {
       log(`la lecture n’a pas démarré : écran « ${route() || "?"} »`);
       return false;
     }
+    const startup = () => {
+      const entry = service.lastStartup?.() || null;
+      return entry && entry !== previous ? entry : null;
+    };
+    const settled = await waitFor(
+      () => route() !== "player" || (startup() && startup().outcome !== "pending"),
+      60000,
+      250
+    );
+    const entry = startup();
+    log(
+      entry?.outcome === "playing"
+        ? `première image en ${entry.firstFrameMs} ms, ${entry.autoSourceSwitches} changement(s) de source`
+        : `${settled ? `démarrage : ${entry?.outcome || "non relevé"}` : "ni image ni fin après 60 s"}${entry?.errorCode ? `, erreur ${entry.errorCode}` : ""}, ${entry?.autoSourceSwitches || 0} changement(s) de source`
+    );
     await sleep(Math.min(45000, Math.max(0, remaining(until) - 40000)));
     if (remaining(until) > 20000 && route() === "player") {
       await press("right", { holdMs: 900 });

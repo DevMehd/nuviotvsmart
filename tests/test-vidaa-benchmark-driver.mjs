@@ -50,6 +50,8 @@ function harness({
     home: { rows: 3, cols: 6, row: 0, col: 0, sidebar: false },
     detailFocus: "cast",
     streamFocus: "filter",
+    streamCardsAt: 0,
+    startup: null,
     leftAtFirstCard: 0
   };
   const listeners = new Set();
@@ -59,7 +61,19 @@ function harness({
     app.current = name;
     app.routes.push(name);
     if (name === "detail") app.detailFocus = "cast";
-    if (name === "stream") app.streamFocus = "filter";
+    if (name === "stream") {
+      app.streamFocus = "filter";
+      app.streamCardsAt = time + 3000;
+    }
+    if (name === "player") {
+      // The player's first image arrives 4.2 s after OK, as recorded by the service.
+      const startup = { outcome: "pending", firstFrameMs: null, autoSourceSwitches: 0 };
+      app.startup = startup;
+      root.setTimeout(
+        () => Object.assign(startup, { outcome: "playing", firstFrameMs: 4200 }),
+        4200
+      );
+    }
   };
   const back = () => {
     app.current = app.stack.pop() || "home";
@@ -96,8 +110,11 @@ function harness({
       if (code === 13 && app.detailFocus === "play") go("stream");
       if (code === 8) back();
     } else if (app.current === "stream") {
-      if (code === 40) app.streamFocus = "card";
-      if (code === 38) app.streamFocus = "filter";
+      // Two header rows (filters, then addons) sit above the first card.
+      if (code === 40)
+        app.streamFocus =
+          app.streamFocus === "filter" ? "addon" : time >= app.streamCardsAt ? "card" : "addon";
+      if (code === 38) app.streamFocus = app.streamFocus === "card" ? "addon" : "filter";
       if (code === 13 && app.streamFocus === "card") go("player");
       if (code === 8) back();
     } else if (app.current === "player" && code === 8) back();
@@ -118,7 +135,9 @@ function harness({
     if (app.current === "stream")
       return app.streamFocus === "card"
         ? element("stream-route-card focusable focused", { action: "playStream" })
-        : element("stream-route-chip focusable focused", { action: "setFilter" });
+        : element("stream-route-chip focusable focused", {
+            action: app.streamFocus === "addon" ? "setAddon" : "setFilter"
+          });
     return null;
   };
   const body = {
@@ -146,8 +165,10 @@ function harness({
           : null;
       if (selector === '[data-action="playDefault"]')
         return app.current === "detail" ? element("focusable", { action: "playDefault" }) : null;
-      if (selector.includes(".stream-route-card"))
-        return app.current === "stream" ? element("stream-route-card") : null;
+      if (selector.includes(".stream-route-card") || selector === '[data-action="playStream"]')
+        return app.current === "stream" && time >= app.streamCardsAt
+          ? element("stream-route-card focusable", { action: "playStream" })
+          : null;
       return null;
     }
   };
@@ -203,6 +224,7 @@ function harness({
       return true;
     },
     isRunning: (id) => active && (id === undefined || activeId === id),
+    lastStartup: () => app.startup,
     setDriverJournal: (entries) => journals.push(entries.slice()),
     stop(reason, hud, note) {
       calls.push(["stop", activeId, reason, hud, note]);
@@ -281,6 +303,15 @@ function harness({
     "journal counts pages"
   );
   assert.ok(h.journals.length > 0, "journal persisted into the report");
+  assert.ok(
+    journal.some((entry) => /vers le premier lien \(appui 2\)/.test(entry)),
+    "two presses reach the first card below the header rows"
+  );
+  assert.ok(
+    journal.some((entry) => /première image en 4200 ms, 0 changement/.test(entry)),
+    journal.join("\n")
+  );
+  assert.equal(stopped.find((call) => call[1] === "video")[2], "complete");
   assert.ok(!JSON.stringify(journal).includes("Untitled"), "journal never carries content");
 }
 

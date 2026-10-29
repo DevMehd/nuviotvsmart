@@ -462,6 +462,150 @@ function harness({ stored = new Map(), observer = true } = {}) {
   );
   assert.match(createExportId({}), /^[a-z2-7]{20}$/);
 }
+{
+  // Player startup ring (lot P, P0): observed from the document, kept outside any step.
+  const h = harness();
+  h.enable();
+  h.setRoute("player");
+  const video = {
+    tagName: "VIDEO",
+    currentSrc: "https://cdn.secret.invalid/a/Movie.2160p.MKV?token=private-token",
+    currentTime: 0,
+    readyState: 0,
+    networkState: 2,
+    videoWidth: 3840,
+    videoHeight: 2160,
+    audioTracks: { length: 2 },
+    textTracks: { length: 1 },
+    error: null
+  };
+  const at = (ms, type) => {
+    h.advance(ms);
+    h.document.emit(type, { target: video });
+  };
+  const token = h.service.beginRoute("player");
+  assert.equal(h.service.lastStartup().outcome, "pending", "pending entry kept if the app dies");
+  h.advance(40);
+  h.service.endRoute(token, "player");
+  at(60, "loadstart");
+  at(200, "progress");
+  at(600, "loadedmetadata");
+  video.error = {
+    code: 2,
+    message:
+      "PIPELINE_ERROR_NETWORK: https://cdn.secret.invalid/x?token=private-token at secret.invalid"
+  };
+  at(100, "error");
+  video.currentSrc = "https://other.secret.invalid/b/Movie.1080p.mkv?token=private-token";
+  at(200, "loadstart");
+  at(800, "playing");
+  video.currentTime = 0.02;
+  at(250, "timeupdate");
+  assert.equal(h.service.lastStartup().outcome, "pending", "a playing event alone is not an image");
+  video.currentTime = 0.4;
+  at(250, "timeupdate");
+  const entry = h.service.lastStartup();
+  assert.equal(entry.variant, "old");
+  assert.equal(entry.outcome, "playing");
+  assert.equal(entry.firstFrameMs, 2500);
+  assert.equal(entry.marks.routeMounted, 40);
+  assert.equal(entry.marks.loadstart, 100, "first occurrence kept");
+  assert.equal(entry.marks.firstProgress, 300);
+  assert.equal(entry.marks.firstTimeAdvance, 2500);
+  assert.equal(entry.autoSourceSwitches, 1);
+  assert.equal(entry.container, "mkv");
+  assert.equal(entry.errorCode, 2);
+  assert.equal(entry.errorMessage, "PIPELINE_ERROR_NETWORK: [lien] at [hôte]");
+  assert.deepEqual([entry.audioTracks, entry.textTracks, entry.width], [2, 1, 3840]);
+  assert.equal(h.document.count() + h.root.count(), 0, "recorder listeners removed at first image");
+  assert.match(h.service.lastMediaSource(), /^https:\/\/other/, "in memory for the raw probe");
+  h.service.noteAudioNames({ result: "ok", nativeCount: 2, namedCount: 2, headerCount: 2 });
+  assert.equal(h.service.lastStartup().audioNames.namedCount, 2, "accepted outside a step");
+  // Leaving the player before any image: abandoned; after a media error: error.
+  h.service.beginRoute("player");
+  h.setRoute("home");
+  h.service.beginRoute("home");
+  assert.equal(h.service.lastStartup().outcome, "abandoned");
+  h.setRoute("player");
+  h.service.beginRoute("player");
+  video.currentSrc = "https://cdn.secret.invalid/c.mp4";
+  at(10, "loadstart");
+  video.error = { code: 4, message: "MEDIA_ELEMENT_ERROR: Format error" };
+  at(10, "error");
+  h.setRoute("stream");
+  h.service.beginRoute("stream");
+  assert.equal(h.service.lastStartup().outcome, "error");
+  assert.equal(h.service.lastStartup().container, "mp4");
+  assert.equal(h.document.count() + h.root.count(), 0);
+  const json = JSON.stringify(h.service.getState().report) + [...h.stored.values()].join("");
+  assert.ok(!/secret|private-token|https?:/.test(json), "no link, host or token in the report");
+  assert.equal(h.service.getState().report.environment.playerVariant, "old");
+  const page = renderBenchmarkPage(h.service.getState(), 7);
+  assert.match(page, /Démarrages vidéo/);
+  assert.match(
+    page,
+    /ancien lecteur · lecture · 1re image 2500 ms · 1 changement\(s\) auto · mkv · 3840×2160 · erreur 2/
+  );
+  assert.match(page, /ancien lecteur · quitté avant l’image/);
+  h.service.reset();
+  assert.equal(h.service.getState().report.startups.length, 3, "a new guided run keeps the ring");
+  for (let i = 0; i < 12; i += 1)
+    h.service.noteStartup({
+      variant: "raw",
+      outcome: "timeout",
+      marks: { srcSet: i, "bad key": 1 }
+    });
+  const ring = h.service.getState().report.startups;
+  assert.equal(ring.length, 10, "bounded to the last 10 startups");
+  assert.deepEqual(ring[9].marks, { srcSet: 11 });
+  h.service.noteStartup({
+    variant: "raw",
+    outcome: "playing",
+    firstFrameMs: 1800,
+    container: "mkv",
+    errorMessage: "",
+    marks: { srcSet: 0, loadstart: 30, playing: 1700, firstTimeAdvance: 1800 },
+    probe: {
+      variant: "audio-switch",
+      headerCount: 0,
+      muted: true,
+      progressEvents: 4,
+      waitingEvents: 1,
+      stalledEvents: 0,
+      playedSeconds: 27.5,
+      bufferedAheadSeconds: 12,
+      quality: { total: 660, dropped: 2 },
+      audioTracksApi: true,
+      audio: [{ language: "fre", label: null, enabled: true }],
+      text: [],
+      rvfcApi: true,
+      rvfcFired: false,
+      canPlay: { mkv: "maybe", truehd: "" },
+      globals: ["Hisense_GetModelName"],
+      audioSwitch: { skipped: "une-piste" },
+      cycles: [{ firstFrameMs: 900 }, { firstFrameMs: null, errorCode: 2 }]
+    }
+  });
+  const rawPage = renderBenchmarkPage(h.service.getState(), 7);
+  assert.match(
+    rawPage,
+    /lecture brute · lecture · 1re image 1800 ms · 0 changement\(s\) auto · mkv/
+  );
+  assert.match(rawPage, /Dernière lecture brute \(audio-switch\)/);
+  assert.match(rawPage, /srcSet 0 · loadstart 30 · playing 1700 · firstTimeAdvance 1800/);
+  assert.match(rawPage, /oui \/ fre\|\?\*/);
+  assert.match(rawPage, /jamais déclenché/);
+  assert.match(rawPage, /mkv:maybe truehd:non/);
+  assert.match(rawPage, /non tenté : une-piste/);
+  assert.match(rawPage, /1\/2 avec image · médiane 900 ms · erreurs 1/);
+  const probe = h.service.noteStartup({ variant: "raw", probe: { note: "see https://x.y" } });
+  assert.deepEqual(probe.probe, { dropped: "taille-ou-lien" });
+  const off = harness();
+  off.service.initialize({ enabled: false, getRoute: () => "player" });
+  off.service.beginRoute("player");
+  assert.equal(off.document.count(), 0, "no recorder outside VIDAA");
+  assert.equal(off.service.noteStartup({ variant: "raw" }), null);
+}
 console.log(
   "PASS guided VIDAA benchmark: session bounds, visibility, privacy, resources, video deltas, persistence, startup and report pages"
 );

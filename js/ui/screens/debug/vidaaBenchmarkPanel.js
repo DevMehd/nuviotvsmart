@@ -4,7 +4,10 @@ import {
   describeTrigger
 } from "../../../core/diagnostics/vidaaBenchmark.js";
 import { createVidaaBenchmarkDriver } from "../../../core/diagnostics/vidaaBenchmarkDriver.js";
+import { runRawVideoProbe } from "../../../core/diagnostics/rawVideoProbe.js";
 import { QrCodeGenerator } from "../../../core/qr/qrCodeGenerator.js";
+import { StreamLinkCacheStore } from "../../../data/local/streamLinkCacheStore.js";
+import { Platform } from "../../../platform/index.js";
 
 const escape = (value) =>
   String(value ?? "—").replace(
@@ -26,6 +29,110 @@ const describeAudioNames = (audio) =>
   audio
     ? `${audio.result} · ${audio.namedCount}/${audio.nativeCount} nommées · en-tête ${audio.headerCount}${audio.redirected ? " · redirection suivie" : ""}${audio.elapsedMs === null ? "" : ` · ${audio.elapsedMs} ms`}`
     : "non relevé";
+const VARIANT_LABELS = { old: "ancien lecteur", new: "nouveau lecteur", raw: "lecture brute" };
+const OUTCOME_LABELS = {
+  pending: "en cours ou interrompu",
+  playing: "lecture",
+  error: "erreur",
+  abandoned: "quitté avant l’image",
+  timeout: "aucune image en 30 s"
+};
+// Escaped by row(); the ring holds categories, counts and timings only (vidaaBenchmark.js).
+const describeStartup = (entry) =>
+  [
+    VARIANT_LABELS[entry.variant] || entry.variant,
+    OUTCOME_LABELS[entry.outcome] || entry.outcome,
+    entry.firstFrameMs === null ? "pas d’image" : `1re image ${entry.firstFrameMs} ms`,
+    `${entry.autoSourceSwitches} changement(s) auto`,
+    entry.container,
+    entry.width && entry.height ? `${entry.width}×${entry.height}` : "",
+    entry.errorCode ? `erreur ${entry.errorCode}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+const MARK_ORDER = [
+  "routeMounted",
+  "srcSet",
+  "playCalled",
+  "mutedFallback",
+  "loadstart",
+  "firstProgress",
+  "loadedmetadata",
+  "canplay",
+  "playing",
+  "firstFrame",
+  "firstTimeAdvance",
+  "waiting",
+  "stalled",
+  "suspend",
+  "error"
+];
+const describeMarks = (marks = {}) =>
+  MARK_ORDER.filter((name) => marks[name] !== undefined)
+    .map((name) => `${name} ${marks[name]}`)
+    .join(" · ") || "aucune";
+function renderRawProbe(entry) {
+  const p = entry.probe;
+  const cycles = Array.isArray(p.cycles) ? p.cycles : null;
+  const cycleTimes = (cycles || [])
+    .map((cycle) => cycle.firstFrameMs)
+    .filter((value) => value !== null)
+    .sort((a, b) => a - b);
+  const swap = p.audioSwitch;
+  return (
+    `<h3>Dernière lecture brute (${escape(p.variant)})</h3>` +
+    row("Marques (ms)", describeMarks(entry.marks)) +
+    row("readyState / networkState", `${entry.readyState ?? "?"} / ${entry.networkState ?? "?"}`) +
+    row("Message d’erreur de la télé", entry.errorMessage || "aucun") +
+    row(
+      "API pistes audio / pistes exposées",
+      `${p.audioTracksApi ? "oui" : "non"} / ${p.audio.map((t) => `${t.language || "?"}|${t.label || "?"}${t.enabled ? "*" : ""}`).join(", ") || "aucune"}`
+    ) +
+    row(
+      "Sous-titres exposés par la télé",
+      p.text.map((t) => `${t.kind || "?"}:${t.language || "?"}|${t.label || "?"}`).join(", ") ||
+        "aucun"
+    ) +
+    row(
+      "Image vidéo (rVFC)",
+      p.rvfcApi ? (p.rvfcFired ? "déclenché" : "jamais déclenché") : "API absente"
+    ) +
+    row(
+      "progress / attentes / blocages",
+      `${p.progressEvents} / ${p.waitingEvents} / ${p.stalledEvents}`
+    ) +
+    row(
+      "Temps lu / tampon d’avance",
+      `${number(p.playedSeconds, " s")} / ${number(p.bufferedAheadSeconds, " s")}`
+    ) +
+    row(
+      "Images décodées / perdues",
+      p.quality ? `${p.quality.total} / ${p.quality.dropped}` : "API non disponible"
+    ) +
+    row(
+      "canPlayType",
+      Object.entries(p.canPlay || {})
+        .map(([name, answer]) => `${name}:${answer || "non"}`)
+        .join(" ")
+    ) +
+    row("Objets Hisense, VIDAA, OIPF", (p.globals || []).join(", ") || "aucun") +
+    row("Son coupé d’office / en-têtes ignorés", `${p.muted ? "oui" : "non"} / ${p.headerCount}`) +
+    (swap
+      ? row(
+          "Changement de piste audio",
+          swap.skipped
+            ? `non tenté : ${swap.skipped}`
+            : `${swap.from}→${swap.to} · actives ${swap.enabled.map((on) => (on ? 1 : 0)).join("")} · ${number(swap.advancedSeconds, " s lues")} · attentes ${swap.waitingEvents}${swap.errorCode ? ` · erreur ${swap.errorCode}` : ""}`
+        )
+      : "") +
+    (cycles
+      ? row(
+          "10 changements de source",
+          `${cycleTimes.length}/${cycles.length} avec image · médiane ${cycleTimes.length ? `${cycleTimes[Math.floor((cycleTimes.length - 1) / 2)]} ms` : "—"} · erreurs ${cycles.filter((cycle) => cycle.errorCode).length}`
+        )
+      : "")
+  );
+}
 const labelFor = (id) =>
   BENCHMARK_STEPS.find((step) => step.id === id)?.title || "Démarrage instrumenté";
 const PAGES = [
@@ -35,7 +142,8 @@ const PAGES = [
   "Images et mémoire",
   "Réseau et serveur",
   "Vidéo et limites",
-  "Journal du parcours"
+  "Journal du parcours",
+  "Démarrages vidéo"
 ];
 const EXPORT_ENDPOINT = "/api/diagnostic-report";
 const EXPORT_REFRESH_MS = 20000;
@@ -73,7 +181,7 @@ export function renderBenchmarkPage(state, page, selected, driverState = {}) {
   const title = current
     ? `${labelFor(current.id)} · ${number(current.elapsedMs / 1000, " s mesurées")}`
     : "Aucune étape mesurée";
-  const heading = `<h2>${escape(PAGES[page])}</h2><p class="benchmark-subtitle">${escape(page > 1 ? title : "Parcours guidé · protocole 1 · résultats locaux")}</p>`;
+  const heading = `<h2>${escape(PAGES[page])}</h2><p class="benchmark-subtitle">${escape(page === 7 ? "10 derniers démarrages · temps depuis l’ouverture du lecteur" : page > 1 ? title : "Parcours guidé · protocole 1 · résultats locaux")}</p>`;
   if (page === 0) {
     const next = nextStepFor(report);
     let message;
@@ -124,6 +232,7 @@ export function renderBenchmarkPage(state, page, selected, driverState = {}) {
         `${env.viewport.join(" × ")} / ${env.screen.join(" × ")}`
       ) +
       row("Firmware déclaré / mode", `${env.declaredFirmware || "?"} / ${env.performanceMode}`) +
+      row("Lecteur", VARIANT_LABELS[env.playerVariant] || "non relevé") +
       row(
         "Cœurs logiques / mémoire indicative exposés",
         `${env.logicalCoresReported ?? "?"} / ${env.approximateDeviceMemoryGiB ?? "?"} Gio`
@@ -153,6 +262,20 @@ export function renderBenchmarkPage(state, page, selected, driverState = {}) {
             .map((entry) => `<div class="benchmark-row"><span>${escape(entry)}</span></div>`)
             .join("")}`
         : "<p>Aucun parcours automatique enregistré pour ce build.</p>")
+    );
+  }
+  if (page === 7) {
+    const startups = (Array.isArray(report.startups) ? report.startups : []).slice().reverse();
+    const raw = startups.find((entry) => entry.variant === "raw" && entry.probe);
+    return (
+      heading +
+      (startups.length
+        ? startups
+            .map((entry) => row(String(entry.at || "").slice(11, 19), describeStartup(entry)))
+            .join("")
+        : "<p>Aucun démarrage relevé : lancez une vidéo ou une lecture brute.</p>") +
+      (raw ? renderRawProbe(raw) : "") +
+      `<p class="benchmark-note">Lecture brute : la dernière source sur une balise vidéo nue, sans les couches du lecteur. Une lecture brute lente ou en échec montre une limite de la télé ou de la source, pas du lecteur. Aucun lien, hôte ni jeton conservé.</p>`
     );
   }
   if (!current)
@@ -316,7 +439,9 @@ export function createVidaaBenchmarkPanel({
     exportState = { status: "idle" },
     refreshTimer = null,
     unsubscribe = null,
-    unsubscribeDriver = null;
+    unsubscribeDriver = null,
+    probe = null,
+    probeMessage = "";
   if (!driver) {
     if (!sharedDriver) sharedDriver = createVidaaBenchmarkDriver({ service, router });
     driver = sharedDriver;
@@ -362,19 +487,23 @@ export function createVidaaBenchmarkPanel({
     const next = nextStepFor(state.report);
     const button = (id, text) =>
       `<button class="debug-console-capture focusable" data-benchmark-action="${id}">${escape(text)}</button>`;
-    const status = driverState.active
-      ? `Parcours automatique en cours · étape ${driverState.stepIndex}/${driverState.total}`
-      : state.active
-        ? state.current?.waiting
-          ? "Étape manuelle armée · le chrono démarre à votre première action"
-          : "Mesure en cours · console exclue"
-        : state.startupArmed
-          ? "Prochain démarrage armé : quittez puis relancez Nuvio"
-          : "Arrêté · lancez le parcours automatique ou une étape manuelle";
+    const status = probe
+      ? "Lecture brute en cours · Retour pour l’arrêter"
+      : probeMessage
+        ? probeMessage
+        : driverState.active
+          ? `Parcours automatique en cours · étape ${driverState.stepIndex}/${driverState.total}`
+          : state.active
+            ? state.current?.waiting
+              ? "Étape manuelle armée · le chrono démarre à votre première action"
+              : "Mesure en cours · console exclue"
+            : state.startupArmed
+              ? "Prochain démarrage armé : quittez puis relancez Nuvio"
+              : "Arrêté · lancez le parcours automatique ou une étape manuelle";
     const actions =
       view === "qr"
         ? `<nav class="benchmark-actions">${button("close-export", "Fermer")}${button("export", "Nouveau lien")}</nav>`
-        : `<nav class="benchmark-actions">${button("back", "Retour")}${button("auto", driverState.active ? "Arrêter le parcours" : next ? "Parcours automatique" : "Refaire le parcours automatique")}${button("next", state.active ? "Arrêter l’étape" : next ? `Étape manuelle : ${next.title}` : "Refaire en manuel")}${button("boot", "Mesurer le prochain démarrage")}${button("skip", "Passer la vidéo")}${button("logs", "Journal")}</nav><nav class="benchmark-actions">${button("previous-page", "← Page")}${button("next-page", "Page →")}${button("step", "Changer l’étape affichée")}${button("comparison", "Comparer les moteurs")}${button("export", "Exporter JSON (code QR)")}</nav>`;
+        : `<nav class="benchmark-actions">${button("back", "Retour")}${button("auto", driverState.active ? "Arrêter le parcours" : next ? "Parcours automatique" : "Refaire le parcours automatique")}${button("next", state.active ? "Arrêter l’étape" : next ? `Étape manuelle : ${next.title}` : "Refaire en manuel")}${button("boot", "Mesurer le prochain démarrage")}${button("skip", "Passer la vidéo")}${button("logs", "Journal")}</nav><nav class="benchmark-actions">${button("previous-page", "← Page")}${button("next-page", "Page →")}${button("step", "Changer l’étape affichée")}${button("comparison", "Comparer les moteurs")}${button("export", "Exporter JSON (code QR)")}</nav><nav class="benchmark-actions">${probe ? button("probe-stop", "Arrêter la lecture brute") : `${button("probe-basic", "Lecture brute de la dernière source")}${button("probe-audio-switch", "Brute : changer de piste audio")}${button("probe-source-cycles", "Brute : 10 changements de source")}`}</nav>`;
     const main =
       view === "qr"
         ? renderExportView(exportState)
@@ -450,8 +579,50 @@ export function createVidaaBenchmarkPanel({
     if (!exportState.durable) scheduleRefresh(id, reportText);
     render();
   }
+  async function startProbe(variant) {
+    if (probe || driver.getState().active) return;
+    // The in-memory link of this session first, then the reusable-link cache of the profile.
+    const memory = service.lastMediaSource?.() || "";
+    const cached = memory ? null : StreamLinkCacheStore.latest();
+    const url = memory || cached?.url || "";
+    if (!url) {
+      probeMessage = "Lecture brute : aucune source récente. Lancez d’abord une vidéo.";
+      render();
+      return;
+    }
+    probe = { controller: new AbortController() };
+    probeMessage = "";
+    focus = "probe-stop";
+    render();
+    try {
+      const entry = await runRawVideoProbe({
+        url,
+        variant,
+        signal: probe.controller.signal,
+        prepare: (link) => Platform.prepareMediaRequest(link),
+        headerCount: Object.keys(cached?.headers || {}).length
+      });
+      const stored = service.noteStartup(entry);
+      probeMessage = `Lecture brute : ${stored ? describeStartup(stored) : "non enregistrée"} · détails page « Démarrages vidéo »`;
+    } catch (_) {
+      probeMessage = "Lecture brute interrompue par une erreur du diagnostic.";
+    }
+    probe = null;
+    page = 7;
+    focus = `probe-${variant}`;
+    render();
+  }
   async function activate(action) {
     const state = service.getState();
+    if (action === "probe-stop") {
+      probe?.controller.abort();
+      return;
+    }
+    if (action.startsWith("probe-")) {
+      await startProbe(action.slice(6));
+      return;
+    }
+    probeMessage = "";
     if (action === "back") {
       await router.back();
       return;
@@ -514,6 +685,7 @@ export function createVidaaBenchmarkPanel({
     },
     cleanup() {
       clearRefresh();
+      probe?.controller.abort();
       unsubscribe?.();
       unsubscribeDriver?.();
       unsubscribe = null;
@@ -521,6 +693,10 @@ export function createVidaaBenchmarkPanel({
       container = null;
     },
     consumeBack() {
+      if (probe) {
+        probe.controller.abort();
+        return true;
+      }
       if (view !== "qr") return false;
       closeExport();
       render();
