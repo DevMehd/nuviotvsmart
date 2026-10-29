@@ -269,6 +269,7 @@
 
 .p2-panel-status {
   margin-top: 12px;
+  white-space: pre-line;
   font-size: 20px;
   line-height: 1.35;
   color: rgba(255, 255, 255, 0.7);
@@ -311,4 +312,10 @@
   margin-top: 4px;
   font-size: 18px;
   opacity: 0.72;
+}
+
+/* P5: a source that failed in this run stays listed, marked, never skipped by itself. */
+.p2-panel-item.failed .p2-panel-secondary {
+  color: #ff8a80;
+  opacity: 1;
 }

@@ -22,7 +22,8 @@ const defaultFixtures = [
   "test-vidaa-tv2-layouts.html",
   "test-vidaa-raw-video-probe.html",
   "test-vidaa-player2.html",
-  "test-vidaa-player2-tracks.html"
+  "test-vidaa-player2-tracks.html",
+  "test-vidaa-player2-sources.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(

@@ -2879,5 +2879,8 @@
     <string name="player2_audio_refused">La TV n’a pas gardé cette piste.</string>
     <string name="player2_subtitle_failed">Ce sous-titre n’a pas pu être chargé.</string>
     <string name="player2_subtitles_loading">Chargement des sous-titres des addons…</string>
+    <string name="player2_source_opening">Ouverture de la source…</string>
+    <string name="player2_source_failed">Cette source n’a pas pu être ouverte.</string>
+    <string name="player2_source_failed_short">Échec</string>
     <string name="player2_subtitle_phone">Téléphone</string>
 </resources>

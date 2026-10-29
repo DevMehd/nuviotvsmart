@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <title>VIDAA new player P5 Sources (real Chrome media pipeline)</title>
+  <link rel="stylesheet" href="../css/tv2-player.css" />
+  <style>
+    #player { position: fixed; inset: 0; display: none; background: #000; }
+    #videoPlayer { position: absolute; inset: 0; width: 100%; height: 100%; }
+  </style>
+  <body>
+    <div id="app">
+      <div id="player" class="screen">
+        <video id="videoPlayer" autoplay playsinline webkit-playsinline preload="auto"></video>
+      </div>
+    </div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot P, P5: Sources panel in the player. A refused source ends in the error screen and
+      // stays there (no automatic switch); its Sources button opens the panel in place; the
+      // user's choice plays at the same position; a stale choice is dropped; a source that
+      // cannot be resolved is marked and the current one keeps playing. Desktop behavior only:
+      // 10 switches during a 4K playback, memory and crashes are checked on the TV.
+      import { Router } from "../js/ui/navigation/routerState.js";
+      import { NewPlayerScreen } from "../js/ui/tv2/player/newPlayerScreen.js";
+      import { subtitleRepository } from "../js/data/repository/subtitleRepository.js";
+      import { StreamPreferencesStore } from "../js/data/local/streamPreferencesStore.js";
+
+      const result = document.getElementById("result");
+      const video = document.getElementById("videoPlayer");
+      const container = document.getElementById("player");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (predicate, ms, label) => {
+        const until = performance.now() + ms;
+        while (!predicate()) {
+          if (performance.now() > until) throw Error(`timeout: ${label}`);
+          await sleep(25);
+        }
+      };
+      const key = (keyCode) => NewPlayerScreen.onKeyDown({ keyCode, preventDefault() {} });
+      const href = (path) => new URL(path, location.href).href;
+      const refused = { id: "refused", url: href("/__player2/status/404"), name: "Refused", addonName: "One" };
+      // The WebM goes through the runner's Range route: the static server cannot seek.
+      const webm = { id: "webm", url: href("/__player2/range"), name: "WebM", addonName: "Two" };
+      const mp4 = { id: "mp4", url: href("fixtures/player2/two-audio.mp4"), name: "MP4", addonName: "Two" };
+      const torrent = { id: "torrent", infoHash: "abc", name: "Torrent", addonName: "One" };
+      const notes = [];
+      const panel = () => container.querySelector(".p2-panel");
+      const rows = () => [...panel().querySelectorAll(".p2-panel-item")];
+      const indexOf = (id) => NewPlayerScreen.trackPanelItems().findIndex((item) => item.stream?.id === id);
+      try {
+        Router.current = "player";
+        Router.popToExistingRoute = () => true;
+        Router.navigate = async () => {};
+        subtitleRepository.getSubtitles = async () => [];
+        await NewPlayerScreen.mount({
+          itemId: "tt0000005",
+          itemType: "movie",
+          playerTitle: "Sources",
+          streamUrl: refused.url,
+          preferredStreamId: "refused",
+          streamCandidates: [refused, webm, mp4, torrent]
+        });
+        const session = () => NewPlayerScreen.session;
+
+        // 1. A refused link: the error screen, then nothing switches by itself.
+        await waitFor(() => session()?.state === "error", 8000, "error screen");
+        const attaches = session().attaches;
+        await sleep(1500);
+        assert(NewPlayerScreen.candidate.id === "refused" && session().attaches === attaches, "no automatic switch");
+        const errorLayer = container.querySelector(".p2-error");
+        assert(!errorLayer.hidden, "error visible");
+
+        // 2. Sources (focused by default) opens the panel in place, on the failed current source.
+        key(13);
+        assert(NewPlayerScreen.trackPanel === "sources" && !panel().hidden, "panel open over the error");
+        assert(!errorLayer.hidden, "the error stays under the panel");
+        assert(rows().length === 5, `reload + 4 sources (${rows().length})`);
+        const current = rows()[NewPlayerScreen.trackPanelFocus];
+        assert(current.classList.contains("selected") && current.classList.contains("failed"), "focus on the failed current");
+        assert(!panel().textContent.includes("http"), "no link in the panel");
+
+        // 3. Down to the MP4 (list grouped by addon), OK: it plays; the choice is remembered.
+        while (NewPlayerScreen.trackPanelFocus < indexOf("mp4")) key(40);
+        assert(rows()[NewPlayerScreen.trackPanelFocus].classList.contains("focused"), "focused row");
+        key(13);
+        await waitFor(() => session().firstFrame, 6000, "MP4 first image");
+        assert(NewPlayerScreen.candidate.id === "mp4" && panel().hidden, "switched, panel closed");
+        assert(errorLayer.hidden, "error cleared");
+        assert(StreamPreferencesStore.get("tt0000005", "tt0000005") === "mp4", "preference updated");
+
+        // 4. From the OSD while playing: Down, Down, Right, Right, OK opens Sources on the MP4.
+        await waitFor(() => video.currentTime >= 1.5, 4000, "MP4 at 1.5 s");
+        key(40);
+        key(40);
+        key(39);
+        key(39);
+        assert(container.querySelector('[data-p2-osd="sources"]').classList.contains("focused"), "Sources button focused");
+        key(13);
+        assert(NewPlayerScreen.trackPanel === "sources", "panel from the OSD");
+        assert(NewPlayerScreen.trackPanelItems()[NewPlayerScreen.trackPanelFocus].stream.id === "mp4", "focus on the current");
+
+        // 5. A source that cannot be resolved: marked, the MP4 keeps playing.
+        const before = session().attaches;
+        NewPlayerScreen.chooseTrack(indexOf("torrent"));
+        await waitFor(() => NewPlayerScreen.sourcesStatus?.kind === "failed", 2000, "failure shown");
+        assert(NewPlayerScreen.candidate.id === "mp4" && session().attaches === before, "current kept");
+        assert(rows().some((row) => row.classList.contains("failed")), "row marked");
+        assert(!video.paused && session().state !== "error", "still playing");
+
+        // 6. WebM at the same position.
+        const position = video.currentTime;
+        NewPlayerScreen.chooseTrack(indexOf("webm"));
+        await waitFor(() => NewPlayerScreen.candidate.id === "webm" && session().firstFrame, 6000, "WebM first image");
+        assert(session().attaches === before + 1, "one attach");
+        assert(Math.abs(video.currentTime - position) < 1.5, `same position (${position.toFixed(2)} -> ${video.currentTime.toFixed(2)})`);
+        notes.push(`${position.toFixed(2)} s -> ${video.currentTime.toFixed(2)} s`);
+
+        // 7. Two choices in a row: the first resolution is stale and ignored.
+        NewPlayerScreen.openSourcesPanel();
+        const attachesBefore = session().attaches;
+        NewPlayerScreen.chooseTrack(indexOf("refused"));
+        NewPlayerScreen.chooseTrack(indexOf("mp4"));
+        await waitFor(() => NewPlayerScreen.candidate.id === "mp4" && session().firstFrame, 6000, "MP4 again");
+        await sleep(300);
+        assert(session().attaches === attachesBefore + 1, `only the last choice attached (${session().attaches - attachesBefore})`);
+
+        // 8. Back closes the panel first; cleanup frees the decoder.
+        NewPlayerScreen.openSourcesPanel();
+        assert(NewPlayerScreen.consumeBackRequest() === true && panel().hidden, "Back closes the panel");
+        NewPlayerScreen.cleanup();
+        assert(!video.getAttribute("src"), "decoder freed");
+
+        result.dataset.status = "passed";
+        result.textContent = `PASS: new player P5 Sources (${notes.join(", ")}; desktop, not a TV measure)`;
+      } catch (error) {
+        result.dataset.status = "failed";
+        result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;
+      }
+    </script>
+  </body>
+</html>

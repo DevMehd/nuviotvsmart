@@ -511,7 +511,8 @@ for (const file of [
   "js/ui/tv2/player/resolvePlayableCandidate.js",
   "js/ui/tv2/player/playerProgress.js",
   "js/ui/tv2/player/playerOsd.js",
-  "js/ui/tv2/player/playerTracks.js"
+  "js/ui/tv2/player/playerTracks.js",
+  "js/ui/tv2/player/playerSourcesPanel.js"
 ]) {
   // Code only: the comments name the old paths they replace.
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))
@@ -562,6 +563,72 @@ for (const file of [
   video.emit("error");
   assert.equal(session.state, "error", "outside the 1.5 s window a decode error is shown");
   assert.equal(session.error.kind, "decode");
+}
+
+// 13. P5: HLS with request headers goes through hls.js (loaded on demand), never a direct src;
+// a fatal hls.js error ends in the error screen (no other source); teardown destroys hls.js.
+{
+  const made = [];
+  class FakeHls {
+    static Events = { ERROR: "hlsError" };
+    static ErrorTypes = { MEDIA_ERROR: "mediaError", NETWORK_ERROR: "networkError" };
+    constructor(config) {
+      this.config = config;
+      this.handlers = {};
+      this.calls = [];
+      made.push(this);
+    }
+    on(type, fn) {
+      this.handlers[type] = fn;
+    }
+    attachMedia() {
+      this.calls.push("attachMedia");
+    }
+    loadSource(url) {
+      this.calls.push(`loadSource:${url === URL_A ? "A" : "other"}`);
+    }
+    destroy() {
+      this.calls.push("destroy");
+    }
+  }
+  const { clock, video, session } = setup({ loadHls: async () => FakeHls });
+  session.attach(URL_A, { headers: { "X-Token": "t" } });
+  await tick();
+  assert.equal(made.length, 1);
+  assert.ok(!video.calls.some((call) => call.startsWith("src=")), "no direct src for HLS");
+  assert.deepEqual(made[0].calls, ["attachMedia", "loadSource:A"]);
+  const sent = [];
+  made[0].config.xhrSetup({ setRequestHeader: (name, value) => sent.push(`${name}=${value}`) });
+  assert.deepEqual(sent, ["X-Token=t"], "forwardable headers on every request");
+  made[0].handlers.hlsError("hlsError", { fatal: false, type: "networkError" });
+  assert.equal(session.state, "loading", "a non-fatal hls.js error is left to hls.js");
+  made[0].handlers.hlsError("hlsError", {
+    fatal: true,
+    type: "networkError",
+    response: { code: 403 }
+  });
+  assert.equal(session.state, "error");
+  assert.deepEqual(session.error, { kind: "source", code: 0, httpStatus: 403 });
+  // Retry: same link, same headers, a fresh hls.js; the old one is destroyed.
+  session.retry();
+  assert.equal(made[0].calls.at(-1), "destroy");
+  clock.advance(0);
+  await tick();
+  assert.equal(made.length, 2);
+  assert.deepEqual(made[1].calls, ["attachMedia", "loadSource:A"]);
+  // A direct link after it: plain src again, hls.js destroyed.
+  session.attach("http://media.invalid/b.mp4");
+  assert.equal(made[1].calls.at(-1), "destroy");
+  clock.advance(0);
+  assert.ok(video.calls.includes("src=http://media.invalid/b.mp4"));
+  assert.equal(made.length, 2);
+  // hls.js unavailable: an explicit error, never a direct src attempt with lost headers.
+  const none = setup({ loadHls: async () => null });
+  none.session.attach(URL_A, { headers: { "X-Token": "t" } });
+  await tick();
+  assert.equal(none.session.state, "error");
+  assert.equal(none.session.error.kind, "unsupported");
+  assert.ok(!none.video.calls.some((call) => call.startsWith("src=")));
 }
 
 console.log(

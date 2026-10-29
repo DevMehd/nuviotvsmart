@@ -36,15 +36,19 @@ import { TrackPreferencesStore } from "../../../data/local/trackPreferencesStore
 import { PlayerSettingsStore } from "../../../data/local/playerSettingsStore.js";
 import { subtitleRepository } from "../../../data/repository/subtitleRepository.js";
 import { resolveStreamFilename } from "../../screens/player/streamFilename.js";
+import { SOURCE_WINDOW, createPlayerSources, sourceWindowStart } from "./playerSourcesPanel.js";
+import { loadStreamingLibs } from "../../../runtime/loadStreamingLibs.js";
+import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 
 // New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
 // switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js); OSD, seek preview,
 // media keys, buffering and the Back order (P3, playerOsd.js); audio and subtitle tracks with
-// their real names (P4, playerTracks.js). Same route "player", params and screen contract as
-// the old player (router facade). Never imports playerScreenMethods-* or playerScreenContext
-// (asserted by the VIDAA build).
-// Deferred to later slices: in-player Sources (P5), next episode and skip intro (P6), Watch
-// Party (P7, whose restore will take priority over the route's).
+// their real names (P4, playerTracks.js); in-player Sources and the user's source switch (P5,
+// playerSourcesPanel.js), HLS with headers through hls.js on demand. Same route "player",
+// params and screen contract as the old player (router facade). Never imports
+// playerScreenMethods-* or playerScreenContext (asserted by the VIDAA build).
+// Deferred to later slices: next episode and skip intro (P6), Watch Party (P7, whose restore
+// will take priority over the route's).
 
 const t = (key, params = [], fallback = key) => I18n.t(key, params, { fallback });
 const ERROR_ACTIONS = ["sources", "retry", "back"];
@@ -120,7 +124,13 @@ export function playerErrorMessage(error) {
           ? t("player2_error_stalled", [], "The source stopped sending data.")
           : error.kind === "timeout"
             ? t("player2_error_timeout", [], "The video did not start in time.")
-            : t("player2_error_unreadable", [], "Source unreadable or expired.");
+            : error.kind === "unsupported"
+              ? t(
+                  "player_error_vidaa_standalone_unsupported",
+                  [],
+                  "This source requires network features that are not available on this device. Try a different source."
+                )
+              : t("player2_error_unreadable", [], "Source unreadable or expired.");
   return error.code ? `${message} [MEDIA_ERR ${error.code}]` : message;
 }
 
@@ -189,6 +199,10 @@ export const NewPlayerScreen = {
   tracks: null,
   trackPanel: "",
   trackPanelFocus: 0,
+  sources: null,
+  // Sources panel line: { kind: "opening" } while a chosen source resolves, or
+  // { kind: "failed", message } when it could not be opened (the current one stays).
+  sourcesStatus: null,
 
   get paused() {
     return this.session?.state === "paused";
@@ -218,7 +232,12 @@ export const NewPlayerScreen = {
       prepare: (url) => Platform.prepareMediaRequest(url),
       onChange: () => token === this.playerMountToken && this.render(),
       note: (name) => VidaaBenchmark.notePlayerEvent?.(name),
-      onTrackSwitchError: () => this.tracks?.revertAudio()
+      onTrackSwitchError: () => this.tracks?.revertAudio(),
+      loadHls: async () => {
+        await loadStreamingLibs({ hls: true, dash: false });
+        const Hls = globalThis.Hls;
+        return Hls?.isSupported?.() ? Hls : null;
+      }
     });
     const contentId = trackPreferenceContentId(this.params);
     this.tracks = createPlayerTracks(this.video, {
@@ -242,6 +261,11 @@ export const NewPlayerScreen = {
     });
     this.candidate = pickInitialCandidate(this.params);
     this.initialFilenameStreamCandidate = this.candidate;
+    this.sourcesStatus = null;
+    this.sources = createPlayerSources(this.params, {
+      onChange: () => token === this.playerMountToken && this.renderTrackPanel()
+    });
+    this.sources.include(this.candidate);
     this.streamLinkCacheProfileId = activeStreamLinkProfile();
     this.pendingPlaybackRestore = buildPendingPlaybackRestore(this.params);
     this.progressContext = null;
@@ -270,8 +294,17 @@ export const NewPlayerScreen = {
     void this.startCandidate(token);
   },
 
-  async startCandidate(token = this.playerMountToken) {
-    this.resolveError = null;
+  /**
+   * Resolves then plays a source. switching: a source chosen in the Sources panel; until it
+   * resolves, the current source (playing or failed) stays as is, and a failure is only shown in
+   * the panel. Never called without a user action after the first source.
+   */
+  async startCandidate(
+    token = this.playerMountToken,
+    stream = this.candidate,
+    { switching = false } = {}
+  ) {
+    if (!switching) this.resolveError = null;
     this.stopResolveCap();
     const attempt = ++this.resolveAttempt;
     const isCurrent = () => attempt === this.resolveAttempt && this.isActiveMountToken(token);
@@ -280,7 +313,7 @@ export const NewPlayerScreen = {
     try {
       // Debrid calls have no timeout of their own: a hung answer must end in an error (C2).
       result = await Promise.race([
-        resolvePlayableCandidate(this.candidate, { params: this.params, isCurrent }),
+        resolvePlayableCandidate(stream, { params: this.params, isCurrent }),
         new Promise((resolve) => {
           this.resolveTimer = setTimeout(() => resolve({ kind: "timeout" }), this.resolveCapMs);
         })
@@ -291,22 +324,44 @@ export const NewPlayerScreen = {
     if (attempt === this.resolveAttempt) this.stopResolveCap();
     if (!result || !isCurrent()) return;
     if (!result.url) {
+      if (switching) {
+        this.sources?.markFailed(stream);
+        this.sourcesStatus = { kind: "failed", message: playerErrorMessage(result).trim() };
+        this.renderTrackPanel();
+        return;
+      }
       this.resolveError = result;
       this.render();
       return;
+    }
+    if (switching) {
+      // Position of the source being left, read before its decoder is freed, then saved.
+      if (this.session?.played)
+        this.pendingPlaybackRestore = { timeSeconds: this.getPlaybackCurrentSeconds() };
+      void this.progress?.flush({ force: true });
+      VidaaBenchmark.notePlayerEvent?.("userSourceSwitch");
+      this.candidate = stream;
+      this.resolveError = null;
+      this.sourcesStatus = null;
+      this.closeTrackPanel();
+      this.setControlsVisible(false);
     }
     // One context (and completion latch) per source, built after resolution like the old player.
     this.progressContext = buildProgressContext(this.params, this.candidate);
     // Each started source, like the old 35:233 (a synthetic link has no id and is skipped).
     rememberSelectedStreamPreference(this.params, this.candidate);
     saveReusableStreamLink(this, this.candidate, { url: result.url });
-    // A newer media server position wins over the route's (old player 35:44-53).
+    // A newer media server position wins over the route's (old player 35:44-53), not over the
+    // position of a source the user is switching from.
     const restore =
-      result.serverResumeMs > 0
+      !switching && result.serverResumeMs > 0
         ? { timeSeconds: result.serverResumeMs / 1000 }
         : this.pendingPlaybackRestore;
     this.tracks.reset(result.url);
-    this.session.attach(result.url, restoreStartOptions(restore));
+    this.session.attach(result.url, {
+      ...restoreStartOptions(restore),
+      headers: result.headers || null
+    });
   },
 
   /** Leaving playback: save, journal, scrobble cancel, rating offer; before the decoder is freed. */
@@ -381,15 +436,26 @@ export const NewPlayerScreen = {
     if (!refs || !session) return;
     const error = this.currentError();
     // The error owns the keys: stream info (above it) or a pending seek must not stay behind.
+    // The Sources panel stays: it is the error's own way out.
+    const keepSources = this.trackPanel === "sources";
     if (
       error &&
       (this.streamInfoVisible ||
         this.controlsVisible ||
         this.seekCommitTimer !== null ||
-        this.trackPanel)
+        (this.trackPanel && !keepSources))
     ) {
       this.closeStreamInfo({ restore: false });
       this.resetOsdState();
+      if (keepSources) {
+        this.trackPanel = "sources";
+        this.renderTrackPanel();
+      }
+    }
+    // A failed source stays listed and marked; an image shown clears the mark.
+    if (this.candidate && this.sources) {
+      if (error) this.sources.markFailed(this.candidate);
+      else if (session.firstFrame) this.sources.markFailed(this.candidate, false);
     }
     const loading = !error && !session.firstFrame;
     if (session.firstFrame) this.tracks?.onFirstFrame();
@@ -448,13 +514,19 @@ export const NewPlayerScreen = {
       else this.session.retry();
       return;
     }
-    // P1: Sources returns to the Sources screen; P5 opens the panel in place.
-    this.navigateBackToStreamScreen();
+    if (action === "sources") this.openSourcesPanel();
+    else this.navigateBackToStreamScreen();
   },
 
   onKeyDown(event) {
     const keyCode = Number(event?.keyCode || 0);
     this.session?.restoreSound();
+    // The Sources panel opened from the error screen (or left over a new loading) owns the keys.
+    if (this.trackPanel && (this.isErrorVisible() || !this.session?.firstFrame)) {
+      event?.preventDefault?.();
+      this.onTrackPanelKey(keyCode, event);
+      return;
+    }
     if (this.isErrorVisible()) {
       event?.preventDefault?.();
       if (keyCode === 37 || keyCode === 39) {
@@ -537,7 +609,9 @@ export const NewPlayerScreen = {
       );
     } else if (keyCode === 38) this.controlFocusZone = "";
     else if (isSelectKey(keyCode) && !event?.repeat) {
-      this.openTrackPanel(OSD_ACTIONS[this.controlFocusIndex]);
+      const action = OSD_ACTIONS[this.controlFocusIndex];
+      if (action === "sources") this.openSourcesPanel();
+      else this.openTrackPanel(action);
       return;
     }
     this.resetControlsAutoHide();
@@ -559,20 +633,121 @@ export const NewPlayerScreen = {
     this.renderTrackPanel();
   },
 
+  // Sources: from the OSD or from the error screen, focus on the current source. The list is the
+  // route's candidates; addons are asked again only through the Reload row.
+  openSourcesPanel() {
+    if (!this.sources) return;
+    if (this.session?.firstFrame && !this.isErrorVisible() && !this.controlsVisible)
+      this.setControlsVisible(true);
+    this.trackPanel = "sources";
+    this.sourcesStatus = null;
+    this.focusCurrentSource();
+    this.clearControlsAutoHide();
+    this.renderTrackPanel();
+  },
+
+  focusCurrentSource() {
+    const items = this.trackPanelItems();
+    const current = items.findIndex((item) => item.selected);
+    this.trackPanelFocus = current >= 0 ? current : items.length > 1 ? 1 : 0;
+  },
+
   closeTrackPanel() {
     if (!this.trackPanel) return;
+    if (this.trackPanel === "sources") {
+      this.sources?.cancel();
+      // Closing the panel while a chosen source resolves drops that choice.
+      if (this.sourcesStatus?.kind === "opening") {
+        this.resolveAttempt += 1;
+        this.stopResolveCap();
+      }
+      this.sourcesStatus = null;
+    }
     this.trackPanel = "";
     this.osd?.renderPanel(null);
     this.resetControlsAutoHide();
   },
 
   trackPanelItems() {
+    if (this.trackPanel === "sources") return this.sourcePanelItems();
     if (!this.tracks) return [];
     if (this.trackPanel === "audio") return this.tracks.audioEntries();
     return [...this.tracks.subtitleEntries("builtIn"), ...this.tracks.subtitleEntries("addons")];
   },
 
+  // Reload, then the sources of the filter; addon text only, never a link.
+  sourcePanelItems() {
+    const sources = this.sources;
+    if (!sources) return [];
+    const playing = t("sources_playing", [], "Playing");
+    const failed = t("player2_source_failed_short", [], "Failed");
+    const rows = sources.list().map((stream) => {
+      const current = sources.isSame(stream, this.candidate);
+      const isFailed = sources.isFailed(stream);
+      const detail = String((stream.name ? stream.title : "") || stream.description || "")
+        .split("\n")[0]
+        .trim();
+      return {
+        stream,
+        selected: current,
+        failed: isFailed,
+        label: normalizeStreamDisplayText(
+          stream.name || stream.label || stream.title || stream.addonName || "Stream"
+        ),
+        secondary: [
+          isFailed ? failed : current ? playing : "",
+          normalizeStreamDisplayText(stream.addonName || ""),
+          normalizeStreamDisplayText(detail)
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      };
+    });
+    return [{ action: "reload", label: t("sources_reload", [], "Reload") }, ...rows];
+  },
+
+  renderSourcesPanel() {
+    const sources = this.sources;
+    const items = this.trackPanelItems();
+    this.trackPanelFocus = Math.max(0, Math.min(items.length - 1, this.trackPanelFocus));
+    const start = sourceWindowStart(items.length, this.trackPanelFocus);
+    const filters = sources.filters();
+    const filterName =
+      sources.filter === "all"
+        ? t("subtitle_all", [], "All")
+        : normalizeStreamDisplayText(sources.filter);
+    const status = this.sourcesStatus;
+    const lines = [
+      filters.length > 2 ? `‹ ${filterName} ›` : "",
+      status?.kind === "opening"
+        ? t("player2_source_opening", [], "Opening the source…")
+        : status?.kind === "failed"
+          ? [t("player2_source_failed", [], "This source could not be opened."), status.message]
+              .filter(Boolean)
+              .join("\n")
+          : "",
+      sources.loading
+        ? t("stream_finding_source", [], "Finding stream source")
+        : sources.error
+          ? t("panel_failed_load_streams", [], "Failed to load streams")
+          : items.length < 2
+            ? t("sources_no_streams", [], "No streams found")
+            : ""
+    ];
+    this.osd.renderPanel({
+      title: t("sources_title", [], "Sources"),
+      status: lines.filter(Boolean).join("\n"),
+      items: items.slice(start, start + SOURCE_WINDOW),
+      focus: this.trackPanelFocus,
+      offset: start
+    });
+  },
+
   renderTrackPanel() {
+    if (this.trackPanel === "sources" && this.sources && this.osd) {
+      this.renderSourcesPanel();
+      return;
+    }
     const tracks = this.tracks;
     if (!this.trackPanel || !tracks || !this.osd) return;
     const items = this.trackPanelItems();
@@ -600,6 +775,12 @@ export const NewPlayerScreen = {
   },
 
   onTrackPanelKey(keyCode, event) {
+    if (this.trackPanel === "sources" && (keyCode === 37 || keyCode === 39)) {
+      this.sources?.cycleFilter(keyCode === 39 ? 1 : -1);
+      this.focusCurrentSource();
+      this.renderTrackPanel();
+      return;
+    }
     if (keyCode === 38 || keyCode === 40) {
       this.trackPanelFocus += keyCode === 40 ? 1 : -1;
       this.renderTrackPanel();
@@ -610,8 +791,31 @@ export const NewPlayerScreen = {
     const item = this.trackPanelItems()[index];
     if (!item) return;
     this.trackPanelFocus = index;
-    if (this.trackPanel === "audio") void this.applyAudioTrack(index, { rememberSelection: true });
+    if (this.trackPanel === "sources") this.chooseSource(item);
+    else if (this.trackPanel === "audio")
+      void this.applyAudioTrack(index, { rememberSelection: true });
     else void this.tracks?.selectSubtitle(item, { rememberSelection: true });
+  },
+
+  // OK on a row: Reload asks the addons again; a source is resolved, then played at the same
+  // position. The current source playing fine just closes the panel.
+  chooseSource(item) {
+    if (item.action === "reload") {
+      void this.sources?.reload();
+      return;
+    }
+    if (
+      this.sources?.isSame(item.stream, this.candidate) &&
+      this.session?.firstFrame &&
+      !this.isErrorVisible()
+    ) {
+      this.closeTrackPanel();
+      this.resetControlsAutoHide();
+      return;
+    }
+    this.sourcesStatus = { kind: "opening" };
+    this.renderTrackPanel();
+    void this.startCandidate(this.playerMountToken, item.stream, { switching: true });
   },
 
   // Same lookup as the old player (playerScreenMethods-07/68): stream sidecars, then addons.
@@ -807,7 +1011,8 @@ export const NewPlayerScreen = {
     const action = target?.closest?.("[data-p2-action]")?.dataset?.p2Action;
     if (action && this.isErrorVisible()) this.runErrorAction(action);
     const panel = target?.closest?.("[data-p2-osd]")?.dataset?.p2Osd;
-    if (panel && !this.isErrorVisible()) this.openTrackPanel(panel);
+    if (panel === "sources" && !this.isErrorVisible()) this.openSourcesPanel();
+    else if (panel && !this.isErrorVisible()) this.openTrackPanel(panel);
     const item = target?.closest?.("[data-p2-item]")?.dataset?.p2Item;
     if (item != null && this.trackPanel) this.chooseTrack(Number(item));
   },
@@ -816,14 +1021,15 @@ export const NewPlayerScreen = {
   onPointerMove() {},
 
   // Back order: panel, seek preview, (next card / skip intro: P6), visible OSD, then leave.
-  // Loading and error always leave; navigateBackToStreamScreen locks a doubled Back.
+  // Loading and error leave once the panel (Sources over the error) is closed;
+  // navigateBackToStreamScreen locks a doubled Back.
   consumeBackRequest() {
-    if (this.isErrorVisible() || !this.session?.firstFrame || this.playerBackNavigationInProgress)
-      return this.navigateBackToStreamScreen();
-    if (this.trackPanel) {
+    if (this.trackPanel && !this.playerBackNavigationInProgress) {
       this.closeTrackPanel();
       return true;
     }
+    if (this.isErrorVisible() || !this.session?.firstFrame || this.playerBackNavigationInProgress)
+      return this.navigateBackToStreamScreen();
     if (this.streamInfoVisible) {
       this.closeStreamInfo();
       return true;
@@ -844,7 +1050,9 @@ export const NewPlayerScreen = {
     return Boolean(this.trackPanel || this.streamInfoVisible || this.seekPreviewSeconds != null);
   },
 
-  cancelSourceLoad() {},
+  cancelSourceLoad() {
+    this.sources?.cancel();
+  },
 
   shouldReturnToStreamOnBack() {
     if (this.params?.returnToStreamOnBack === false) return false;
@@ -1096,6 +1304,11 @@ export const NewPlayerScreen = {
         headerReader?.dispose();
       } catch (_) {}
       this.tracks = null;
+      try {
+        this.sources?.cancel();
+      } catch (_) {}
+      this.sources = null;
+      this.sourcesStatus = null;
       this.personalWatchRun = null;
       this.root?.remove();
       this.root = null;

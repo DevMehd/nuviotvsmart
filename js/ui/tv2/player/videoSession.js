@@ -57,12 +57,17 @@ export function createVideoSession(
     note = () => {},
     // A media error just after an audio track change (P4): the screen goes back to the last
     // kept track before the same-link reload.
-    onTrackSwitchError = () => {}
+    onTrackSwitchError = () => {},
+    // HLS that needs request headers (P5): hls.js constructor loaded on demand, or null.
+    loadHls = async () => null
   } = {}
 ) {
   const now = () => root.performance?.now?.() ?? Date.now();
   let token = 0;
   let url = "";
+  // Forwardable request headers of an HLS source: played through hls.js, never a direct src.
+  let headers = null;
+  let hls = null;
   let guard = null;
   let retryTimer = null;
   let probe = null;
@@ -343,7 +348,8 @@ export function createVideoSession(
       );
       return;
     }
-    if (code === 4 && url) {
+    // The status probe sends no header: an HLS source with headers would answer a false 4xx.
+    if (code === 4 && url && !headers) {
       stopGuard();
       const current = token;
       probe?.abort();
@@ -371,6 +377,10 @@ export function createVideoSession(
     try {
       video.pause();
     } catch (_) {}
+    try {
+      hls?.destroy();
+    } catch (_) {}
+    hls = null;
     try {
       video.removeAttribute("src");
     } catch (_) {}
@@ -411,6 +421,10 @@ export function createVideoSession(
       if (current !== token) return;
       releaseOtherMedia();
       prepare(url);
+      if (headers) {
+        void startHls(current);
+        return;
+      }
       // Direct src only: never a <source> child (its errors skip the <video>), never src="".
       video.src = url;
       startGuard();
@@ -419,6 +433,47 @@ export function createVideoSession(
     // One task between two sources lets the decoder release the previous one (assumption, P0).
     if (hadSource) retryTimer = root.setTimeout(start, 0);
     else start();
+  }
+
+  async function startHls(current) {
+    let Hls = null;
+    try {
+      Hls = await loadHls();
+    } catch (_) {}
+    if (current !== token) return;
+    if (!Hls) {
+      fail({ kind: "unsupported" });
+      return;
+    }
+    const forwarded = headers;
+    hls = new Hls({
+      enableWorker: true,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 30,
+      backBufferLength: 30,
+      // shortcut: XHR loader only (hls.js default); add fetchSetup if a fetch loader is enabled.
+      xhrSetup: (xhr) => {
+        for (const [name, value] of Object.entries(forwarded)) {
+          try {
+            xhr.setRequestHeader(name, value);
+          } catch (_) {}
+        }
+      }
+    });
+    // A fatal hls.js error ends like a media error: no automatic source switch.
+    hls.on(Hls.Events.ERROR, (_, data = {}) => {
+      if (current !== token || !data.fatal) return;
+      const status = Number(data.response?.code) || 0;
+      fail(
+        data.type === Hls.ErrorTypes?.MEDIA_ERROR
+          ? { kind: "decode" }
+          : { kind: status >= 400 ? "source" : "network", httpStatus: status >= 400 ? status : 0 }
+      );
+    });
+    hls.attachMedia(video);
+    hls.loadSource(url);
+    startGuard();
+    play(current);
   }
 
   for (const type of EVENTS) video.addEventListener(type, onEvent);
@@ -451,8 +506,15 @@ export function createVideoSession(
     get played() {
       return s.played;
     },
-    /** startPercent applies when no position is known (resumeProgressPercent). */
-    attach(nextUrl, { startAt = 0, startPercent: percent = 0 } = {}) {
+    /**
+     * startPercent applies when no position is known (resumeProgressPercent). headers: the
+     * forwardable request headers of an HLS source, played through hls.js.
+     */
+    attach(
+      nextUrl,
+      { startAt = 0, startPercent: percent = 0, headers: requestHeaders = null } = {}
+    ) {
+      headers = requestHeaders && Object.keys(requestHeaders).length ? requestHeaders : null;
       s.networkRetries = 0;
       s.freezeReloads = 0;
       s.played = false;

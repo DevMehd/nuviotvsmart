@@ -188,11 +188,8 @@ const hls = await resolvePlayableCandidate({
   url: "http://media.invalid/live.m3u8",
   behaviorHints: { proxyHeaders: { request: { "X-Token": "t" } } }
 });
-assert.equal(
-  hls.errorKey,
-  "player_error_vidaa_standalone_unsupported",
-  "HLS with headers waits for P5"
-);
+// P5: HLS with headers plays through hls.js with the forwardable headers only.
+assert.deepEqual(hls, { url: "http://media.invalid/live.m3u8", headers: { "X-Token": "t" } });
 const expired = await resolvePlayableCandidate({
   url: "http://media.invalid/e.mkv?expires=1600000000"
 });

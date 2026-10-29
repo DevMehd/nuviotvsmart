@@ -54,8 +54,9 @@ function isHls(url, stream) {
 }
 
 /**
- * Playable link of a source: { url, serverResumeMs? } or { errorKey, fallback } (message key for
- * the error screen). serverResumeMs: the media server's position when newer than the local one.
+ * Playable link of a source: { url, serverResumeMs?, headers? } or { errorKey, fallback } (message
+ * key for the error screen). serverResumeMs: the media server's position when newer than the local
+ * one. headers: forwardable request headers of an HLS source (played through hls.js).
  * isCurrent() guards every await: a stale answer is dropped by the caller.
  */
 export async function resolvePlayableCandidate(
@@ -133,12 +134,17 @@ export async function resolvePlayableCandidate(
   const compatibility = getStandaloneWebPlaybackCompatibility(headers || {}, notWebReady, {
     playbackUrl: url
   });
-  // A <video> sends no custom header; HLS with headers waits for hls.js (P5).
-  if (!compatibility.compatible || (isHls(url, stream) && compatibility.declaredHeaderNames.length))
+  if (!compatibility.compatible)
     return {
       errorKey: "player_error_vidaa_standalone_unsupported",
       fallback:
         "This source requires network features that are not available on this device. Try a different source."
     };
-  return serverResumeMs > 0 ? { url, serverResumeMs } : { url };
+  // A <video> sends no custom header: HLS with headers goes through hls.js (P5), loaded on demand.
+  const forwarded = isHls(url, stream) ? compatibility.forwardableHeaders : null;
+  return {
+    url,
+    ...(serverResumeMs > 0 ? { serverResumeMs } : {}),
+    ...(forwarded && Object.keys(forwarded).length ? { headers: forwarded } : {})
+  };
 }

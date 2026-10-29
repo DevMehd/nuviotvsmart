@@ -1,5 +1,5 @@
 // OSD of the new VIDAA player (lot P, P3): title, progress, seek preview, clock and end time;
-// Audio and Subtitles buttons and their track panel (P4).
+// Audio and Subtitles buttons and their track panel (P4); Sources button (P5) in the same panel.
 // Hidden = hidden attribute (display:none). The progress bar moves by transform: scaleX only, and
 // the DOM is written only when a displayed string or ratio changes. No timer of its own: the
 // screen updates it at 1 Hz while it is visible.
@@ -87,6 +87,7 @@ export const OSD_HTML = `
       <div class="p2-osd-actions">
         <button type="button" class="p2-osd-action" data-p2-osd="audio"></button>
         <button type="button" class="p2-osd-action" data-p2-osd="subtitles"></button>
+        <button type="button" class="p2-osd-action" data-p2-osd="sources"></button>
       </div>
     </div>
   </div>
@@ -96,7 +97,7 @@ export const OSD_HTML = `
     <div class="p2-panel-list"></div>
   </div>`;
 
-export const OSD_ACTIONS = ["audio", "subtitles"];
+export const OSD_ACTIONS = ["audio", "subtitles", "sources"];
 
 export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
   const q = (selector) => root.querySelector(selector);
@@ -116,7 +117,8 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
   };
   const actionLabels = {
     audio: t("audio_dialog_title", [], "Audio"),
-    subtitles: t("subtitle_dialog_title", [], "Subtitles")
+    subtitles: t("subtitle_dialog_title", [], "Subtitles"),
+    sources: t("sources_title", [], "Sources")
   };
   for (const button of refs.actions) button.textContent = actionLabels[button.dataset.p2Osd];
   q(".p2-osd-title").textContent = title;
@@ -178,7 +180,8 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
     },
     /**
      * Track panel, rebuilt on each call (short list, only while open). panel: null to hide, or
-     * { title, status, items: [{ label, secondary, selected }], focus }.
+     * { title, status, items: [{ label, secondary, selected, failed }], focus, offset } where
+     * items is the rendered window and offset the list index of its first row.
      */
     renderPanel(panel) {
       refs.panel.hidden = !panel;
@@ -186,12 +189,14 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
       refs.panelTitle.textContent = panel.title || "";
       refs.panelStatus.textContent = panel.status || "";
       refs.panelStatus.hidden = !panel.status;
+      const offset = Number(panel.offset) || 0;
       const rows = (panel.items || []).map((item, index) => {
         const row = document.createElement("div");
         row.className = "p2-panel-item";
-        row.dataset.p2Item = String(index);
-        row.classList.toggle("focused", index === panel.focus);
+        row.dataset.p2Item = String(offset + index);
+        row.classList.toggle("focused", offset + index === panel.focus);
         row.classList.toggle("selected", Boolean(item.selected));
+        row.classList.toggle("failed", Boolean(item.failed));
         const label = document.createElement("span");
         label.className = "p2-panel-label";
         label.textContent = item.label || "";
@@ -205,7 +210,7 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
         return row;
       });
       refs.panelList.replaceChildren(...rows);
-      rows[panel.focus]?.scrollIntoView?.({ block: "nearest" });
+      rows[panel.focus - offset]?.scrollIntoView?.({ block: "nearest" });
     }
   };
 }

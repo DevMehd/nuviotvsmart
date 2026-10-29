@@ -3370,5 +3370,8 @@
     <string name="player2_audio_refused">The TV did not keep this track.</string>
     <string name="player2_subtitle_failed">This subtitle could not be loaded.</string>
     <string name="player2_subtitles_loading">Loading addon subtitles…</string>
+    <string name="player2_source_opening">Opening the source…</string>
+    <string name="player2_source_failed">This source could not be opened.</string>
+    <string name="player2_source_failed_short">Failed</string>
     <string name="player2_subtitle_phone">Phone</string>
 </resources>
