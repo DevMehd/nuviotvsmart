@@ -205,7 +205,7 @@ export async function loadHomeRows({
     ...options,
     batchSize: host.getDeferredCatalogBatchSize(),
     isBusy: () => Platform.isVidaa() && isVidaaNavigationBusy(),
-    batchYieldMs: Platform.isVidaa() ? 120 : 0
+    batchYieldMs: host.isPerformanceConstrained() ? 120 : 0
   });
   if (!isCurrent()) return rows;
   retryPendingCatalogRows(host, { fetched, isCurrent, onRetried: options.onRow });

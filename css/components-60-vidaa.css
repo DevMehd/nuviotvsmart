@@ -1237,20 +1237,6 @@ html.vidaa-tv.vidaa-balanced-motion .vidaa-detail-preview-copy {
   }
 }
 
-html.vidaa-tv .stream-route-stream-badge.technical {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 3px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
 @media (prefers-reduced-motion: reduce) {
   html.vidaa-tv.vidaa-balanced-motion .vidaa-detail-preview-copy {
     animation: none !important;

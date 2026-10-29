@@ -15,6 +15,27 @@
   font-weight: 500;
 }
 
+.stream-route-stream-badge.technical {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* Fit the 26px lazy badge strip of legacy webOS (components-50.css). */
+.legacy-webos .stream-route-stream-badge.technical {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 15px;
+}
+
 .stream-route-stream-badge.quality {
   border-color: rgba(0, 183, 79, 0.42);
   background: rgba(0, 183, 79, 0.14);

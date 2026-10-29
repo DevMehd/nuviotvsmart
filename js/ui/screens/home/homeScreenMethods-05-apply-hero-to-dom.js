@@ -202,7 +202,6 @@ export function createHomeScreenMethods05() {
       );
       if (
         changedHero &&
-        Platform.isVidaa() &&
         document.documentElement.classList.contains("vidaa-balanced-motion") &&
         !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
       ) {

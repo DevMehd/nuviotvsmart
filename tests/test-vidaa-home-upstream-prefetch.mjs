@@ -234,6 +234,57 @@ test("Actual VIDAA auto performance policy excludes the extra prefetch batch", a
   await loading;
 });
 
+test("Deferred batch and retry yields follow the performance profile, not the platform", async () => {
+  const cases = [
+    // VIDAA auto: constrained by the real profile, 120 ms as before.
+    { platform: "vidaa", options: { actualVidaa: true }, yieldMs: 120 },
+    // A constrained non-VIDAA TV now gets the same yield.
+    { platform: "webos", options: { constrained: true }, yieldMs: 120 },
+    { platform: "tizen", options: { constrained: false }, yieldMs: 0 },
+    { platform: "browser", options: { constrained: false }, yieldMs: 0 }
+  ];
+  try {
+    for (const { platform, options, yieldMs } of cases) {
+      globalThis.__NUVIO_PLATFORM__ = platform;
+      Platform.current = null;
+      setTvPerformanceMode("auto");
+      resetTvRuntimePerformanceProfile();
+      const { ui, requests } = fixture({ count: 6, batchSize: 2, ...options });
+      const batchYields = [];
+      ui.fetchCatalogRows = async (descriptors, fetchOptions = {}) => {
+        if (fetchOptions.batchSize) batchYields.push(fetchOptions.batchYieldMs);
+        return [];
+      };
+      await ui.loadData();
+      await settle();
+      assert.deepEqual(batchYields, [yieldMs], platform);
+
+      ui.rows = Array.from({ length: 4 }, (_, index) => ({
+        addonId: "fixture-addon",
+        addonBaseUrl: "https://fixture.invalid",
+        catalogId: `catalog-${index}`,
+        type: "movie",
+        result: { status: "loading" }
+      }));
+      ui.isVidaaHomeLoadingBusy = () => true;
+      ui.catalogRetryInFlight = false;
+      ui.retryPendingCatalogRows = createHomeScreenMethods22().retryPendingCatalogRows;
+      const waits = [];
+      ui.waitForCatalogBatch = async ({ delayMs }) => waits.push(delayMs) < 2;
+      ui.retryPendingCatalogRows();
+      await settle();
+      requests.splice(0).forEach(resolve);
+      await settle();
+      await advance(0);
+      assert.deepEqual(waits, [0, yieldMs], `${platform} retry`);
+    }
+  } finally {
+    globalThis.__NUVIO_PLATFORM__ = "vidaa";
+    Platform.current = null;
+    resetTvRuntimePerformanceProfile();
+  }
+});
+
 test("Initial requests follow Home order and skip disabled rows before occupying a slot", async () => {
   const key = (index) => buildCatalogOrderKey("fixture-addon", "movie", `catalog-${index}`);
   const collection = {

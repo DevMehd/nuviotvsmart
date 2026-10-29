@@ -10,6 +10,7 @@ const { createHomeScreenMethods12 } =
   await import("../js/ui/screens/home/homeScreenMethods-12-sync-collection-hero-media.js");
 const { createHomeScreenMethods03 } =
   await import("../js/ui/screens/home/homeScreenMethods-03-is-scroll-animation-active.js");
+const { resetTvRuntimePerformanceProfile } = await import("../js/platform/tvRuntimePerformance.js");
 const seed = {
   collectionId: "collection",
   folderId: "folder",
@@ -21,6 +22,7 @@ const seed = {
 for (const platform of ["vidaa", "tizen", "webos", "browser"]) {
   globalThis.__NUVIO_PLATFORM__ = platform;
   Platform.current = null;
+  resetTvRuntimePerformanceProfile();
   assert.equal(
     createHomeScreenMethods03().shouldSuppressAutomaticTrailerPlayback.call({
       isLegacyTvRuntime: () => true
@@ -68,9 +70,13 @@ for (const platform of ["vidaa", "tizen", "webos", "browser"]) {
       contains: (name) => classes.has(name)
     }
   };
-  const methods = createHomeScreenMethods11();
+  const methods = { ...createHomeScreenMethods03(), ...createHomeScreenMethods11() };
+  // The focus GIF delay follows the performance profile: VIDAA auto and the node fixture's
+  // unidentified webOS/Tizen runtimes are constrained, the browser is not.
+  const constrained = platform !== "browser";
+  assert.equal(methods.isPerformanceConstrained(), constrained);
   methods.hydrateCollectionFocusGif(card, true);
-  if (platform === "vidaa") {
+  if (constrained) {
     assert.equal(attrs.has("src"), false, "Passing focus must not eagerly start GIF decoding");
     await new Promise((resolve) => setTimeout(resolve, 110));
   }

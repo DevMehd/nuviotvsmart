@@ -3,7 +3,6 @@ import * as internals from "./homeScreenContext.js";
 export function createHomeScreenMethods22() {
   const {
     Router,
-    Platform,
     catalogRepository,
     filterReleasedItems,
     HomeCatalogStore,
@@ -166,15 +165,15 @@ export function createHomeScreenMethods22() {
       (async () => {
         for (let index = 0; index < pendingRows.length; index += retryBatchSize) {
           const shouldContinue = () => token === this.homeLoadToken && Router.getCurrent() === "home";
-          const isBusy = () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.());
-          // The first retry batch starts at once; later ones yield on VIDAA (bounded loading).
+          const isBusy = () => Boolean(this.isVidaaHomeLoadingBusy?.());
+          // The first retry batch starts at once; later ones yield on constrained runtimes (bounded loading).
           if (index === 0 && !isBusy()) {
             if (!shouldContinue()) return;
           } else if (
             !(await this.waitForCatalogBatch({
               shouldContinue,
               isBusy,
-              delayMs: index > 0 && Platform.isVidaa() ? 120 : 0
+              delayMs: index > 0 && this.isPerformanceConstrained?.() ? 120 : 0
             }))
           )
             return;

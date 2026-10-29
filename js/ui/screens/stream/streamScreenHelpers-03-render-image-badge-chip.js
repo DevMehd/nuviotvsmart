@@ -132,8 +132,13 @@ export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], 
       chips.push(chip);
     }
   });
-  if (!chips.length && Environment.isVidaa()) {
-    getStreamPresentationBadges(stream).forEach((label) => {
+  // webOS renders nothing while a proxied logo loads: text chips only stand in for badges without a usable logo.
+  const hasPendingLogo = badges.slice(0, STREAM_BADGE_LIMIT).some((badge) => {
+    const url = normalizeAddonLogoUrl(badge.imageURL);
+    return url && !hasFailedAddonLogo(url);
+  });
+  if (!chips.length && !hasPendingLogo) {
+    getStreamPresentationBadges(stream, t("trakt_cached_label", {}, "En cache")).forEach((label) => {
       chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
     });
   }
@@ -170,7 +175,7 @@ export function hasStreamBadges(stream = {}, enabled = true, badgeSettings = nul
     return true;
   }
   return (
-    (Environment.isVidaa() && getStreamPresentationBadges(stream).length > 0) ||
+    getStreamPresentationBadges(stream).length > 0 ||
     getStreamImageBadges(stream, currentBadgeSettings).some((badge) => normalizeAddonLogoUrl(badge.imageURL))
   );
 }

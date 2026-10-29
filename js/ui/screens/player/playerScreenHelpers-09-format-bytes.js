@@ -342,8 +342,8 @@ export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadg
       chips.push(chip);
     }
   });
-  if (!matchedBadges.length && Environment.isVidaa()) {
-    getStreamPresentationBadges(stream).forEach((label) => {
+  if (!matchedBadges.length) {
+    getStreamPresentationBadges(stream, t("trakt_cached_label", {}, "En cache")).forEach((label) => {
       chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
     });
   }
