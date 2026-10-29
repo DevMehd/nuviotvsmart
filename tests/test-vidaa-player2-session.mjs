@@ -164,11 +164,33 @@ function setup(options = {}) {
   video.emit("playing");
   assert.equal(session.state, "loading", "late playing clears the error");
   assert.equal(session.error, null);
+  assert.equal(clock.timers.size, 1, "the guard runs again until the first image");
   video.currentTime = 0.2;
   video.emit("timeupdate");
   assert.equal(session.state, "playing");
   assert.equal(session.firstFrame, true);
   assert.equal(clock.timers.size, 0, "zero timers while playing");
+}
+
+// 2b. A playing that never shows an image after a late recovery still ends in an error.
+{
+  const { clock, video, session } = setup();
+  session.attach(URL_A);
+  clock.advance(26000);
+  assert.equal(session.error.kind, "stalled");
+  video.emit("playing");
+  clock.advance(26000);
+  assert.equal(session.state, "error", "no endless loading after a late playing");
+}
+
+// 2c. An end before any image is an explicit error, not an endless loading screen.
+{
+  const { clock, video, session } = setup();
+  session.attach(URL_A);
+  video.emit("ended");
+  assert.equal(session.state, "error");
+  assert.equal(session.error.kind, "source");
+  assert.equal(clock.timers.size, 0);
 }
 
 // 3. Absolute ceiling before the first image, even with progress.

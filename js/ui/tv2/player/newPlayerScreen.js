@@ -114,6 +114,9 @@ export const NewPlayerScreen = {
   playerMountToken: 0,
   playerBackNavigationInProgress: false,
   tickTimer: null,
+  resolveTimer: null,
+  resolveAttempt: 0,
+  resolveCapMs: 45000,
   listeners: null,
   videoAutoplay: false,
 
@@ -159,17 +162,24 @@ export const NewPlayerScreen = {
 
   async startCandidate(token = this.playerMountToken) {
     this.resolveError = null;
+    this.stopResolveCap();
+    const attempt = ++this.resolveAttempt;
+    const isCurrent = () => attempt === this.resolveAttempt && this.isActiveMountToken(token);
     this.render();
     let result;
     try {
-      result = await resolvePlayableCandidate(this.candidate, {
-        params: this.params,
-        isCurrent: () => this.isActiveMountToken(token)
-      });
+      // Debrid calls have no timeout of their own: a hung answer must end in an error (C2).
+      result = await Promise.race([
+        resolvePlayableCandidate(this.candidate, { params: this.params, isCurrent }),
+        new Promise((resolve) => {
+          this.resolveTimer = setTimeout(() => resolve({ kind: "timeout" }), this.resolveCapMs);
+        })
+      ]);
     } catch (_) {
       result = { errorKey: "player_error_playback_fallback", fallback: "Playback error" };
     }
-    if (!result || !this.isActiveMountToken(token)) return;
+    if (attempt === this.resolveAttempt) this.stopResolveCap();
+    if (!result || !isCurrent()) return;
     if (!result.url) {
       this.resolveError = result;
       this.render();
@@ -249,6 +259,11 @@ export const NewPlayerScreen = {
     // One 1 Hz tick for the elapsed time, only while the loading screen shows.
     if (loading && this.tickTimer === null) this.tickTimer = setInterval(() => this.render(), 1000);
     else if (!loading && this.tickTimer !== null) this.stopTick();
+  },
+
+  stopResolveCap() {
+    if (this.resolveTimer !== null) clearTimeout(this.resolveTimer);
+    this.resolveTimer = null;
   },
 
   stopTick() {
@@ -503,6 +518,7 @@ export const NewPlayerScreen = {
     } finally {
       this.session = null;
       this.stopTick();
+      this.stopResolveCap();
       try {
         this.listeners?.();
       } catch (_) {}

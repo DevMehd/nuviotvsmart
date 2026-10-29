@@ -190,6 +190,8 @@ export function createVideoSession(
       if (s.state === "error") {
         s.error = null;
         s.state = "loading";
+        // fail() stopped the guard: without it a playing that never shows an image loads forever.
+        if (!s.firstFrame) startGuard();
         onChange(s);
       }
       if (s.firstFrame) {
@@ -213,8 +215,12 @@ export function createVideoSession(
       return;
     }
     if (type === "ended") {
-      stopGuard();
-      set("ended");
+      // An end before any image (empty or audio-only answer) would leave the loading screen up.
+      if (!s.firstFrame) fail({ kind: "source" });
+      else {
+        stopGuard();
+        set("ended");
+      }
       return;
     }
     if (type === "error") onMediaError();

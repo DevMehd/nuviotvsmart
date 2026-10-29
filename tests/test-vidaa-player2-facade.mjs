@@ -133,6 +133,38 @@ assert.equal(navigations.at(-1)[2].replaceHistory, true);
 NewPlayerScreen.session = null;
 assert.doesNotThrow(() => NewPlayerScreen.cleanup(), "cleanup without a mount never throws");
 
+// 4b. A resolution that never answers ends in an explicit error; its late answer is dropped.
+{
+  const { DirectDebridResolver } = await import("../js/core/debrid/directDebridResolver.js");
+  const saved = {
+    can: DirectDebridResolver.canResolveStream,
+    resolve: DirectDebridResolver.resolve
+  };
+  let answer;
+  DirectDebridResolver.canResolveStream = () => true;
+  DirectDebridResolver.resolve = () => new Promise((resolve) => (answer = resolve));
+  const attached = [];
+  Router.current = "player";
+  Object.assign(NewPlayerScreen, {
+    params: {},
+    refs: null,
+    candidate: { infoHash: "abc" },
+    resolveCapMs: 20,
+    session: { attach: (url) => attached.push(url) }
+  });
+  await NewPlayerScreen.startCandidate(NewPlayerScreen.playerMountToken);
+  assert.equal(NewPlayerScreen.resolveError?.kind, "timeout");
+  assert.equal(NewPlayerScreen.resolveTimer, null);
+  answer({ status: "success", stream: { url: "http://media.invalid/late.mkv" } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(attached, [], "a late resolution never starts playback");
+  Object.assign(DirectDebridResolver, { canResolveStream: saved.can, resolve: saved.resolve });
+  NewPlayerScreen.resolveCapMs = 45000;
+  NewPlayerScreen.session = null;
+  NewPlayerScreen.resolveError = null;
+  Router.current = null;
+}
+
 // 5. Initial source and resolution (no network: direct links only).
 const { pickInitialCandidate, resolvePlayableCandidate } =
   await import("../js/ui/tv2/player/resolvePlayableCandidate.js");
