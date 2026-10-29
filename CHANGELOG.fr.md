@@ -1,5 +1,10 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-10-29 — 1.3.11
+
+- Nouvel accueil (bêta, moteur DOM) plus fluide sur la télé : les cartes ne créent plus chacune leur propre couche d’affichage, et l’agrandissement au focus n’est plus recalculé à chaque appui sur les télés peu puissantes.
+- Les images sont demandées à la taille réellement affichée (fonds et affiches Cinemeta réduits) et la mémoire d’images est plafonnée pour les rangées hors de l’écran ; les rangées visibles chargent toujours leurs images.
+
 ## 2026-10-29 — 1.3.10
 
 - Lecteur sur la télé VIDAA : les noms des pistes audio sont aussi lus quand le lien de la source passe par une redirection (cas fréquent des liens debrid ou fournis par un addon). La lecture se fait en arrière-plan et ne retarde pas le démarrage de la vidéo.
