@@ -536,7 +536,8 @@ html[data-card-depth="true"][data-card-depth-posters="true"]
   z-index: 3;
   box-sizing: border-box;
   min-height: 56px;
-  padding: 12px 48px 12px var(--tv2-content-start, 168px);
+  /* Current Home: 48 px inside .home-main, i.e. the grid content start (24 px inset) + 24. */
+  padding: 12px 48px 12px calc(var(--tv2-content-start, 168px) + 24px);
   background: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.94) 70%, rgba(0, 0, 0, 0) 100%);
   color: #fff;
   font-size: 20px;

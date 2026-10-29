@@ -163,7 +163,8 @@
           const CURRENT_HOME = {
             start: { modern: [220, 104], classic: [192, 48], grid: [168, 24] },
             modernPeek: [196, 80],
-            gridCardWidth: [236, 257]
+            gridCardWidth: [236, 257],
+            gridStickyTitle: [192, 48]
           };
 
           // Constrained runtimes (js/app.js: <= 4 cores, as VIDAA TVs) get the current Home's unscoped
@@ -289,6 +290,12 @@
               if (mode === "grid") {
                 const width = CURRENT_HOME.gridCardWidth[Number(pill)];
                 assert(geometry.poster.width === width, at(`grid card ${geometry.poster.width}, expected ${width}`));
+                // Sticky section title: the current Home's 48 px padding inside .home-main.
+                const sticky = container.querySelector(".tv2-grid-sticky");
+                const titleLeft =
+                  sticky.getBoundingClientRect().left + parseFloat(getComputedStyle(sticky).paddingLeft);
+                const expected = CURRENT_HOME.gridStickyTitle[Number(pill)];
+                assert(near(titleLeft, expected), at(`sticky title at ${titleLeft}, expected ${expected}`));
               }
               if (!legacy) {
                 const copy = container.querySelector(".home-modern-hero-copy").getBoundingClientRect();
