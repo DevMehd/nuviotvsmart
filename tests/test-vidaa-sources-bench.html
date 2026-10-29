@@ -95,22 +95,34 @@
         };
 
         // Layout reads and long tasks, counted per phase.
-        const counts = { rects: 0, offsets: 0 };
+        const counts = { rects: 0, offsets: 0, otherReads: 0 };
         const rect = Element.prototype.getBoundingClientRect;
         Element.prototype.getBoundingClientRect = function () {
           counts.rects++;
           return rect.call(this);
         };
-        for (const property of ["offsetHeight", "offsetTop"]) {
-          const { get } = Object.getOwnPropertyDescriptor(HTMLElement.prototype, property);
-          Object.defineProperty(HTMLElement.prototype, property, {
-            configurable: true,
-            get() {
-              counts.offsets++;
-              return get.call(this);
-            }
-          });
-        }
+        const countReads = (proto, properties, counter) => {
+          for (const property of properties) {
+            const { get, set } = Object.getOwnPropertyDescriptor(proto, property);
+            Object.defineProperty(proto, property, {
+              configurable: true,
+              get() {
+                counts[counter]++;
+                return get.call(this);
+              },
+              set
+            });
+          }
+        };
+        countReads(HTMLElement.prototype, ["offsetHeight", "offsetTop"], "offsets");
+        // The other layout-forcing reads the current screen does while navigating
+        // (filter chip scroll, list scroll clamps); setters stay native and uncounted.
+        countReads(HTMLElement.prototype, ["offsetWidth", "offsetLeft"], "otherReads");
+        countReads(
+          Element.prototype,
+          ["clientHeight", "clientWidth", "scrollHeight", "scrollWidth", "scrollTop", "scrollLeft"],
+          "otherReads"
+        );
         const longTasks = [];
         new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) longTasks.push(entry.duration);
@@ -247,7 +259,7 @@
           phases: Object.keys(phases),
           async run(name) {
             const seen = longTasks.length;
-            counts.rects = counts.offsets = 0;
+            counts.rects = counts.offsets = counts.otherReads = 0;
             const start = performance.now();
             const data = await phases[name]();
             const tasks = longTasks.slice(seen);
@@ -259,6 +271,7 @@
               longTaskMaxMs: tasks.length ? Math.max(...tasks) : 0,
               rects: counts.rects,
               offsets: counts.offsets,
+              otherReads: counts.otherReads,
               domNodes: route.container.getElementsByTagName("*").length
             };
             for (const key of Object.keys(result))
