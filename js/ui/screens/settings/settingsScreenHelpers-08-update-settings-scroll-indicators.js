@@ -80,8 +80,6 @@ import { AuthManager } from "../../../core/auth/authManager.js";
 
 import { SupabaseApi } from "../../../data/remote/supabase/supabaseApi.js";
 
-import { Platform } from "../../../platform/index.js";
-
 import { TizenCapabilities } from "../../../platform/tizen/tizenCapabilities.js";
 
 import { isFastHorizontalNavigationEnabled } from "../../../platform/sharedKeys.js";
@@ -290,17 +288,11 @@ export async function fetchAccountSyncOverview() {
 
 export function getVisibleSections(model) {
   const isPrimaryProfileActive = String(model?.activeProfileId || "1") === "1";
-  const isEssential = model?.experience?.mode === "ESSENTIAL";
   return SECTION_META.filter((section) => {
     if (section.hideFromNav) {
       return false;
     }
     if (section.id === "plugins" && !arePluginsSupported()) {
-      return false;
-    }
-    // Android keeps Fusion/stream presentation controls inside the advanced
-    // part of Layout, which is not exposed in Essential mode.
-    if (isEssential && section.id === "streams" && !Platform.isVidaa()) {
       return false;
     }
     if (section.id === "account" || section.id === "profiles") {

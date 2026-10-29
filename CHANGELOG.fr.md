@@ -4,7 +4,7 @@
 
 - Démarrage plus rapide sur la télé VIDAA : au lancement, l’application ne charge plus que l’accueil et la sélection du profil. Les autres écrans (fiche, lecteur, paramètres, recherche…) sont chargés la première fois que tu les ouvres, puis restent disponibles hors ligne. Si une mise à jour arrive pendant l’utilisation, l’application se recharge une fois d’elle-même au lieu de rester bloquée.
 - Le code envoyé à la télé est préparé pour son navigateur (Chromium 111) : moins de code à lire au démarrage. Les autres télés (Samsung, LG) gardent la version actuelle.
-- Les puces techniques des liens vidéo (2160p, HDR, codec…) s’affichent aussi sur les autres télés (Samsung, LG) quand aucun badge graphique ne correspond ; sur VIDAA, ces puces, le choix « Pack de badges » et la section Flux du mode Essentiel ne changent pas. Quelques délais de chargement de l’accueil et des collections suivent désormais le mode de performance plutôt que le seul modèle de télé (en mode automatique, rien ne change sur VIDAA).
+- Les puces techniques des liens vidéo (2160p, HDR, codec…) et les packs de badges Xperience (Nard, Elite, choix « Pack de badges » par profil) sont disponibles sur toutes les plateformes (VIDAA, Samsung, LG) ; les puces apparaissent quand aucun badge graphique ne correspond. Sur les autres télés, sans choix de pack, les badges importés restent utilisés. En mode Essentiel, la section Flux ne montre plus que « Pack de badges », y compris sur VIDAA ; les autres réglages des flux restent en mode Avancé. Quelques délais de chargement de l’accueil et des collections suivent désormais le mode de performance plutôt que le seul modèle de télé (en mode automatique, rien ne change sur VIDAA).
 
 ## 2026-10-29 — 1.3.7
 

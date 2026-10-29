@@ -20,8 +20,12 @@ globalThis.fetch = async () => {
 
 const { StreamBadgeSettingsStore } = await import("../js/data/local/streamBadgeSettingsStore.js");
 const { ProfileManager } = await import("../js/core/profile/profileManager.js");
-const { STREAM_BADGE_PRESETS, resolveStreamBadgePresetRules, getStreamImageBadges } =
-  await import("../js/core/streams/streamBadgePresets.js");
+const {
+  STREAM_BADGE_PRESETS,
+  resolveStreamBadgePresetRules,
+  getSelectedStreamBadgePreset,
+  getStreamImageBadges
+} = await import("../js/core/streams/streamBadgePresets.js");
 const { getVidaaBadgeImageUrl, getVidaaBadgeImageOriginal, buildVidaaBadgeFallbackAttributes } =
   await import("../js/core/media/vidaaBadgeOptimization.js");
 const { renderStreamBadges } =
@@ -78,10 +82,24 @@ for (const preset of STREAM_BADGE_PRESETS) {
   for (const filter of rules.imports[0].filters)
     assert.ok(filter.imageURL.startsWith("https://cdn.xperience-app.com/badges/"));
 }
+// Off VIDAA (autoUsesPack false) AUTO keeps the imported rules; an explicit
+// pack still applies. On VIDAA AUTO without imports still resolves to Nard.
 assert.deepEqual(
-  resolveStreamBadgePresetRules({ personalBadgePreset: "NARD", rules: { imports: [] } }, false),
+  resolveStreamBadgePresetRules({ personalBadgePreset: "AUTO", rules: { imports: [] } }, false),
   { imports: [] }
 );
+assert.equal(
+  resolveStreamBadgePresetRules({ personalBadgePreset: "NARD", rules: { imports: [] } }, false),
+  resolveStreamBadgePresetRules({ personalBadgePreset: "NARD" }, true)
+);
+assert.equal(
+  resolveStreamBadgePresetRules({ personalBadgePreset: "AUTO", rules: { imports: [] } }, true)
+    .imports[0].filters.length,
+  106
+);
+assert.equal(getSelectedStreamBadgePreset({ personalBadgePreset: "AUTO" }, true), "NARD");
+assert.equal(getSelectedStreamBadgePreset({ personalBadgePreset: "AUTO" }, false), "IMPORTED");
+assert.equal(getSelectedStreamBadgePreset({ personalBadgePreset: "ELITE" }, false), "ELITE");
 assert.ok(
   getVisibleSections({ experience: { mode: "ESSENTIAL" } }).some(
     (section) => section.id === "streams"
