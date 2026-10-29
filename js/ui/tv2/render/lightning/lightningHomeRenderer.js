@@ -69,7 +69,8 @@ function hostClass(url) {
 }
 
 function samplePeak() {
-  const used = liveEngine?.renderer.stage.txMemManager.getMemoryInfo().memUsed || 0;
+  // The field, not getMemoryInfo(): this runs on every move and that one walks every texture.
+  const used = liveEngine?.renderer.stage.txMemManager.memUsed || 0;
   glStats.peakTextureBytes = Math.max(glStats.peakTextureBytes, used);
 }
 
@@ -535,11 +536,11 @@ export function createLightningHomeRenderer(
         color: FALLBACK_TEXT,
         alpha: 0
       });
-      card.image = imageSlot(image, 1, (state) => {
-        const failed = state === "failed";
-        card.fallback.alpha = failed ? 1 : 0;
-        scrim.alpha = card.title.alpha = failed ? 0 : 1;
-      });
+      card.showTile = (on) => {
+        card.fallback.alpha = on ? 1 : 0;
+        scrim.alpha = card.title.alpha = on ? 0 : 1;
+      };
+      card.image = imageSlot(image, 1, (state) => card.showTile(state === "failed"));
       view.slots[slot] = card;
     }
     return card;
@@ -595,7 +596,8 @@ export function createLightningHomeRenderer(
       for (let i = win.start; i < win.end; i += 1) {
         const item = row.items[i];
         const card = slotCard(view, slotFor(i, win.poolSize));
-        if (card.index !== i || card.rowKey !== row.key || card.item !== item) {
+        const changed = card.index !== i || card.rowKey !== row.key || card.item !== item;
+        if (changed) {
           card.item = item;
           card.index = i;
           card.rowKey = row.key;
@@ -609,6 +611,9 @@ export function createLightningHomeRenderer(
           fallbacks: card.source.fallbacks,
           priority: focused
         });
+        // No artwork at all: the mobile shows the same text tile (ShelfComponents.kt, imageUrl null).
+        if (!card.source.url) card.showTile(true);
+        else if (changed) card.showTile(false);
         if (focused) ringCard = card;
       }
       view.track.x = RAIL_LEFT + win.offset;
@@ -687,6 +692,11 @@ export function createLightningHomeRenderer(
         scene.root.destroy();
         // Leaving Home (often for the player): free every texture the scene held.
         engine.renderer.stage.cleanup(true);
+        // maxRetryCount 0: a failed texture stays cached as failed for the kept engine's life.
+        // Forget failures on leaving Home, so a network blip is retried on the next visit.
+        const { txManager } = engine.renderer.stage;
+        for (const texture of [...txManager.keyCache.values()])
+          if (texture.state === "failed") txManager.removeTextureFromCache(texture);
       }
       scene = null;
       // The kept engine's idle loop would wake 60 times a second while away (e.g. in the player);

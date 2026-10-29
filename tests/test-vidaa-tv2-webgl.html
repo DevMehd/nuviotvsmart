@@ -91,7 +91,8 @@
               }
           });
           const noCors = `http://127.0.0.1:${params.get("xorigin")}/assets/avatars/avatar_aang_1772809370453.png`;
-          const items = [red, noCors, red].map((poster, n) => ({
+          // The last card has no artwork at all: the mobile shows the same text tile.
+          const items = [red, noCors, red, ""].map((poster, n) => ({
             id: `tt000000${n}`,
             type: "movie",
             name: `Fixture title ${n}`,
@@ -127,7 +128,7 @@
           };
           const { width, height } = geometry.poster;
           const pitch = width + geometry.gap;
-          const win = railWindow({ count: 3, focusIndex: 0, pitch, viewport: RAIL_VIEWPORT });
+          const win = railWindow({ count: 4, focusIndex: 0, pitch, viewport: RAIL_VIEWPORT });
           const top = 560 + rowsOffset([height + ROW_TITLE_HEIGHT + geometry.gap], 0) + ROW_TITLE_HEIGHT;
           const cardX = (i) => 220 + win.offset + i * pitch;
           // Horizontal (or vertical) run lengths between black/white transitions.
@@ -146,6 +147,7 @@
               const image = pixelsAt(cardX(0) + width / 2, top + height / 2);
               const tileCorner = pixelsAt(cardX(1) + 6, top + 6);
               const tileBand = pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80);
+              const noArtBand = pixelsAt(cardX(3) + 20, top + height / 2 - 40, width - 40, 80);
               const row = pixelsAt(1240, 120, 670, 1);
               const column = pixelsAt(1600, 0, 1, 340);
               const lum = (data) => Array.from({ length: data.length / 4 }, (_, i) => data[i * 4]);
@@ -153,6 +155,7 @@
                 image: [...image.slice(0, 3)],
                 tileCorner: [...tileCorner.slice(0, 3)],
                 tileText: Math.max(...lum(tileBand)),
+                noArtText: Math.max(...lum(noArtBand)),
                 across: runs(lum(row)),
                 down: runs(lum(column).reverse())
               };
@@ -160,6 +163,7 @@
                 state.image[0] > 230 &&
                 state.image[1] < 30 &&
                 state.tileText > state.tileCorner[0] + 40 &&
+                state.noArtText > state.tileCorner[0] + 40 &&
                 state.across.length >= 3 &&
                 state.down.length >= 1
               )
@@ -182,6 +186,9 @@
           assert(info.failed.autre >= 1 && info.failed.tmdb === 0, JSON.stringify(info.failed));
           assert(info.heroBand?.w === 1382, JSON.stringify(info.heroBand));
           view.destroy();
+          // Failures are forgotten on leaving Home: the kept engine retries them on the next visit.
+          const cached = [...lightning.stage.txManager.keyCache.values()];
+          assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
           result.textContent = `PASS: WebGL Home image, no-CORS text tile and hero cover (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
