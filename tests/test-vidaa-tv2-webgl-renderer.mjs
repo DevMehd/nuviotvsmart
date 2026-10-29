@@ -424,6 +424,146 @@ assert.deepEqual(
   assert.equal(copy.block.alpha, 0);
 }
 
+// Lot W4a: card content on fake nodes. Posters carry no title, Continue Watching cards carry the
+// mobile copy, badge and progress for each card style, loading rows show N skeleton cards.
+{
+  const { createGlCard, fillGlCard, setRowSkeletons, CW_CARD } =
+    await import("../js/ui/tv2/render/lightning/lightningHomeRenderer.js");
+  const { continueCardModel } =
+    await import("../js/ui/screens/home/homeScreenHelpers-12-build-hero-indicators.js");
+  const { cardGeometry, rowCardSize } = await import("../js/ui/tv2/railEngine.js");
+  const animations = [];
+  function glNode(props = {}) {
+    const listeners = {};
+    const node = {
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      alpha: 1,
+      children: [],
+      on: (event, fn) => (listeners[event] = listeners[event] || []).push(fn),
+      emit: (event, payload = {}) => (listeners[event] || []).forEach((fn) => fn(node, payload)),
+      animate: (to, settings) => {
+        const ctrl = { to, settings, started: false, stopped: false };
+        ctrl.start = () => (ctrl.started = true);
+        ctrl.stop = () => (ctrl.stopped = true);
+        animations.push(ctrl);
+        return ctrl;
+      },
+      destroy() {
+        node.destroyed = true;
+        node.parent?.children.splice(node.parent.children.indexOf(node), 1);
+      }
+    };
+    const { parent, ...rest } = props;
+    Object.assign(node, rest);
+    if (parent) {
+      node.parent = parent;
+      parent.children.push(node);
+    }
+    return node;
+  }
+  const scene = {
+    node: glNode,
+    group: glNode,
+    text: ({ weight = 400, text = "", ...props }) => Object.assign(glNode(props), { weight, text }),
+    retext: (node, value) => Object.assign(node, { text: value }),
+    shader: (props) => ({ shader: props }),
+    colors: { card: 1, bgClear: 2, scrim: 3, cwBadge: 4, accent: 5 }
+  };
+  const textsIn = (node) =>
+    [node, ...node.children.flatMap(textsIn)].filter((child) => typeof child.text === "string");
+
+  const geometry = cardGeometry({ homeLayout: "modern" });
+  const poster = createGlCard(scene, glNode(), "poster", geometry.poster);
+  fillGlCard(scene, poster, { name: "Heat" }, { url: "/heat.jpg", fallbacks: [] });
+  assert.deepEqual(
+    textsIn(poster.node),
+    [poster.fallback],
+    "a poster has no title, only its text tile"
+  );
+  assert.equal(poster.fallback.text, "Heat");
+  assert.equal(poster.fallback.alpha, 0);
+  poster.showTile(true);
+  assert.equal(poster.fallback.alpha, 1, "text tile of a failed image");
+  assert.equal(poster.node.children[0].w, geometry.poster.width, "image first, at the card size");
+
+  const episode = {
+    contentId: "tt6",
+    type: "series",
+    title: "Show",
+    season: 1,
+    episode: 2,
+    episodeTitle: "Pilot 2",
+    positionMs: 1500000,
+    durationMs: 6000000,
+    backdrop: "https://image.tmdb.org/t/p/w780/sb.jpg"
+  };
+  for (const cardStyle of ["card", "wide", "poster"]) {
+    const size = rowCardSize(
+      { kind: "continue" },
+      cardGeometry({ homeLayout: "modern", continueWatchingCardStyle: cardStyle })
+    );
+    const card = createGlCard(scene, glNode(), "continue", size);
+    const cw = continueCardModel(episode, { cardStyle });
+    fillGlCard(scene, card, episode, { url: "", fallbacks: [], cw });
+    const { kicker, title, subtitle, badge, badgeText, track, fill } = card.cw;
+    assert.equal(card.fallback, null, `${cardStyle}: no text tile, the copy stays`);
+    assert.deepEqual([kicker.text, title.text, subtitle.text], [cw.kicker, "Show", "Pilot 2"]);
+    assert.ok(cw.kicker, "episode code");
+    assert.deepEqual([title.weight, subtitle.alpha], [600, 0.72]);
+    // Bottom-up from 24 px: subtitle 30, 4, title 38, 4, kicker 30.
+    assert.equal(subtitle.y, size.height - 24 - 30, `${cardStyle} subtitle y`);
+    assert.equal(title.y, subtitle.y - 4 - 38);
+    assert.equal(kicker.y, title.y - 4 - 30);
+    assert.equal(track.w, size.width - 40, `${cardStyle} progress track`);
+    assert.equal(track.y, size.height - 8 - 6);
+    assert.equal(fill.w, Math.round(0.25 * (size.width - 40)), `${cardStyle} progress 25 %`);
+    assert.equal(badgeText.text, cw.badge);
+    assert.ok(cw.badge, "remaining time badge");
+    badgeText.emit("loaded", { dimensions: { w: 100, h: 28 } });
+    assert.equal(badge.w, 100 + 2 * CW_CARD.badge.padX, "badge frame around its text");
+    assert.equal(badge.x, size.width - 16);
+    assert.equal(badge.color, 4, "badge in the background color at 0.80");
+    // A movie: no episode code nor subtitle, the title sits on the bottom line.
+    const movie = { contentId: "tt5", type: "movie", title: "Heat", positionMs: 0, durationMs: 0 };
+    fillGlCard(scene, card, movie, { cw: continueCardModel(movie, { cardStyle }) });
+    assert.equal(title.y, size.height - 24 - 38, `${cardStyle} movie title y`);
+    assert.equal(fill.w, 0);
+  }
+  const release = createGlCard(scene, glNode(), "continue", geometry.continueCard);
+  const releaseCw = continueCardModel(episode, {});
+  for (const [isNewSeasonRelease, color] of [
+    [true, CW_CARD.newSeason],
+    [false, CW_CARD.newEpisode]
+  ]) {
+    const normalized = { isNextUp: true, isReleaseAlert: true, isNewSeasonRelease };
+    fillGlCard(scene, release, episode, { cw: { ...releaseCw, normalized } });
+    assert.equal(release.cw.badge.color, color, "mobile release badge colors");
+  }
+
+  // Loading rows: N cards at the card pitch in the track, one pulse on the row, gone with the items.
+  const view = { track: glNode(), size: geometry.poster, skeleton: null };
+  setRowSkeletons(scene, view, 4, geometry.gap, null);
+  const group = view.track.children[0];
+  assert.equal(group.children.length, 4);
+  assert.equal(group.children[3].x, 3 * (geometry.poster.width + geometry.gap));
+  assert.equal(group.children[0].color, 0x1a1a1aff, "mobile surface");
+  assert.equal(animations.length, 0, "no pulse when constrained or without motion");
+  setRowSkeletons(scene, view, 4, geometry.gap, null);
+  assert.equal(view.track.children[0], group, "same count: kept");
+  setRowSkeletons(scene, view, 0);
+  assert.equal(group.destroyed, true);
+  assert.equal(view.track.children.length, 0, "items arrived: skeletons removed");
+  setRowSkeletons(scene, view, 2, geometry.gap, true);
+  const [pulse] = animations;
+  assert.deepEqual([pulse.started, pulse.to.alpha, pulse.settings.duration], [true, 0.6, 1200]);
+  assert.equal(view.track.children[0].children.length, 2);
+  setRowSkeletons(scene, view, 0);
+  assert.equal(pulse.stopped, true, "pulse stopped with the skeletons");
+}
+
 // Atlas: versioned files equal a fresh build from the TTF files; French typography inside it,
 // other scripts on the canvas renderer, narrow spaces drawn as spaces.
 for (const weight of ATLAS_WEIGHTS) {
@@ -449,5 +589,5 @@ assert.deepEqual(seen, ["bitmap-basic", "platform-legacy", "hero-780", "standard
 assert.equal(store.has("tvWebglVariant"), false);
 
 console.log(
-  "PASS: WebGL Home image slots, fallbacks, text tile, hero cover, motion, hero copy, atlases and variants"
+  "PASS: WebGL Home image slots, fallbacks, text tile, hero cover, motion, hero copy, cards, skeletons, atlases and variants"
 );

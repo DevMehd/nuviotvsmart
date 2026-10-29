@@ -42,6 +42,36 @@ const FALLBACK_TEXT = 0x969ca3ff;
 // Hero skeleton (lot W3): the DOM loading gradient, shimmering outside constrained runtimes.
 const SKELETON = { colorTop: 0x262626ff, colorBottom: 0x101010ff };
 const COVER = { resizeMode: { type: "cover" } };
+/**
+ * Continue Watching card (lot W4a): mobile HomeContinueWatchingSection.kt at the TV sizes of the
+ * mobile reference (dp × 2, sp × 1.75–2). Copy stacked bottom-up from `pad`, badge top right,
+ * progress pill track 20 px from the sides and 8 px from the bottom.
+ */
+export const CW_CARD = {
+  pad: 24,
+  gap: 4,
+  // Bottom-up order; keys of continueCardModel.
+  lines: [
+    { key: "subtitle", fontSize: 22, lineHeight: 30, alpha: 0.72 },
+    { key: "title", fontSize: 28, lineHeight: 38, weight: 600 },
+    { key: "kicker", fontSize: 22, lineHeight: 30, weight: 600 }
+  ],
+  // The scrim starts at 45 % of the height (mobile l. 741-761).
+  scrimTop: 0.45,
+  badge: { inset: 16, padX: 16, padY: 8, fontSize: 20, lineHeight: 28, radius: 8 },
+  progress: { side: 20, bottom: 8, h: 6, track: 0x0000004d },
+  // Release badges of the mobile (l. 79-81): new episode, new season.
+  newEpisode: 0x1d4ed8ff,
+  newSeason: 0xb45309ff,
+  // tv2-home.css .tv2-continue-card background (145deg #393939 → #111), two stops.
+  background: { colorTop: 0x393939ff, colorBottom: 0x111111ff }
+};
+// Loading row cards (mobile HomeSkeletonLoading.kt): surface #1A1A1A; the row pulses 1 ↔ 0.6.
+const ROW_SKELETON = 0x1a1a1aff;
+
+const shimmers = (motion) =>
+  Boolean(motion.copy) &&
+  !globalThis.document?.documentElement?.classList?.contains("performance-constrained");
 
 /**
  * Modern hero media node: components-16.css draws it 72 % wide, 56 px past the right edge and
@@ -393,6 +423,167 @@ export function imageSlot(node, alpha = 1, onState = () => {}) {
   return slot;
 }
 
+/**
+ * Pooled card of a row in `parent` (its track). Posters carry no title (D2, mobile): a failed or
+ * missing image shows the mobile text tile instead. Continue Watching cards carry the scrim,
+ * badge, copy and progress of CW_CARD and keep them when the image fails, as the DOM card does.
+ * `scene`: node, group, text, retext, shader and colors of buildScene.
+ */
+export function createGlCard(scene, parent, kind, { width, height }) {
+  const continueCard = kind === "continue";
+  const node = scene.node({
+    parent,
+    w: width,
+    h: height,
+    ...(continueCard ? CW_CARD.background : { color: scene.colors.card }),
+    pivot: 0.5,
+    zIndex: 1
+  });
+  const image = scene.node({ parent: node, w: width, h: height, textureOptions: COVER });
+  const card = { node, index: -1, rowKey: "", x: null, item: null, cw: null, fallback: null };
+  if (continueCard) card.cw = continueParts(scene, node, width, height);
+  else
+    card.fallback = scene.text({
+      parent: node,
+      x: 28,
+      y: height / 2,
+      mountY: 0.5,
+      fontSize: 28,
+      lineHeight: 34,
+      maxWidth: width - 56,
+      maxLines: 3,
+      textAlign: "center",
+      color: FALLBACK_TEXT,
+      alpha: 0
+    });
+  card.showTile = (on) => card.fallback && (card.fallback.alpha = on ? 1 : 0);
+  card.image = imageSlot(image, 1, (state) => {
+    card.showTile(state === "failed");
+    // Given back (out of bounds, freed) or cleared: the next update asks again.
+    if (state === "empty") card.wanted = null;
+  });
+  return card;
+}
+
+function continueParts(scene, parent, width, height) {
+  const C = CW_CARD;
+  const top = Math.round(height * C.scrimTop);
+  scene.node({
+    parent,
+    y: top,
+    w: width,
+    h: height - top,
+    colorTop: scene.colors.bgClear,
+    colorBottom: scene.colors.scrim
+  });
+  const badge = scene.node({
+    parent,
+    x: width - C.badge.inset,
+    y: C.badge.inset,
+    mountX: 1,
+    h: C.badge.lineHeight + 2 * C.badge.padY,
+    color: scene.colors.cwBadge,
+    shader: scene.shader({ radius: C.badge.radius, "border-w": 0 })
+  });
+  const parts = { badge, badgeText: null };
+  parts.badgeText = measureBadge(
+    parts,
+    scene.text({
+      parent: badge,
+      x: C.badge.padX,
+      y: C.badge.padY,
+      fontSize: C.badge.fontSize,
+      lineHeight: C.badge.lineHeight,
+      weight: 600,
+      contain: "none"
+    })
+  );
+  C.lines.forEach((line) => {
+    const { key, weight = 400, ...props } = line;
+    parts[key] = scene.text({ parent, x: C.pad, weight, maxWidth: width - 2 * C.pad, ...props });
+  });
+  parts.track = scene.node({
+    parent,
+    x: C.progress.side,
+    y: height - C.progress.bottom - C.progress.h,
+    w: width - 2 * C.progress.side,
+    h: C.progress.h,
+    color: C.progress.track
+  });
+  parts.fill = scene.node({
+    parent: parts.track,
+    w: 0,
+    h: C.progress.h,
+    color: scene.colors.accent
+  });
+  return parts;
+}
+
+// The badge frame takes the width its text reports once laid out.
+function measureBadge(parts, textNode) {
+  textNode.on("loaded", (_, payload) => {
+    if (parts.badgeText === textNode)
+      parts.badge.w = (payload?.dimensions?.w || 0) + 2 * CW_CARD.badge.padX;
+  });
+  return textNode;
+}
+
+/** Card content for `item`: the text tile's title, or the Continue Watching model `source.cw`. */
+export function fillGlCard(scene, card, item, source) {
+  const cw = source.cw;
+  if (!cw) {
+    card.fallback = scene.retext(card.fallback, String(item.name || item.title || ""));
+    return;
+  }
+  const parts = card.cw;
+  let bottom = card.node.h - CW_CARD.pad;
+  CW_CARD.lines.forEach(({ key, lineHeight }) => {
+    parts[key] = scene.retext(parts[key], cw[key] || "");
+    if (!cw[key]) return;
+    bottom -= lineHeight;
+    parts[key].y = bottom;
+    bottom -= CW_CARD.gap;
+  });
+  const badgeText = scene.retext(parts.badgeText, cw.badge || "");
+  if (badgeText !== parts.badgeText) parts.badgeText = measureBadge(parts, badgeText);
+  const { isNextUp, isReleaseAlert, isNewSeasonRelease } = cw.normalized || {};
+  parts.badge.color =
+    isNextUp && isReleaseAlert
+      ? isNewSeasonRelease
+        ? CW_CARD.newSeason
+        : CW_CARD.newEpisode
+      : scene.colors.cwBadge;
+  parts.fill.w = Math.round(
+    (Math.max(0, Math.min(100, cw.progressPct || 0)) / 100) * parts.track.w
+  );
+}
+
+/**
+ * `count` loading cards in the row's track (DOM setSkeletons), at the card size and pitch; the
+ * whole row pulses (one animation, not one per card) when `pulse`. Count 0 removes them.
+ */
+export function setRowSkeletons(scene, view, count, gap, pulse) {
+  const current = view.skeleton;
+  if ((current?.count || 0) === count) return;
+  if (current) {
+    current.ctrl?.stop(false);
+    current.group.destroy();
+    view.skeleton = null;
+  }
+  if (!count) return;
+  const { width, height } = view.size;
+  const group = scene.group({ parent: view.track });
+  for (let i = 0; i < count; i += 1)
+    scene.node({ parent: group, x: i * (width + gap), w: width, h: height, color: ROW_SKELETON });
+  view.skeleton = { count, group, ctrl: null };
+  if (!pulse) return;
+  view.skeleton.ctrl = group.animate(
+    { alpha: 0.6 },
+    { duration: 1200, easing: "ease-in-out", loop: true, stopMethod: "reverse" }
+  );
+  view.skeleton.ctrl.start();
+}
+
 export function createLightningHomeRenderer(
   container,
   { geometry, imageQueue, layout = {}, onFailure }
@@ -416,6 +607,7 @@ export function createLightningHomeRenderer(
   let failed = false;
   let proxyFocused = false;
   let sidebarFocused = null;
+  let rowsVersion = 0;
   const motion = homeMotion(root);
   // The legacy sidebar is drawn until lot W6: content starts after its rail, even with the pill.
   const geo = { ...geometry, contentStart: RAIL_LEFT, viewport: APP_WIDTH - RAIL_LEFT };
@@ -441,8 +633,13 @@ export function createLightningHomeRenderer(
       focus: themeColor(root, "--focus-color", "#ffffff"),
       // Mobile hero meta: dots at alpha 0.7, badge outline at 0.55 (HomeHeroMetaRows.kt).
       dot: themeColor(root, "--text-color", "#ffffff", 0.7),
-      badge: themeColor(root, "--focus-color", "#ffffff", 0.55)
+      badge: themeColor(root, "--focus-color", "#ffffff", 0.55),
+      // Continue Watching (mobile): scrim to the background at 0.95, badge at 0.80, accent progress.
+      scrim: themeColor(root, "--bg-color", "#0d0d0d", 0.95),
+      cwBadge: themeColor(root, "--bg-color", "#0d0d0d", 0.8),
+      accent: themeColor(root, "--secondary-color", "#f5f5f5")
     };
+    const shader = (props) => renderer.createShader("RoundedWithBorder", props);
     const node = (props) => renderer.createNode(props);
     // Lightning paints any sized node white unless its color is 0: containers stay transparent.
     const group = (props) => renderer.createNode({ color: 0, ...props });
@@ -526,7 +723,7 @@ export function createLightningHomeRenderer(
       parent: sceneRoot,
       node,
       text,
-      shader: (props) => renderer.createShader("RoundedWithBorder", props),
+      shader,
       slot: imageSlot,
       tween,
       settle,
@@ -540,6 +737,7 @@ export function createLightningHomeRenderer(
       group,
       text,
       retext,
+      shader,
       root: sceneRoot,
       hero: { front: heroSlots[0], back: heroSlots[1], shown: "", wanted: "" },
       skeleton: { node: skeleton, on: false, ctrl: null },
@@ -552,7 +750,7 @@ export function createLightningHomeRenderer(
         y: -FOCUS_RING,
         color: 0,
         alpha: 0,
-        shader: renderer.createShader("RoundedWithBorder", {
+        shader: shader({
           radius: (geometry.radius ?? 24) + FOCUS_RING,
           "border-w": FOCUS_RING,
           "border-color": colors.focus
@@ -563,15 +761,25 @@ export function createLightningHomeRenderer(
 
   function setRows(rows) {
     last.rows = rows;
+    // Bumped by every row emit: continue cards refill then, their release labels depend on time.
+    rowsVersion += 1;
     if (!scene) return;
-    const kept = new Map(rows.map((row) => [row.key, rowCardSize(row, geo)]));
+    const kept = new Map(
+      rows.map((row) => [row.key, { ...rowCardSize(row, geo), kind: row.kind }])
+    );
     for (const [key, view] of views) {
       const size = kept.get(key);
       // A row whose card shape changed (kind, tile shape) gets new pooled cards.
-      if (!size || size.width !== view.size.width || size.height !== view.size.height) {
+      if (
+        !size ||
+        size.kind !== view.kind ||
+        size.width !== view.size.width ||
+        size.height !== view.size.height
+      ) {
         // The ring may sit on one of its cards; the next update puts it back on the focus.
         scene.ring.parent = scene.root;
         scene.ring.alpha = 0;
+        setRowSkeletons(scene, view, 0);
         view.node.destroy();
         views.delete(key);
       }
@@ -599,73 +807,27 @@ export function createLightningHomeRenderer(
           }),
           track: scene.group({ parent: rowNode }),
           slots: [],
+          kind: row.kind,
           size: kept.get(row.key),
+          skeleton: null,
           placed: false
         };
         views.set(row.key, view);
       }
       view.title = scene.retext(view.title, row.title || "");
-      // Loading rows stay empty, without skeleton cards (lot C12); no error text (D1).
+      // A loading row shows its skeleton cards, or the loading text without a count (D1: no error text).
+      const skeletons = row.items.length || row.status !== "loading" ? 0 : row.loadingCount || 0;
+      setRowSkeletons(scene, view, skeletons, geo.gap, shimmers(motion));
       view.status.text =
-        row.items.length || row.status !== "loading" ? "" : t("common.loading", {}, "Loading");
+        row.items.length || skeletons || row.status !== "loading"
+          ? ""
+          : t("common.loading", {}, "Loading");
     });
   }
 
   function slotCard(view, slot) {
-    let card = view.slots[slot];
-    if (!card) {
-      const { width, height } = view.size;
-      const cardNode = scene.node({
-        parent: view.track,
-        w: width,
-        h: height,
-        color: scene.colors.card,
-        pivot: 0.5,
-        zIndex: 1
-      });
-      const image = scene.node({ parent: cardNode, w: width, h: height, textureOptions: COVER });
-      card = { node: cardNode, image: null, title: null, index: -1, rowKey: "", x: null };
-      const scrim = scene.node({
-        parent: cardNode,
-        y: height - 80,
-        w: width,
-        h: 80,
-        colorTop: 0x00000000,
-        colorBottom: 0x000000c0
-      });
-      card.title = scene.text({
-        parent: cardNode,
-        x: 12,
-        y: height - 40,
-        fontSize: 22,
-        maxWidth: width - 24
-      });
-      // Failed image: the card background with the title centered (mobile text fallback).
-      card.fallback = scene.text({
-        parent: cardNode,
-        x: 28,
-        y: height / 2,
-        mountY: 0.5,
-        fontSize: 28,
-        lineHeight: 34,
-        maxWidth: width - 56,
-        maxLines: 3,
-        textAlign: "center",
-        color: FALLBACK_TEXT,
-        alpha: 0
-      });
-      card.showTile = (on) => {
-        card.fallback.alpha = on ? 1 : 0;
-        scrim.alpha = card.title.alpha = on ? 0 : 1;
-      };
-      card.image = imageSlot(image, 1, (state) => {
-        card.showTile(state === "failed");
-        // Given back (out of bounds, freed) or cleared: the next update asks again.
-        if (state === "empty") card.wanted = null;
-      });
-      view.slots[slot] = card;
-    }
-    return card;
+    view.slots[slot] ||= createGlCard(scene, view.track, view.kind, view.size);
+    return view.slots[slot];
   }
 
   function updateProxy(rows, focus, sidebarIndex, hideFocus) {
@@ -740,15 +902,18 @@ export function createLightningHomeRenderer(
       for (let i = win.start; i < win.end; i += 1) {
         const item = row.items[i];
         const card = slotCard(view, slotFor(i, win.poolSize));
-        const changed = card.index !== i || card.rowKey !== row.key || card.item !== item;
+        const changed =
+          card.index !== i ||
+          card.rowKey !== row.key ||
+          card.item !== item ||
+          (row.kind === "continue" && card.version !== rowsVersion);
         if (changed) {
           card.item = item;
           card.index = i;
           card.rowKey = row.key;
-          const name = String(item.name || item.title || "");
-          card.title = scene.retext(card.title, name);
-          card.fallback = scene.retext(card.fallback, name);
+          card.version = rowsVersion;
           card.source = cardImage(row, item, size, layout, glImageUrl);
+          fillGlCard(scene, card, item, card.source);
         }
         card.node.alpha = 1;
         const focused = rowIndex === focus.row && i === focusIndex;
@@ -819,9 +984,7 @@ export function createLightningHomeRenderer(
     skeleton.ctrl?.stop(false);
     skeleton.ctrl = null;
     skeleton.node.alpha = on ? 1 : 0;
-    const constrained =
-      globalThis.document?.documentElement?.classList?.contains("performance-constrained");
-    if (!on || !motion.copy || constrained) return;
+    if (!on || !shimmers(motion)) return;
     skeleton.ctrl = skeleton.node.animate(
       { alpha: 0.55 },
       { duration: 1100, easing: "ease-in-out", loop: true, stopMethod: "reverse" }
@@ -902,6 +1065,7 @@ export function createLightningHomeRenderer(
       closed = true;
       heroQueue.clear();
       if (scene) {
+        views.forEach((view) => setRowSkeletons(scene, view, 0));
         scene.root.destroy();
         // Leaving Home (often for the player): free every texture the scene held.
         engine.renderer.stage.cleanup(true);

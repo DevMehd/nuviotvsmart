@@ -425,12 +425,88 @@
           });
           heroView.destroy();
 
+          // Lot W4a: a Continue Watching row (copy, badge, progress) and a loading row of skeleton
+          // cards, at homeLayout's positions; the skeletons give way to posters without titles.
+          const cwView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern" },
+            onFailure: (reason) => failures.push(reason)
+          });
+          const cwRow = {
+            key: "cw",
+            kind: "continue",
+            title: "Continue",
+            status: "success",
+            items: [0, 1, 2].map((n) => ({
+              contentId: `tt6${n}`,
+              type: "series",
+              title: `Show ${n}`,
+              season: 1,
+              episode: 2,
+              episodeTitle: "Pilot",
+              positionMs: 1500000,
+              durationMs: 6000000,
+              backdrop: red
+            }))
+          };
+          const loadingRow = { ...many("ld"), status: "loading", items: [], loadingCount: 5 };
+          const w4Rows = [cwRow, loadingRow];
+          const w4Focus = { row: 0, columns: {} };
+          cwView.setRows(w4Rows);
+          cwView.update(w4Rows, w4Focus, { sidebarIndex: -1 });
+          await settle("W4a scene", () => document.querySelector(".tv2-gl-canvas") && rowsLayer()?.children.length === 2);
+          const w4 = homeLayout(w4Rows, w4Focus, drawn(geometry));
+          const cwSize = geometry.continueCard;
+          const cwCard = cardAt(trackOf(0), 0);
+          assert(trackOf(0).x === 220 + w4.rows[0].win.offset, "continue row x");
+          assert(cwCard.w === cwSize.width && cwCard.h === cwSize.height, `continue card ${cwCard.w}×${cwCard.h}`);
+          const cwTop = () => 560 + rowsLayer().y + rowsLayer().children[0].y + trackOf(0).y;
+          const cwLeft = trackOf(0).x;
+          const badgeFrame = cwCard.children.find((node) => node.mountX === 1);
+          await settle("continue card drawn", () => {
+            lightning.stage.drawFrame();
+            return cwCard.children[0].src && pixelsAt(cwLeft + cwSize.width / 2, Math.round(cwTop() + 80))[0] > 200 && badgeFrame.w > 0;
+          });
+          assert(findText(cwCard, "Show 0") && findText(cwCard, "Pilot"), "title and episode title");
+          const green = (data) => Math.max(...Array.from({ length: data.length / 4 }, (_, i) => data[i * 4 + 1]));
+          const titleNode = findText(cwCard, "Show 0");
+          assert(green(pixelsAt(cwLeft + 24, Math.round(cwTop() + titleNode.y + 8), 150, 24)) > 150, "title drawn over the red art");
+          const progressY = Math.round(cwTop() + cwSize.height - 8 - 3);
+          const filled = pixelsAt(cwLeft + 30, progressY);
+          const rest = pixelsAt(cwLeft + 20 + Math.round(0.7 * (cwSize.width - 40)), progressY);
+          assert(filled[1] > 200 && rest[1] < 60, `progress 25 %: ${filled} / ${rest}`);
+          const badgeLeft = cwLeft + cwSize.width - 16 - badgeFrame.w;
+          const inBadge = pixelsAt(badgeLeft + 6, Math.round(cwTop() + 16 + 22));
+          const besideBadge = pixelsAt(badgeLeft - 10, Math.round(cwTop() + 16 + 22));
+          assert(inBadge[0] < 120 && besideBadge[0] > 200, `badge drawn: ${inBadge} / ${besideBadge}`);
+
+          const skeletons = trackOf(1).children[0];
+          assert(skeletons.children.length === 5, `5 skeleton cards: ${skeletons.children.length}`);
+          assert(skeletons.children[1].x === w4.rows[1].pitch && skeletons.children[1].w === width, "skeleton pitch and size");
+          assert(trackOf(1).x === 220 + w4.rows[1].win.offset, "loading row x");
+          assert(!findText(rowsLayer().children[1], "Loading"), "skeletons, no loading text");
+          const skeletonY = Math.round(560 + rowsLayer().y + rowsLayer().children[1].y + trackOf(1).y + 20);
+          assert(skeletonY < 1060, `skeleton row on screen: ${skeletonY}`);
+          lightning.stage.drawFrame();
+          const skeletonPixel = pixelsAt(240, skeletonY);
+          const background = pixelsAt(212, skeletonY);
+          assert(skeletonPixel[0] > background[0] + 4 && skeletonPixel[0] < 40, `skeleton card drawn: ${skeletonPixel} / ${background}`);
+          const loaded = [cwRow, many("ld")];
+          cwView.setRows(loaded);
+          cwView.update(loaded, w4Focus, { sidebarIndex: -1 });
+          assert(skeletons.destroyed || !trackOf(1).children.includes(skeletons), "items arrived: skeletons removed");
+          const posterCard = cardAt(trackOf(1), 0);
+          const posterTexts = (node) => [node, ...node.children.flatMap(posterTexts)].filter((child) => typeof child.text === "string" && child.text);
+          assert(posterTexts(posterCard).every((node) => node.alpha === 0), "posters carry no title");
+          cwView.destroy();
+
           assert(!failures.length, `WebGL fell back to DOM: ${failures.join(",")}`);
           // Failures are forgotten on leaving Home: the kept engine retries them on the next visit.
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade and hero copy (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards and skeletons (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;
