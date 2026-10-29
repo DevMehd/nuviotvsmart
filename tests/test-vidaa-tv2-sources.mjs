@@ -251,6 +251,20 @@ const lastFocus = (screen) => screen.calls.focus.at(-1);
   fresh.render();
   assert.equal(fresh.focusState.row, 0, "the first result is held while the user has not moved");
   assert.equal(fresh.calls.updates.at(-1).items[0].id, "early");
+  // A row set by the inherited search code (end of search, preferredStreamId) is kept, as in
+  // StreamScreen: the row indexes the rendered list, not the last row the view focused.
+  const preferred = createScreen();
+  preferred.focusState = { zone: "card", index: 7, row: 7, action: "play" };
+  preferred.render();
+  assert.equal(preferred.focusState.row, 7, "the row chosen by the search code is not replaced");
+  preferred.streams = [...early, ...streams];
+  preferred.streamUserMovedFocus = true;
+  preferred.render();
+  assert.equal(
+    preferred.calls.updates.at(-1).items[preferred.focusState.row].id,
+    "s7",
+    "and then follows its source key"
+  );
 }
 
 {

@@ -29,7 +29,6 @@ export const NewSourcesScreen = {
     }
     if (!this.sourcesRenderer) {
       this.renderedMarkup = null;
-      this.sourcesFocusKey = "";
       this.sourcesRenderer = createSourcesRenderer(this.container, {
         header: {
           ...this.getHeaderMeta(),
@@ -55,13 +54,10 @@ export const NewSourcesScreen = {
     // New earlier sources replace the initial first result; once the user moved, keep the source.
     const holdFirstResult =
       this.focusState?.zone === "card" && row === 0 && !this.streamUserMovedFocus;
-    if (
-      this.focusState?.zone === "card" &&
-      this.sourcesFocusKey &&
-      !holdFirstResult &&
-      !this.streamVirtualFocusReset
-    ) {
-      const index = keys.indexOf(this.sourcesFocusKey);
+    // As in StreamScreen, the focused row indexes the rendered list (inherited code may set it).
+    const focusedKey = this.focusState?.zone === "card" ? this.sourcesView?.keys[row] || "" : "";
+    if (focusedKey && !holdFirstResult && !this.streamVirtualFocusReset) {
+      const index = keys.indexOf(focusedKey);
       if (index >= 0) this.focusState = { ...this.focusState, row: index, index };
     }
     const pending = this.hasPendingSourceLoads();
@@ -86,14 +82,13 @@ export const NewSourcesScreen = {
     this.streamVirtualFocusReset = false;
   },
 
-  /** Clamps the focus to the current rows and chips and remembers the focused row key. */
+  /** Clamps the focus to the current rows and chips. */
   normalizeSourcesFocus() {
-    const { items, keys, chipKeys } = this.sourcesView;
+    const { items, chipKeys } = this.sourcesView;
     const focus = this.focusState || {};
     if (focus.zone === "card" && items.length) {
       const row = clamp(Number(focus.row || 0), 0, items.length - 1);
       this.focusState = { zone: "card", row, index: row, action: "play" };
-      this.sourcesFocusKey = keys[row];
     } else {
       const index =
         focus.zone === "filter"
@@ -219,7 +214,6 @@ export const NewSourcesScreen = {
     this.sourcesRenderer?.dispose();
     this.sourcesRenderer = null;
     this.sourcesView = null;
-    this.sourcesFocusKey = "";
   },
 
   cleanup() {
