@@ -435,6 +435,58 @@ function setup(options = {}) {
   assert.equal(session.url, URL_A);
 }
 
+// 10e. Review P3: a frame counter that stops while the time advances never turns a playing
+// video into an error; still time without data waits the start guard's patience, not 8 s.
+{
+  const notes = [];
+  const { clock, video, session } = setup({ note: (name) => notes.push(name) });
+  const replay = () => {
+    clock.advance(0);
+    video.emit("playing");
+    video.currentTime += 0.5;
+    video.emit("timeupdate");
+    assert.equal(session.state, "playing");
+  };
+  session.attach(URL_A);
+  replay();
+  video.readyState = 4;
+  let frames = 0;
+  video.getVideoPlaybackQuality = () => ({ totalVideoFrames: frames });
+  for (let round = 0; round < 3; round += 1) {
+    for (let i = 0; i < 3; i += 1) {
+      clock.advance(2000);
+      frames += 50;
+      video.currentTime += 2;
+    }
+    for (let i = 0; i < 5; i += 1) {
+      clock.advance(2000);
+      video.currentTime += 2;
+    }
+    if (round < 2) replay();
+  }
+  assert.equal(session.attaches, 3, "two reloads for stuck frames");
+  assert.equal(notes.filter((name) => name === "freezeFrames").length, 3);
+  assert.equal(session.state, "playing", "the third frames-only stall is noted, never an error");
+  for (let i = 0; i < 30; i += 1) {
+    clock.advance(2000);
+    video.currentTime += 2;
+  }
+  assert.equal(session.state, "playing");
+  assert.equal(session.attaches, 3, "a counter that stays still is no longer acted on");
+
+  const refill = setup();
+  refill.session.attach(URL_A);
+  refill.clock.advance(0);
+  refill.video.emit("playing");
+  refill.video.currentTime = 0.5;
+  refill.video.emit("timeupdate");
+  refill.video.readyState = 2; // no data, and the firmware sent no waiting
+  refill.clock.advance(20000);
+  assert.equal(refill.session.attaches, 1, "a silent refill is not an 8 s freeze");
+  refill.clock.advance(8000);
+  assert.equal(refill.session.attaches, 2, "still without data past the stall limit: one reload");
+}
+
 // 10d. Resume after a user pause plays again, never before the first image.
 {
   const { video, session } = setup();

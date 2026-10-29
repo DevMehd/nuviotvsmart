@@ -156,6 +156,16 @@
         assert(NewPlayerScreen.consumeBackRequest() === true, "Back closes stream info");
         assert(!container.querySelector(".player-stream-info-overlay") && !osd.hidden, "OSD back");
         assert(NewPlayerScreen.consumeBackRequest() === true && osd.hidden, "Back hides the OSD");
+        // Review P3: an error during playback closes stream info (drawn above it) and a pending
+        // preview, so OK never runs a hidden error action.
+        key(39);
+        key(457);
+        NewPlayerScreen.resolveError = { kind: "network" };
+        NewPlayerScreen.render();
+        assert(!container.querySelector(".player-stream-info-overlay") && !NewPlayerScreen.streamInfoVisible, "error closes stream info");
+        assert(osd.hidden && NewPlayerScreen.seekPreviewSeconds === null && uiTimersIdle(), "error drops the OSD and the preview");
+        NewPlayerScreen.resolveError = null;
+        NewPlayerScreen.render();
         const popsBefore = pops.length;
         assert(NewPlayerScreen.consumeBackRequest() === "history", "Back leaves");
         assert(NewPlayerScreen.consumeBackRequest() === "history", "doubled Back");

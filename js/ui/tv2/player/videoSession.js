@@ -133,10 +133,19 @@ export function createVideoSession(
       still.framesMoved = still.frames !== null && frames !== null;
       Object.assign(still, { frames, framesAt: t });
     }
-    const timeStuck = video.readyState >= 3 && t - still.timeAt >= freezeMs;
-    const framesStuck = still.framesMoved && t - still.framesAt >= freezeMs;
+    // Still time without data is a refill the firmware did not report (no waiting): the start
+    // guard's patience applies, not the 8 s freeze.
+    const timeStuck = t - still.timeAt >= (video.readyState >= 3 ? freezeMs : stallMs);
+    // Frames still while the time advances (the picture froze, the sound goes on).
+    const framesStuck =
+      still.framesMoved && t - still.framesAt >= freezeMs && t - still.timeAt < freezeMs;
     if (!timeStuck && !framesStuck) return;
     note(timeStuck ? "freezeTime" : "freezeFrames");
+    // The time still advances: an unreliable frame counter must never end a playing video.
+    if (!timeStuck && s.freezeReloads >= freezeReloads) {
+      still = null;
+      return;
+    }
     if (s.freezeReloads >= freezeReloads) {
       fail({ kind: "stalled" });
       return;

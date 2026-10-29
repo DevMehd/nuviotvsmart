@@ -333,6 +333,14 @@ export const NewPlayerScreen = {
     const session = this.session;
     if (!refs || !session) return;
     const error = this.currentError();
+    // The error owns the keys: stream info (above it) or a pending seek must not stay behind.
+    if (
+      error &&
+      (this.streamInfoVisible || this.controlsVisible || this.seekCommitTimer !== null)
+    ) {
+      this.closeStreamInfo({ restore: false });
+      this.resetOsdState();
+    }
     const loading = !error && !session.firstFrame;
     refs.loading.hidden = !loading;
     if (loading) {
