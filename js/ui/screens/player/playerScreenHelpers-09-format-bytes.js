@@ -342,7 +342,7 @@ export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadg
       chips.push(chip);
     }
   });
-  if (!matchedBadges.length && Environment.isVidaa()) {
+  if (!matchedBadges.length) {
     getStreamPresentationBadges(stream).forEach((label) => {
       chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
     });

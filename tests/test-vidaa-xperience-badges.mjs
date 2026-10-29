@@ -78,9 +78,20 @@ for (const preset of STREAM_BADGE_PRESETS) {
   for (const filter of rules.imports[0].filters)
     assert.ok(filter.imageURL.startsWith("https://cdn.xperience-app.com/badges/"));
 }
+// Off VIDAA (autoUsesPack false) AUTO keeps the imported rules; an explicit
+// pack still applies. On VIDAA AUTO without imports still resolves to Nard.
 assert.deepEqual(
-  resolveStreamBadgePresetRules({ personalBadgePreset: "NARD", rules: { imports: [] } }, false),
+  resolveStreamBadgePresetRules({ personalBadgePreset: "AUTO", rules: { imports: [] } }, false),
   { imports: [] }
+);
+assert.equal(
+  resolveStreamBadgePresetRules({ personalBadgePreset: "NARD", rules: { imports: [] } }, false),
+  resolveStreamBadgePresetRules({ personalBadgePreset: "NARD" }, true)
+);
+assert.equal(
+  resolveStreamBadgePresetRules({ personalBadgePreset: "AUTO", rules: { imports: [] } }, true)
+    .imports[0].filters.length,
+  106
 );
 assert.ok(
   getVisibleSections({ experience: { mode: "ESSENTIAL" } }).some(

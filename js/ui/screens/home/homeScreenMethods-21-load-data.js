@@ -118,7 +118,7 @@ export function createHomeScreenMethods21() {
       const routeInputSignature = this.buildHomeRouteInputSignature(addons);
 
       let restoredCatalogSnapshot = false;
-      if (Platform.isVidaa() && !background && !(this.rows || []).some((row) => row?.result?.status === "success")) {
+      if (!background && !(this.rows || []).some((row) => row?.result?.status === "success")) {
         const savedRows = uniqueCatalogDescriptors
           .map((catalog) => {
             const data = catalogRepository.getSavedCatalog?.(catalog);
@@ -297,7 +297,7 @@ export function createHomeScreenMethods21() {
           prefetchedResults,
           batchSize: this.getDeferredCatalogBatchSize(),
           shouldContinue: () => token === this.homeLoadToken && Router.getCurrent() === "home",
-          isBusy: () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.()),
+          isBusy: () => Boolean(this.isVidaaHomeLoadingBusy?.()),
           batchYieldMs: Platform.isVidaa() ? 120 : 0,
           // Publish completed rows independently; requestBackgroundRender keeps
           // the legacy-TV render delay and navigation deferral in effect.

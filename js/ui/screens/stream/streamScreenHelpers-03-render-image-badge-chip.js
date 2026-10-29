@@ -132,7 +132,7 @@ export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], 
       chips.push(chip);
     }
   });
-  if (!chips.length && Environment.isVidaa()) {
+  if (!chips.length) {
     getStreamPresentationBadges(stream).forEach((label) => {
       chips.push(`<span class="stream-route-stream-badge technical">${escapeHtml(label)}</span>`);
     });
@@ -170,7 +170,7 @@ export function hasStreamBadges(stream = {}, enabled = true, badgeSettings = nul
     return true;
   }
   return (
-    (Environment.isVidaa() && getStreamPresentationBadges(stream).length > 0) ||
+    getStreamPresentationBadges(stream).length > 0 ||
     getStreamImageBadges(stream, currentBadgeSettings).some((badge) => normalizeAddonLogoUrl(badge.imageURL))
   );
 }

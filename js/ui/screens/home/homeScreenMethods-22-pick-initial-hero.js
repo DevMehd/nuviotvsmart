@@ -166,7 +166,7 @@ export function createHomeScreenMethods22() {
       (async () => {
         for (let index = 0; index < pendingRows.length; index += retryBatchSize) {
           const shouldContinue = () => token === this.homeLoadToken && Router.getCurrent() === "home";
-          const isBusy = () => Platform.isVidaa() && Boolean(this.isVidaaHomeLoadingBusy?.());
+          const isBusy = () => Boolean(this.isVidaaHomeLoadingBusy?.());
           // The first retry batch starts at once; later ones yield on VIDAA (bounded loading).
           if (index === 0 && !isBusy()) {
             if (!shouldContinue()) return;
