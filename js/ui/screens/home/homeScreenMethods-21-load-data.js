@@ -298,7 +298,7 @@ export function createHomeScreenMethods21() {
           batchSize: this.getDeferredCatalogBatchSize(),
           shouldContinue: () => token === this.homeLoadToken && Router.getCurrent() === "home",
           isBusy: () => Boolean(this.isVidaaHomeLoadingBusy?.()),
-          batchYieldMs: Platform.isVidaa() ? 120 : 0,
+          batchYieldMs: this.isPerformanceConstrained() ? 120 : 0,
           // Publish completed rows independently; requestBackgroundRender keeps
           // the legacy-TV render delay and navigation deferral in effect.
           onRow: (row) => {

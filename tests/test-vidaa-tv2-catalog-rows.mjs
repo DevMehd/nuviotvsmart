@@ -17,7 +17,9 @@ let now = 100_000;
 let nextTimer = 0;
 const timers = new Map();
 Date.now = () => now;
+const timerDelays = [];
 globalThis.setTimeout = (callback, delay = 0) => {
+  timerDelays.push(Number(delay));
   const id = ++nextTimer;
   timers.set(id, { callback, at: now + Number(delay) });
   return id;
@@ -45,6 +47,7 @@ async function advance(ms) {
 
 const {
   Router,
+  Platform,
   addonRepository,
   catalogRepository,
   watchedItemsRepository,
@@ -66,6 +69,8 @@ const { buildVisibleHomeCatalogDescriptors } =
 const { formatCatalogRowTitle } = await import("../js/ui/screens/home/homeUtils.js");
 const { loadHomeRows } = await import("../js/ui/tv2/homeModel.js");
 const { Recommendations } = await import("../js/core/perso/personalRecommendations.js");
+const { resetTvRuntimePerformanceProfile, setTvPerformanceMode } =
+  await import("../js/platform/tvRuntimePerformance.js");
 
 const originals = [];
 function replace(object, key, value) {
@@ -247,7 +252,30 @@ try {
       (row.result?.data?.items || []).map((item) => item.id)
     );
   }
+
+  // Deferred batches yield 120 ms on constrained runtimes (the performance profile), not by platform:
+  // VIDAA auto as before, the node fixture's unidentified webOS now too, VIDAA "full" never.
+  for (const [platform, mode, yields] of [
+    ["vidaa", "auto", true],
+    ["webos", "auto", true],
+    ["vidaa", "full", false]
+  ]) {
+    globalThis.__NUVIO_PLATFORM__ = platform;
+    Platform.current = null;
+    setTvPerformanceMode(mode);
+    resetTvRuntimePerformanceProfile();
+    timerDelays.length = 0;
+    let finished = false;
+    const done = loadHomeRows({ onRows() {} }).then(() => (finished = true));
+    for (let step = 0; step < 40 && !finished; step++) await advance(500);
+    await done;
+    assert.equal(timerDelays.includes(120), yields, `${platform} ${mode}`);
+  }
 } finally {
+  globalThis.__NUVIO_PLATFORM__ = "vidaa";
+  Platform.current = null;
+  setTvPerformanceMode("auto");
+  resetTvRuntimePerformanceProfile();
   for (const [object, name, value] of originals.reverse()) object[name] = value;
 }
 

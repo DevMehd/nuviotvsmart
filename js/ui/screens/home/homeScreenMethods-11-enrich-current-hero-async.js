@@ -305,7 +305,7 @@ export function createHomeScreenMethods11() {
       return Boolean(firstNonEmpty(this.getNodeHeroSource(node)?.heroVideoUrl));
     },
     hydrateCollectionFocusGif(node, active = false) {
-      setHomeCollectionFocusGif(this, node, active, Platform.isVidaa() ? 100 : 0);
+      setHomeCollectionFocusGif(this, node, active, this.isPerformanceConstrained?.() ? 100 : 0);
     },
     syncFocusedCollectionCardState() {
       const focused = this.getCurrentFocusedNode();
