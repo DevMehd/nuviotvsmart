@@ -429,5 +429,25 @@ const settings = (partial) => PlayerSettingsStore.set(partial);
   settings({ autoSkipSegmentTypes: [] });
 }
 
+// 12. P7: a Party guest neither auto-skips nor starts the next episode; asked by the user, the
+// screen is told to say why (partyLocked(true)).
+{
+  settings({ skipIntroEnabled: true, autoSkipSegmentTypes: ["intro"] });
+  const asked = [];
+  const { video, next, log } = setup({
+    skip: [{ type: "intro", startTime: 30, endTime: 90 }],
+    host: { partyLocked: (notify = false) => (asked.push(notify), true) }
+  });
+  await flushAsync();
+  video.at(31);
+  assert.deepEqual(log.seek, [], "no auto-skip for a guest");
+  assert.equal(await next.play({ userInitiated: true }), false);
+  assert.equal(await next.play(), false);
+  assert.deepEqual(asked.slice(-2), [true, false]);
+  assert.equal(log.navigate.length, 0);
+  next.destroy();
+  settings({ autoSkipSegmentTypes: [] });
+}
+
 mock.timers.reset();
 console.log("PASS: VIDAA player2 next episode and skip intro (P6)");

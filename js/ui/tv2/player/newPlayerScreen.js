@@ -40,15 +40,18 @@ import { SOURCE_WINDOW, createPlayerSources, sourceWindowStart } from "./playerS
 import { loadStreamingLibs } from "../../../runtime/loadStreamingLibs.js";
 import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
 import { createPlayerNext } from "./playerNext.js";
+import { createPlayerPartyMethods } from "../../screens/player/playerParty.js";
+import { PartyRepository } from "../../../core/party/partyRepository.js";
 
 // New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
 // switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js); OSD, seek preview,
 // media keys, buffering and the Back order (P3, playerOsd.js); audio and subtitle tracks with
 // their real names (P4, playerTracks.js); in-player Sources and the user's source switch (P5,
 // playerSourcesPanel.js), HLS with headers through hls.js on demand; next episode and skip
-// intro (P6, playerNext.js). Same route "player", params and screen contract as the old player
-// (router facade). Never imports playerScreenMethods-* or playerScreenContext (asserted by the
-// VIDAA build). Deferred to P7: Watch Party (whose restore will take priority over the route's).
+// intro (P6, playerNext.js); Watch Party (P7) through the old player's own party mixin
+// (playerParty.js) over this screen's playback contract. Same route "player", params and screen
+// contract as the old player (router facade). Never imports playerScreenMethods-* or
+// playerScreenContext (asserted by the VIDAA build).
 
 const t = (key, params = [], fallback = key) => I18n.t(key, params, { fallback });
 const ERROR_ACTIONS = ["sources", "retry", "back"];
@@ -153,12 +156,22 @@ const ROOT_HTML = `
         <button type="button" class="p2-error-button" data-p2-action="back"></button>
       </div>
     </div>
-  </div>${OSD_HTML}`;
+  </div>
+  <div class="player-aspect-toast p2-toast hidden"></div>${OSD_HTML}`;
 
 export const NewPlayerScreen = {
   // Stream info (i) overlay of the old player, shared as is; it drives the OSD through the
   // setControlsVisible / resetControlsAutoHide / clearControlsAutoHide names below.
   ...StreamInfoMethods,
+  // Watch Party of the old player as is (P7): pill, side panel, sync tick, guest lock.
+  ...createPlayerPartyMethods(),
+  // Drift is corrected by a seek, never by speed: a rate other than 1 can break TrueHD passthrough.
+  partyNudgeSupported() {
+    return false;
+  },
+  partyPanelVisible: false,
+  // Forwardable request headers of the source playing (HLS through hls.js), shared by the Party.
+  playbackHeaders: {},
   container: null,
   params: {},
   video: null,
@@ -209,13 +222,47 @@ export const NewPlayerScreen = {
   get paused() {
     return this.session?.state === "paused";
   },
+  // The party mixin writes paused after its own pause/resume: the session state stays the truth.
+  set paused(_) {},
+  // Fields the party mixin reads, derived from the session.
+  get hasPresentedPlaybackFrame() {
+    return Boolean(this.session?.firstFrame);
+  },
+  get loadingVisible() {
+    return Boolean(this.session) && !this.session.firstFrame && !this.isErrorVisible();
+  },
+  get bufferingActive() {
+    return this.session?.state === "buffering";
+  },
+  get activePlaybackUrl() {
+    return this.session?.url || "";
+  },
+  get uiRefs() {
+    return { root: this.root, aspectToast: this.refs?.toast || null };
+  },
+  // The party panel closes the other panels through these names.
+  get sourcesPanelVisible() {
+    return this.trackPanel === "sources";
+  },
+  get audioDialogVisible() {
+    return this.trackPanel === "audio";
+  },
+  closeSourcesPanel() {
+    if (this.trackPanel === "sources") this.closeTrackPanel();
+  },
+  closeAudioDialog() {
+    if (this.trackPanel === "audio") this.closeTrackPanel();
+  },
+  currentPlaybackHeaders() {
+    return this.playbackHeaders;
+  },
 
   // saveReusableStreamLink calls it without a token.
   isActiveMountToken(token = this.playerMountToken) {
     return token === this.playerMountToken && Router.current === "player";
   },
 
-  async mount(params = {}) {
+  async mount(params = {}, navigationContext = {}) {
     const token = ++this.playerMountToken;
     this.params = params || {};
     this.playerBackNavigationInProgress = false;
@@ -270,6 +317,7 @@ export const NewPlayerScreen = {
     this.sources.include(this.candidate);
     this.streamLinkCacheProfileId = activeStreamLinkProfile();
     this.pendingPlaybackRestore = buildPendingPlaybackRestore(this.params);
+    this.playbackHeaders = {};
     this.progressContext = null;
     WatchJournal.finish(this.personalWatchRun);
     this.personalWatchRun = WatchJournal.start(this.params);
@@ -302,18 +350,22 @@ export const NewPlayerScreen = {
           this.controlsVisible || Boolean(this.trackPanel) || this.streamInfoVisible,
         hideControls: () => this.setControlsVisible(false),
         currentStream: () => this.candidate,
-        seek: (seconds) => this.seekPlaybackSeconds(seconds),
+        seek: (seconds) => this.userSeek(seconds),
         pause: () => this.session?.pause(),
         // Old playNextEpisode: flush with a cloud push before the next route.
         flush: () => this.progress?.flush({ force: true }),
         navigate: (route, params, options) => Router.navigate(route, params, options),
         // Still watching "Exit" and a natural end without autoplay: Detail, like the old player.
         leave: () => this.navigateBackToStreamScreen({ forceDetail: true }),
-        // shortcut: no Watch Party lock before P7, which wires isPartyControlLocked here.
-        partyLocked: () => false
+        // A Party guest neither skips nor starts the next episode; asked by the user, it says why.
+        partyLocked: (notify = false) =>
+          notify ? this.partyBlocksControl() : this.isPartyControlLocked()
       },
       { root: this.root }
     );
+    // A party on this title sets the start position (pendingPlaybackRestore) and starts its tick.
+    this.bindParty(navigationContext);
+    this.loadPartyProfile();
     this.render();
     // The Router awaits mount: resolution and playback continue after it returns.
     void this.startCandidate(token);
@@ -376,12 +428,16 @@ export const NewPlayerScreen = {
     // Each started source, like the old 35:233 (a synthetic link has no id and is skipped).
     rememberSelectedStreamPreference(this.params, this.candidate);
     saveReusableStreamLink(this, this.candidate, { url: result.url });
-    // A newer media server position wins over the route's (old player 35:44-53), not over the
-    // position of a source the user is switching from.
+    // Where the Party is now wins over the route's position; a newer media server position wins
+    // over the route's (old player 35:44-53). Neither overrides a source the user switches from.
+    const partyMs = switching ? null : this.partyResumePositionMs();
     const restore =
-      !switching && result.serverResumeMs > 0
-        ? { timeSeconds: result.serverResumeMs / 1000 }
-        : this.pendingPlaybackRestore;
+      partyMs != null
+        ? { timeSeconds: partyMs / 1000 }
+        : !switching && result.serverResumeMs > 0
+          ? { timeSeconds: result.serverResumeMs / 1000 }
+          : this.pendingPlaybackRestore;
+    this.playbackHeaders = result.headers || {};
     this.tracks.reset(result.url);
     this.session.attach(result.url, {
       ...restoreStartOptions(restore),
@@ -391,6 +447,15 @@ export const NewPlayerScreen = {
 
   /** Leaving playback: save, journal, scrobble cancel, rating offer; before the decoder is freed. */
   finishPlayback() {
+    // The Party reads the position before the decoder is freed, once (Android stopAndRelease).
+    if (this.partyUnsubscribers?.length) {
+      try {
+        this.leavePartyPlayback();
+      } catch (_) {}
+      try {
+        this.unbindParty();
+      } catch (_) {}
+    }
     if (!this.progress?.exit()) return;
     maybeOfferRatingAfterPlayback(
       { params: this.params, episodes: this.params?.episodes },
@@ -413,6 +478,7 @@ export const NewPlayerScreen = {
       error: q(".p2-error"),
       errorTitle: q(".p2-error-title"),
       errorMessage: q(".p2-error-message"),
+      toast: q(".p2-toast"),
       buttons: [...root.querySelectorAll("[data-p2-action]")]
     };
     const params = this.params;
@@ -463,6 +529,7 @@ export const NewPlayerScreen = {
     // The error owns the keys: stream info (above it) or a pending seek must not stay behind.
     // The Sources panel stays: it is the error's own way out.
     const keepSources = this.trackPanel === "sources";
+    if (error && this.partyPanelVisible) this.dismissPartyPanel();
     if (
       error &&
       (this.streamInfoVisible ||
@@ -565,6 +632,8 @@ export const NewPlayerScreen = {
         this.runErrorAction(ERROR_ACTIONS[this.errorFocus]);
       return;
     }
+    // The party panel owns every key while it is open (it may open during a loading).
+    if (this.partyPanelVisible && this.handlePartyPanelKey(event)) return;
     // Loading: only Back acts (FocusEngine -> consumeBackRequest).
     if (!this.session?.firstFrame) return;
     // Still watching owns the keys; OK on the next episode card or the skip button acts on it.
@@ -638,12 +707,13 @@ export const NewPlayerScreen = {
       const step = keyCode === 39 ? 1 : -1;
       this.controlFocusIndex = Math.max(
         0,
-        Math.min(OSD_ACTIONS.length - 1, this.controlFocusIndex + step)
+        Math.min(this.osdActionCount() - 1, this.controlFocusIndex + step)
       );
     } else if (keyCode === 38) this.controlFocusZone = "";
     else if (isSelectKey(keyCode) && !event?.repeat) {
       const action = OSD_ACTIONS[this.controlFocusIndex];
-      if (action === "sources") this.openSourcesPanel();
+      if (action === "party") this.togglePartyPanel();
+      else if (action === "sources") this.openSourcesPanel();
       else this.openTrackPanel(action);
       return;
     }
@@ -934,15 +1004,24 @@ export const NewPlayerScreen = {
     this.osdTickTimer = null;
   },
 
+  osdActionCount() {
+    return OSD_ACTIONS.length - (this.isPartyButtonAvailable() ? 0 : 1);
+  },
+
   renderOsd() {
+    const count = this.osdActionCount();
+    if (this.controlFocusIndex >= count) this.controlFocusIndex = count - 1;
     this.osd?.update({
       visible: this.controlsVisible && Boolean(this.session?.firstFrame),
       paused: Boolean(this.video?.paused),
       current: this.getPlaybackCurrentSeconds(),
       duration: this.getPlaybackDurationSeconds(),
       preview: this.seekPreviewSeconds,
-      action: this.controlFocusZone === "actions" ? this.controlFocusIndex : -1
+      action: this.controlFocusZone === "actions" ? this.controlFocusIndex : -1,
+      party: count < OSD_ACTIONS.length ? 0 : PartyRepository.getState().party ? 2 : 1
     });
+    // The pill follows the OSD (shown with it, or alone for a notice).
+    this.renderPartyPill();
     // The card and the skip button give way to the OSD and its panels.
     this.next?.render();
   },
@@ -975,7 +1054,8 @@ export const NewPlayerScreen = {
       this.paused ||
       this.seekPreviewSeconds != null ||
       this.streamInfoVisible ||
-      this.trackPanel
+      this.trackPanel ||
+      this.partyPanelVisible
     )
       return;
     this.osdHideTimer = setTimeout(() => {
@@ -986,9 +1066,24 @@ export const NewPlayerScreen = {
 
   togglePause() {
     if (!this.session?.firstFrame || this.isErrorVisible()) return;
-    if (this.video?.paused) this.session.resume();
+    // A Party guest only pauses for itself (and falls behind) or resumes from behind.
+    if (this.isPartyControlLocked()) {
+      this.toggleOwnPlayback();
+      return;
+    }
+    const wasPaused = Boolean(this.video?.paused);
+    if (wasPaused) this.session.resume();
     else this.session.pause();
     this.setControlsVisible(true);
+    this.publishPartyPlayback({ paused: !wasPaused });
+  },
+
+  // A user seek (seek preview, skip intro): a Party guest may only fall behind; then published.
+  userSeek(seconds) {
+    const targetMs = this.partyUserSeekTarget(Math.round(Number(seconds) * 1000));
+    if (targetMs == null || !this.seekPlaybackSeconds(targetMs / 1000)) return false;
+    this.publishPartyPlayback({ positionMs: targetMs });
+    return true;
   },
 
   beginSeekPreview(direction, repeat = false) {
@@ -1016,7 +1111,7 @@ export const NewPlayerScreen = {
     this.seekPreviewDirection = 0;
     this.seekRepeatCount = 0;
     this.seekOpenedOsd = false;
-    if (target != null) this.seekPlaybackSeconds(target);
+    if (target != null) this.userSeek(target);
     this.resetControlsAutoHide();
     this.renderOsd();
   },
@@ -1046,7 +1141,8 @@ export const NewPlayerScreen = {
     const action = target?.closest?.("[data-p2-action]")?.dataset?.p2Action;
     if (action && this.isErrorVisible()) this.runErrorAction(action);
     const panel = target?.closest?.("[data-p2-osd]")?.dataset?.p2Osd;
-    if (panel === "sources" && !this.isErrorVisible()) this.openSourcesPanel();
+    if (panel === "party" && !this.isErrorVisible()) this.togglePartyPanel();
+    else if (panel === "sources" && !this.isErrorVisible()) this.openSourcesPanel();
     else if (panel && !this.isErrorVisible()) this.openTrackPanel(panel);
     const item = target?.closest?.("[data-p2-item]")?.dataset?.p2Item;
     if (item != null && this.trackPanel) this.chooseTrack(Number(item));
@@ -1055,11 +1151,15 @@ export const NewPlayerScreen = {
   onPointerFocus() {},
   onPointerMove() {},
 
-  // Back order: panel, seek preview, still watching / next card / skip intro, visible OSD, then
-  // leave.
+  // Back order: party panel, panel, seek preview, still watching / next card / skip intro,
+  // visible OSD, then leave.
   // Loading and error leave once the panel (Sources over the error) is closed;
   // navigateBackToStreamScreen locks a doubled Back.
   consumeBackRequest() {
+    if (this.partyPanelVisible && !this.playerBackNavigationInProgress) {
+      this.dismissPartyPanel();
+      return true;
+    }
     if (this.trackPanel && !this.playerBackNavigationInProgress) {
       this.closeTrackPanel();
       return true;
@@ -1086,6 +1186,7 @@ export const NewPlayerScreen = {
   // Same list as the old player: a visible OSD alone lets a history Back return to Sources.
   hasBackDismissableOverlay() {
     return Boolean(
+      this.partyPanelVisible ||
       this.trackPanel ||
       this.streamInfoVisible ||
       this.seekPreviewSeconds != null ||
@@ -1261,8 +1362,9 @@ export const NewPlayerScreen = {
   getPlaybackControlPaused() {
     return this.paused;
   },
+  // Only the Party host changes it (no speed control in the new player).
   getPlaybackSpeed() {
-    return 1;
+    return Number(this.video?.playbackRate) || 1;
   },
   seekPlaybackSeconds(seconds) {
     const target = Number(seconds);
@@ -1286,7 +1388,7 @@ export const NewPlayerScreen = {
   renderControlButtons() {
     this.renderOsd();
   },
-  // Phone remote "next episode" (and the Watch Party in P7).
+  // Phone remote "next episode" and the Watch Party (host moving to the next episode).
   resolveNextEpisodeInfo() {
     return this.next?.info() || null;
   },
@@ -1366,6 +1468,9 @@ export const NewPlayerScreen = {
       this.sources = null;
       this.sourcesStatus = null;
       this.personalWatchRun = null;
+      this.partyPanelVisible = false;
+      clearTimeout(this.aspectToastTimer);
+      this.partyRefs = null;
       this.root?.remove();
       this.root = null;
       this.refs = null;

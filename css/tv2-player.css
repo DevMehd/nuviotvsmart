@@ -433,3 +433,8 @@
     transform: scaleX(1);
   }
 }
+
+/* Watch Party messages (P7): the old player's toast, hidden by display:none, not by opacity. */
+.p2-toast.hidden {
+  display: none;
+}

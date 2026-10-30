@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <title>VIDAA new player P7 Watch Party (real Chrome media pipeline)</title>
+  <link rel="stylesheet" href="../css/tv2-player.css" />
+  <style>
+    #player { position: fixed; inset: 0; display: none; background: #000; }
+    #videoPlayer { position: absolute; inset: 0; width: 100%; height: 100%; }
+  </style>
+  <body>
+    <div id="app">
+      <div id="player" class="screen">
+        <video id="videoPlayer" autoplay playsinline webkit-playsinline preload="auto"></video>
+      </div>
+    </div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot P, P7: Watch Party on the new player, as a guest of a host-only party on the same
+      // title (PartyRepository stubbed, no network). The start follows the party position, the
+      // OSD shows the party button and its panel, Back closes the panel first, a seek ahead of
+      // the party is refused with a message, OK pauses only this TV (behind) without publishing,
+      // and leaving reports Browsing and stops the tick. Desktop behavior only: a 30 min party
+      // between the phone and the TV, drift and the tick cost during a 4K playback are TV checks.
+      import { Router } from "../js/ui/navigation/routerState.js";
+      import { NewPlayerScreen } from "../js/ui/tv2/player/newPlayerScreen.js";
+      import { PlayerController } from "../js/core/player/playerController.js";
+      import { PartyRepository } from "../js/core/party/partyRepository.js";
+      import { subtitleRepository } from "../js/data/repository/subtitleRepository.js";
+
+      const result = document.getElementById("result");
+      const video = document.getElementById("videoPlayer");
+      const container = document.getElementById("player");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (predicate, ms, label) => {
+        const until = performance.now() + ms;
+        while (!predicate()) {
+          if (performance.now() > until) throw Error(`timeout: ${label}`);
+          await sleep(25);
+        }
+      };
+      const key = (keyCode) => NewPlayerScreen.onKeyDown({ keyCode, preventDefault() {}, stopPropagation() {} });
+      const notes = [];
+      const published = [];
+      const statuses = [];
+      const party = {
+        id: "p1",
+        code: "ABC234",
+        memberId: "m2",
+        hostMemberId: "m1",
+        members: [
+          { id: "m1", display_name: "Host" },
+          { id: "m2", display_name: "Guest" }
+        ],
+        presence: {},
+        media: { type: "movie", meta_id: "tt0000007", meta_type: "movie", title: "Party" },
+        mediaKey: "movie|tt0000007||",
+        maxMembers: 3,
+        connected: true,
+        hostOnly: true,
+        sharing: false
+      };
+      const playback = { paused: false, position_ms: 40000, rate: 1, at: Date.now(), seq: 1, member_id: "m1" };
+      Object.assign(PartyRepository, {
+        getState: () => ({ party }),
+        getPlayback: () => playback,
+        nowMs: () => Date.now(),
+        isAvailable: () => true,
+        canUse: () => true,
+        getProfile: async () => null,
+        publishPlayback: (paused, positionMs) => published.push({ paused, positionMs }),
+        setLocalStatus: (status) => statuses.push(status),
+        publishMedia: async () => {},
+        shareStream: () => {},
+        subscribeState: () => () => {},
+        subscribePlayback: () => () => {},
+        subscribeAvailable: () => () => {},
+        subscribeNotices: () => () => {},
+        subscribeEvents: () => () => {}
+      });
+      const pill = () => container.querySelector("#playerPartyPill");
+      const partyPanel = () => container.querySelector("#playerPartyPanel");
+      const partyButton = () => container.querySelector('[data-p2-osd="party"]');
+      try {
+        Router.current = "player";
+        Router.popToExistingRoute = () => true;
+        Router.navigate = async () => {};
+        subtitleRepository.getSubtitles = async () => [];
+        // app.js init() on the TV: the idle controller holds the same <video>.
+        PlayerController.video = video;
+        await NewPlayerScreen.mount({
+          itemId: "tt0000007",
+          itemType: "movie",
+          playerTitle: "Party",
+          resumePositionMs: 5000,
+          streamUrl: new URL("/__player2/range?f=series-130s.webm", location.href).href
+        });
+        const session = () => NewPlayerScreen.session;
+
+        // 1. The start follows the party (40 s), not the route's 5 s; the tick runs.
+        await waitFor(() => session()?.firstFrame, 8000, "first image");
+        assert(video.currentTime >= 39, `party position (${video.currentTime.toFixed(2)})`);
+        assert(NewPlayerScreen.partySyncTimer, "sync tick running");
+        await waitFor(() => statuses.includes("ready"), 3000, "status Ready");
+        notes.push(`start ${video.currentTime.toFixed(1)} s`);
+
+        // 2. OSD: the pill shows with it; Down, Right x3 reaches the party button; OK opens the panel.
+        key(40);
+        assert(!pill().classList.contains("hidden"), "pill with the OSD");
+        assert(!partyButton().hidden, "party button shown");
+        key(40);
+        key(39);
+        key(39);
+        key(39);
+        assert(partyButton().classList.contains("focused"), "party button focused");
+        key(13);
+        assert(NewPlayerScreen.partyPanelVisible && !partyPanel().classList.contains("hidden"), "party panel open");
+        assert(pill().classList.contains("hidden"), "pill hidden under the panel");
+        assert(partyPanel().querySelector(".party-code-section") && partyPanel().textContent.includes("Host"), "code and members in the panel");
+        key(40);
+        assert(NewPlayerScreen.partyPanelVisible, "the panel owns the keys");
+
+        // 3. Back closes the panel first, then the OSD.
+        assert(NewPlayerScreen.consumeBackRequest() === true && partyPanel().classList.contains("hidden"), "Back closes the panel");
+        assert(NewPlayerScreen.consumeBackRequest() === true && !NewPlayerScreen.controlsVisible, "then the OSD");
+
+        // 4. A seek ahead of the party is refused, with the message.
+        const before = video.currentTime;
+        key(39);
+        NewPlayerScreen.onKeyUp({ keyCode: 39, preventDefault() {} });
+        await sleep(100);
+        assert(video.currentTime < before + 5, `no jump ahead (${before.toFixed(1)} -> ${video.currentTime.toFixed(1)})`);
+        assert(!container.querySelector(".p2-toast").classList.contains("hidden"), "message shown");
+
+        // 5. OK pauses this TV only: behind, nothing published; OK again resumes.
+        key(38);
+        NewPlayerScreen.setControlsVisible(false);
+        key(13);
+        await waitFor(() => video.paused && NewPlayerScreen.paused, 2000, "own pause");
+        assert(NewPlayerScreen.partyBehind, "behind the party");
+        assert(published.length === 0, `a guest publishes nothing (${published.length})`);
+        key(13);
+        await waitFor(() => !video.paused, 2000, "resumed");
+
+        // 6. Leaving: Browsing, tick stopped, party nodes gone with the overlay.
+        NewPlayerScreen.cleanup();
+        assert(statuses.at(-1) === "browsing", `left (${statuses.at(-1)})`);
+        assert(!NewPlayerScreen.partySyncTimer, "tick stopped");
+        assert(!container.querySelector("#playerPartyPanel"), "party UI removed");
+        assert(!video.getAttribute("src"), "decoder freed");
+
+        result.dataset.status = "passed";
+        result.textContent = `PASS: new player P7 Watch Party (${notes.join(", ")}; desktop, not a TV measure)`;
+      } catch (error) {
+        result.dataset.status = "failed";
+        result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;
+      }
+    </script>
+  </body>
+</html>

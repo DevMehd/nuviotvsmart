@@ -1,5 +1,6 @@
 // OSD of the new VIDAA player (lot P, P3): title, progress, seek preview, clock and end time;
-// Audio and Subtitles buttons and their track panel (P4); Sources button (P5) in the same panel.
+// Audio and Subtitles buttons and their track panel (P4); Sources button (P5) in the same panel;
+// Watch Party button (P7), shown only when a party can be used, which opens the party's panel.
 // Hidden = hidden attribute (display:none). The progress bar moves by transform: scaleX only, and
 // the DOM is written only when a displayed string or ratio changes. No timer of its own: the
 // screen updates it at 1 Hz while it is visible.
@@ -88,6 +89,7 @@ export const OSD_HTML = `
         <button type="button" class="p2-osd-action" data-p2-osd="audio"></button>
         <button type="button" class="p2-osd-action" data-p2-osd="subtitles"></button>
         <button type="button" class="p2-osd-action" data-p2-osd="sources"></button>
+        <button type="button" class="p2-osd-action" data-p2-osd="party" hidden></button>
       </div>
     </div>
   </div>
@@ -97,7 +99,8 @@ export const OSD_HTML = `
     <div class="p2-panel-list"></div>
   </div>`;
 
-export const OSD_ACTIONS = ["audio", "subtitles", "sources"];
+// The last one (party) only while the Watch Party can be used.
+export const OSD_ACTIONS = ["audio", "subtitles", "sources", "party"];
 
 export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
   const q = (selector) => root.querySelector(selector);
@@ -118,7 +121,8 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
   const actionLabels = {
     audio: t("audio_dialog_title", [], "Audio"),
     subtitles: t("subtitle_dialog_title", [], "Subtitles"),
-    sources: t("sources_title", [], "Sources")
+    sources: t("sources_title", [], "Sources"),
+    party: t("party_title", [], "Watch party")
   };
   for (const button of refs.actions) button.textContent = actionLabels[button.dataset.p2Osd];
   q(".p2-osd-title").textContent = title;
@@ -138,11 +142,17 @@ export function createPlayerOsd(root, { title = "", subtitle = "" } = {}) {
     el,
     /**
      * view: { visible, paused, current, duration, preview, action } (seconds; preview null when
-     * none; action: index of the focused button, -1 when the focus is on the bar).
+     * none; action: index of the focused button, -1 when the focus is on the bar; party: 0 no
+     * party button, 1 shown, 2 shown while a party is on).
      */
-    update({ visible, paused, current, duration, preview = null, action = -1 }) {
+    update({ visible, paused, current, duration, preview = null, action = -1, party = 0 }) {
       write("visible", Boolean(visible), (value) => (el.hidden = !value));
       if (!visible) return;
+      write("party", party, (value) => {
+        const button = refs.actions[OSD_ACTIONS.indexOf("party")];
+        button.hidden = !value;
+        button.classList.toggle("is-party-active", value === 2);
+      });
       write("action", action, (value) =>
         refs.actions.forEach((button, index) => button.classList.toggle("focused", index === value))
       );

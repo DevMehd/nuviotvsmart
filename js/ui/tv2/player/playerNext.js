@@ -269,7 +269,8 @@ const NEXT_HTML = `
 /**
  * host: { params, isActive(), firstFrame(), fatal(), osdVisible(), hideControls(),
  * currentStream(), seek(seconds), pause(), flush(), navigate(route, params, options), leave(),
- * partyLocked() }. root: the player overlay (null in node: state only).
+ * partyLocked(notify) }. seek is a user seek (Party rules apply); partyLocked(true) also tells
+ * a Party guest why. root: the player overlay (null in node: state only).
  */
 export function createPlayerNext(
   video,
@@ -462,7 +463,6 @@ export function createPlayerNext(
     if (!Number.isFinite(target)) return false;
     suppressedKey = skipKey(active);
     suppressedUntil = now() + SKIP_SEEK_SUPPRESSION_MS;
-    // shortcut: a Party guest's skip goes through seek like any seek, Party target rules come with P7.
     host.seek(total > 0 ? Math.min(target, total) : target);
     skipDismissed = true;
     active = null;
@@ -775,7 +775,7 @@ export function createPlayerNext(
    * and the video instead of leaving for the Sources screen (the old player opened a panel).
    */
   async function play({ userInitiated = false, pickOnMiss = true } = {}) {
-    if (destroyed || host.partyLocked()) return false;
+    if (destroyed || host.partyLocked(userInitiated)) return false;
     const next = info();
     if (!next?.videoId || next.hasAired === false || launch) return false;
     const settings = PlayerSettingsStore.get();
