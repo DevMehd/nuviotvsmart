@@ -2,30 +2,38 @@ import { glImageUrl } from "../../imagePipeline.js";
 
 // Hero copy of the WebGL Home (lot W3): logo or title, two meta lines, description, laid out in
 // Lightning nodes from the widths each text node reports on `loaded`, bottom-up above the rows.
-// Mobile reference HomeHeroSection.kt / HomeHeroMetaRows.kt, TV sizes ≈ dp × 2 and sp × 1.75–2.
+// Sizes, colors and gaps of the DOM modern hero (components-16/17.css, measured in headless Chrome
+// at 1920×1080: brand box, meta lines, description); weight 500 is drawn in 400 (no 500 atlas).
 
 export const HERO_COPY = {
   x: 220,
-  // DOM copy bottom: 1080 − 561.6 (rows viewport) − 32.
-  bottom: 486,
-  width: 1000,
-  // Mobile logo box (ratio 2.6), Fit, left aligned.
-  logo: { w: 600, h: 230, width: 480 },
-  title: { fontSize: 64, lineHeight: 76, maxLines: 2 },
-  // Meta line height, also the badge height.
-  line: 40,
-  meta: 26,
-  dot: 6,
-  // Between a token and a dot (mobile 8 dp around a 4 dp dot).
-  gap: 14,
-  // 14 dp before the meta, 10 dp under it.
-  brandGap: 28,
-  lineGap: 12,
-  descriptionGap: 20,
-  description: { fontSize: 26, lineHeight: 36, maxLines: 2, alpha: 0.72 },
-  badge: { padX: 16, fontSize: 22, border: 2, radius: 12, alpha: 0.55 },
-  imdb: { w: 48, h: 24, gap: 10, color: 0xf5c518ff },
-  rating: { icon: 36, imdbIcon: 48, gap: 12, between: 28 }
+  // DOM .home-modern-hero-copy box: top safe 40, bottom at 468; its column ends at the bottom.
+  top: 40,
+  bottom: 468,
+  // --modern-hero-copy-max-width: 42 % of 1920.
+  width: 806,
+  // --modern-hero-copy-gap between brand, meta lines and description.
+  gap: 14.72,
+  // .home-hero-logo: 440×200 box, contain, left center.
+  logo: { w: 440, h: 200 },
+  title: { fontSize: 51.52, lineHeight: 66.24, maxLines: 2, letterSpacing: -1.55 },
+  // Meta line height; 40 with a badge (.home-modern-hero-badge min-height).
+  line: 32,
+  badgeLine: 40,
+  meta: 24,
+  // .home-modern-hero-meta-line and .home-hero-imdb color.
+  metaColor: 0xb3b3b3ff,
+  // .home-hero-dot: a 7 px "•" at white 0.34, 43 px from token to token (16 + 11 + 16).
+  dot: 7,
+  dotGap: 18,
+  description: { fontSize: 25.2, lineHeight: 36, maxLines: 4, letterSpacing: 0.5 },
+  badge: { padX: 18, fontSize: 18, border: 1, radius: 12, letterSpacing: 0.54 },
+  imdb: { w: 40, h: 20, gap: 10 },
+  rating: { icon: 36, imdbIcon: 48, gap: 12, between: 28 },
+  // A new title: the copy rises from 0.7 and 5 px (homeScreenMethods-05 keyframes), the logo
+  // fades as the constrained DOM .home-hero-logo.
+  swap: { duration: 160, easing: "ease-out", alpha: 0.7, y: 5 },
+  logoFade: { duration: 400, easing: "ease" }
 };
 
 /**
@@ -34,7 +42,8 @@ export const HERO_COPY = {
  */
 export function heroCopyLines(display) {
   const imdb = { type: "imdb", text: display.imdbText };
-  const primary = [...display.leadingMeta, ...display.trailingMeta]
+  // renderModernHeroPrimary: the leading tokens in one text joined by " • ", then dots.
+  const primary = [display.leadingMeta.filter(Boolean).join(" • "), ...display.trailingMeta]
     .filter(Boolean)
     .map((text) => ({ type: "text", text: String(text), style: "meta" }));
   if (display.showImdbPrimary) primary.push(imdb);
@@ -63,26 +72,32 @@ export function createHeroCopy(deps) {
   const measured = new WeakMap();
   const block = node({ parent: deps.parent, x: deps.x ?? C.x, color: 0, alpha: 0 });
   const logo = node({ parent: block, w: C.logo.w, h: C.logo.h });
-  let logoReady = false;
+  // "none" (no logo: the title), "loading" (the empty logo box, as the DOM: no title meanwhile,
+  // WF-15), "loaded", "failed" (the title).
+  let logoState = "none";
   let logoUrl = "";
   const logoSlot = deps.slot(logo, 0.01, (state) => {
-    if (state === "loading" || state === "empty") return void (logoReady = false);
-    logoReady = state === "loaded";
-    if (logoReady) {
-      // Fit in the mobile box without distortion, anchored bottom left by layout().
+    // Our own set() reports loading/empty: logoState was set there.
+    if (state !== "loaded" && state !== "failed") return;
+    logoState = state;
+    if (state === "loaded") {
+      // Fit in the DOM box without distortion, left and vertically centered by layout().
       const { w = C.logo.w, h = C.logo.h } = logo.texture?.dimensions || {};
       const scale = Math.min(C.logo.w / w, C.logo.h / h);
       logo.w = Math.round(w * scale);
       logo.h = Math.round(h * scale);
-      deps.tween(logo, "alpha", 1, deps.fade);
+      deps.tween(logo, "alpha", 1, deps.fade && C.logoFade);
     } else logoSlot.src = "";
     layout();
   });
+  const brandIsLogo = () => logoState === "loading" || logoState === "loaded";
   let parts = null;
   let signature = "";
   let shown = false;
-  // Previous copy of the same title, kept on screen while its enriched copy is measured.
+  // Copy on screen, kept while the next one (another title, or the same one enriched) is measured.
   let stale = [];
+  // Title of the copy on screen: another one rises in (HERO_COPY.swap), an enrichment does not.
+  let shownKey = null;
   // Full-screen trailer (lot W5): meta lines and description hidden, the logo or title stays.
   let metaHidden = false;
 
@@ -105,10 +120,10 @@ export function createHeroCopy(deps) {
     return entry && entry.text === textNode.text ? entry : null;
   };
 
-  function dot(parent) {
+  function dot(parent, lineHeight) {
     return node({
       parent,
-      y: (C.line - C.dot) / 2,
+      y: (lineHeight - C.dot) / 2,
       w: C.dot,
       h: C.dot,
       color: 0,
@@ -120,34 +135,39 @@ export function createHeroCopy(deps) {
     });
   }
 
-  function icon(parent, src, w, h) {
+  function icon(parent, src, w, h, lineHeight) {
+    const base = globalThis.document?.baseURI;
     return node({
       parent,
-      src,
+      // Absolute, as the font atlases: Lightning failed the relative IMDb SVG under a <base>.
+      src: base ? new URL(src, base).href : src,
       w,
       h,
-      y: (C.line - h) / 2,
+      y: (lineHeight - h) / 2,
       textureOptions: { resizeMode: { type: "contain" } }
     });
   }
 
-  /** One token: a group and how to lay it out once its texts are measured (returns its width). */
-  function token(line, spec) {
+  /**
+   * One token of a meta line (`first`: the gray primary line, else the secondary one): a group
+   * and how to lay it out once its texts are measured (returns its width).
+   */
+  function token(line, spec, first, lineHeight) {
     const group = node({ parent: line, color: 0 });
     const label = (value, props = {}) =>
       text({
         parent: group,
         text: value,
         fontSize: C.meta,
-        lineHeight: C.line,
-        weight: 600,
+        lineHeight,
+        weight: first ? 400 : 600,
         maxWidth: C.width,
         ...props
       });
     if (spec.type === "text") {
       const styles = {
-        meta: { color: colors.text },
-        highlight: { color: colors.text },
+        meta: { color: C.metaColor },
+        highlight: { color: colors.text, letterSpacing: 0.96 },
         detail: { color: colors.text, alpha: 0.74 }
       };
       const value = label(spec.text, styles[spec.style]);
@@ -156,7 +176,7 @@ export function createHeroCopy(deps) {
     if (spec.type === "badge") {
       const frame = node({
         parent: group,
-        h: C.line,
+        h: lineHeight,
         color: 0,
         shader: deps.shader({
           radius: C.badge.radius,
@@ -164,7 +184,12 @@ export function createHeroCopy(deps) {
           "border-color": colors.badge
         })
       });
-      const value = label(spec.text, { x: C.badge.padX, fontSize: C.badge.fontSize });
+      const value = label(spec.text, {
+        x: C.badge.padX,
+        fontSize: C.badge.fontSize,
+        letterSpacing: C.badge.letterSpacing,
+        color: colors.text
+      });
       return {
         group,
         texts: [value],
@@ -172,14 +197,14 @@ export function createHeroCopy(deps) {
       };
     }
     if (spec.type === "imdb") {
-      icon(group, "assets/icons/imdb_logo_2016.svg", C.imdb.w, C.imdb.h);
-      const value = label(spec.text, { x: C.imdb.w + C.imdb.gap, color: C.imdb.color });
+      icon(group, "assets/icons/imdb_logo_2016.svg", C.imdb.w, C.imdb.h, lineHeight);
+      const value = label(spec.text, { x: C.imdb.w + C.imdb.gap, color: C.metaColor });
       return { group, texts: [value], place: () => value.x + size(value).w };
     }
     // MDBList ratings (homeMdbListRatings.js): icon and value per provider.
     const items = spec.items.map((item) => {
       const side = item.provider === "imdb" ? C.rating.imdbIcon : C.rating.icon;
-      const image = icon(group, item.icon, side, side);
+      const image = icon(group, item.icon, side, side, lineHeight);
       return { image, side, value: label(item.text, { color: colors.secondary, weight: 400 }) };
     });
     return {
@@ -197,21 +222,39 @@ export function createHeroCopy(deps) {
 
   function build(display) {
     const key = display.title || "";
-    const keep = shown && parts?.key === key;
     const old = block.children.filter((child) => child !== logo && !stale.includes(child));
-    if (keep && !stale.length) stale = old;
+    // The copy on screen stays until the new one is measured; one never shown goes at once.
+    if (shown && !stale.length) stale = old;
     else old.forEach((child) => child.destroy());
-    if (!keep) dropStale();
+    if (!shown) dropStale();
     const lines = heroCopyLines(display);
-    const lineOf = (specs) => {
+    const lineOf = (specs, first) => {
       if (!specs.length) return null;
+      const height = specs.some((spec) => spec.type === "badge") ? C.badgeLine : C.line;
       const group = node({ parent: block, color: 0 });
       return {
         group,
-        tokens: specs.map((spec) => token(group, spec)),
-        dots: specs.slice(1).map(() => dot(group))
+        height,
+        tokens: specs.map((spec) => token(group, spec, first, height)),
+        dots: specs.slice(1).map(() => dot(group, height))
       };
     };
+    const primary = lineOf(lines.primary, true);
+    const secondary = lineOf(lines.secondary, false);
+    // The DOM description shrinks into what the copy box leaves (4 lines at most): the brand
+    // counts as the logo box, or two title lines.
+    const brand = display.logo ? C.logo.h : C.title.lineHeight * C.title.maxLines;
+    const above = [primary, secondary].reduce(
+      (sum, line) => sum + (line ? line.height + C.gap : 0),
+      brand + C.gap
+    );
+    const maxLines = Math.max(
+      1,
+      Math.min(
+        C.description.maxLines,
+        Math.floor((C.bottom - C.top - above) / C.description.lineHeight)
+      )
+    );
     parts = {
       key,
       title: text({
@@ -220,15 +263,17 @@ export function createHeroCopy(deps) {
         maxWidth: C.width,
         ...C.title
       }),
-      primary: lineOf(lines.primary),
-      secondary: lineOf(lines.secondary),
+      primary,
+      secondary,
       description: display.description
         ? text({
             text: display.description,
             weight: 400,
             maxWidth: C.width,
-            color: colors.text,
-            ...C.description
+            // .home-hero-description: #fff, not the theme text color.
+            color: 0xffffffff,
+            ...C.description,
+            maxLines
           })
         : null
     };
@@ -244,7 +289,7 @@ export function createHeroCopy(deps) {
   const metas = () =>
     [parts.description, parts.primary?.group, parts.secondary?.group].filter(Boolean);
   const tops = () => [parts.title, ...metas()];
-  const metaAlpha = (top) => (metaHidden ? 0 : top === parts.description ? C.description.alpha : 1);
+  const metaAlpha = () => (metaHidden ? 0 : 1);
 
   function texts() {
     if (!parts) return [];
@@ -257,7 +302,10 @@ export function createHeroCopy(deps) {
     ].filter((textNode) => textNode?.text);
   }
 
-  /** Bottom-up from C.bottom: description, secondary, primary, then the logo or the title. */
+  /**
+   * Bottom-up from C.bottom, as the DOM column ends there: description, secondary, primary, then
+   * the logo box (logo centered in it) or the title, C.gap apart.
+   */
   function layout() {
     if (!parts) return;
     if (!texts().every(size)) {
@@ -268,43 +316,53 @@ export function createHeroCopy(deps) {
       }
       return;
     }
+    const rises = Boolean(stale.length) && shownKey !== parts.key;
     if (stale.length) {
       dropStale();
-      // The title's alpha follows the logo below; the description keeps its 0.72.
-      tops().forEach((top) => (top.alpha = top === parts.title ? 1 : metaAlpha(top)));
+      // The title's alpha follows the logo below.
+      tops().forEach((top) => (top.alpha = top === parts.title ? 1 : metaAlpha()));
     }
     let y = C.bottom;
     let gap = 0;
-    const stack = (height, gapAbove) => {
+    const stack = (height) => {
       y -= gap + height;
-      gap = gapAbove;
-      return y;
+      gap = C.gap;
+      return Math.round(y);
     };
-    if (parts.description) parts.description.y = stack(size(parts.description).h, C.descriptionGap);
+    if (parts.description) parts.description.y = stack(size(parts.description).h);
     for (const line of [parts.secondary, parts.primary]) {
       if (!line) continue;
       let x = 0;
       line.tokens.forEach((entry, index) => {
         if (index) {
-          line.dots[index - 1].x = x + C.gap;
-          x += 2 * C.gap + C.dot;
+          line.dots[index - 1].x = x + C.dotGap;
+          x += 2 * C.dotGap + C.dot;
         }
         entry.group.x = x;
         x += entry.place();
       });
-      line.group.y = stack(C.line, C.lineGap);
+      line.group.y = stack(line.height);
     }
-    if (parts.primary || parts.secondary) gap = C.brandGap;
-    if (logoReady) {
-      logo.y = stack(logo.h, 0);
+    if (brandIsLogo()) {
+      const box = stack(C.logo.h);
+      logo.y = box + Math.round((C.logo.h - logo.h) / 2);
       parts.title.alpha = 0;
     } else {
-      parts.title.y = stack(parts.title.text ? size(parts.title).h : 0, 0);
+      parts.title.y = stack(parts.title.text ? size(parts.title).h : 0);
       parts.title.alpha = 1;
     }
+    shownKey = parts.key;
     if (!shown) {
       shown = true;
       deps.tween(block, "alpha", 1, deps.fade);
+    } else if (rises && deps.fade) {
+      // Another title (WF-10): from 0.7 and 5 px lower, never through an empty frame.
+      const { alpha, y: rise, ...settings } = C.swap;
+      deps.settle(block);
+      block.alpha = alpha;
+      block.y = rise;
+      deps.tween(block, "alpha", 1, settings);
+      deps.tween(block, "y", 0, settings);
     }
   }
 
@@ -317,11 +375,11 @@ export function createHeroCopy(deps) {
       const next = display
         ? JSON.stringify({ ...display, logo: "", backdrop: "", backdropFallbacks: [] })
         : "";
-      const url = display?.logo ? glImageUrl(display.logo, C.logo.width) : "";
+      const url = display?.logo ? glImageUrl(display.logo, C.logo.w) : "";
       if (url !== logoUrl) {
         deps.settle(logo);
         logoUrl = url;
-        logoReady = false;
+        logoState = url ? "loading" : "none";
         logo.w = C.logo.w;
         logo.h = C.logo.h;
         logoSlot.src = url;
@@ -333,6 +391,8 @@ export function createHeroCopy(deps) {
         deps.settle(block);
         block.alpha = 0;
         shown = false;
+        shownKey = null;
+        dropStale();
         return;
       }
       build(display);
@@ -342,9 +402,8 @@ export function createHeroCopy(deps) {
     hideMeta(on, fade) {
       metaHidden = Boolean(on);
       if (parts && !stale.length)
-        metas().forEach((top) => deps.tween(top, "alpha", metaAlpha(top), fade));
+        metas().forEach((top) => deps.tween(top, "alpha", metaAlpha(), fade));
     },
-    parts: () => parts,
-    logo
+    parts: () => parts
   };
 }

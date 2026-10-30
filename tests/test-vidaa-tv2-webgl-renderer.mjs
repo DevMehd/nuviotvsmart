@@ -230,12 +230,36 @@ assert.deepEqual(
   assert.equal(done, 3);
   settle(node);
   assert.equal(done, 3, "nothing left to settle");
+  // Two properties of one node animate side by side (the hero copy's alpha and y, WF-10), and
+  // settle ends both at their targets.
+  const pair = { alpha: 0.7, y: 5 };
+  const pairRuns = [];
+  pair.animate = (props, settings) => {
+    const listeners = [];
+    const ctrl = {
+      start: () => pairRuns.push(props),
+      stop() {
+        listeners.splice(0).forEach((fn) => fn());
+      },
+      once: (event, fn) => listeners.push(fn)
+    };
+    return ctrl;
+  };
+  tween(pair, "alpha", 1, rail);
+  tween(pair, "y", 0, rail);
+  assert.deepEqual(pairRuns, [{ alpha: 1 }, { y: 0 }], "alpha and y both run");
+  tween(pair, "alpha", 1, rail);
+  assert.equal(pairRuns.length, 2, "the running alpha is not restarted by the y one");
+  settle(pair);
+  assert.deepEqual([pair.alpha, pair.y], [1, 0]);
   rootClasses.clear();
 }
 
-// Lot W3: hero copy on fake Lightning nodes. Text nodes report their size on "loaded".
+// Lot W3: hero copy on fake Lightning nodes. Text nodes report their size on "loaded". Sizes and
+// positions of the DOM modern hero (fidelity group 1: WF-06 to WF-10, WF-15).
 {
   const made = [];
+  const animations = [];
   function glNode(props = {}) {
     const listeners = {};
     const node = {
@@ -265,6 +289,18 @@ assert.deepEqual(
         node.texture.dimensions = dimensions;
         node.emit(event, { dimensions });
       },
+      animate(to, settings) {
+        const stopped = [];
+        const ctrl = {
+          node,
+          to,
+          settings,
+          start: () => animations.push(ctrl),
+          stop: () => stopped.splice(0).forEach((fn) => fn()),
+          once: (event, fn) => stopped.push(fn)
+        };
+        return ctrl;
+      },
       destroy() {
         node.destroyed = true;
         node.parent?.children.splice(node.parent.children.indexOf(node), 1);
@@ -279,6 +315,7 @@ assert.deepEqual(
     made.push(node);
     return node;
   }
+  let fade = null;
   const copy = createHeroCopy({
     parent: glNode(),
     node: glNode,
@@ -288,11 +325,13 @@ assert.deepEqual(
     tween,
     settle,
     colors: { text: 1, secondary: 2, dot: 3, badge: 4 },
-    fade: null
+    get fade() {
+      return fade;
+    }
   });
   const textsIn = (node) =>
     [node, ...node.children.flatMap(textsIn)].filter((child) => typeof child.text === "string");
-  // Every text reports 10 px per character; lines are 40 px, the title 76, the description `lines` × 36.
+  // Every text reports 10 px per character; tokens 40 px, the title 76, the description `lines` × 36.
   const report = (lines = 2) =>
     textsIn(copy.block).forEach((node) =>
       node.emit("loaded", {
@@ -304,6 +343,8 @@ assert.deepEqual(
       })
     );
   const tokenTexts = (line) => line.tokens.map((entry) => entry.texts.map((node) => node.text));
+  const { bottom, gap } = HERO_COPY;
+  const at = (value) => Math.round(value);
 
   const movie = buildModernHeroPresentation({
     id: "tt1",
@@ -318,63 +359,81 @@ assert.deepEqual(
   });
   assert.deepEqual(
     heroCopyLines(movie).primary.map((token) => token.type),
-    ["text", "text", "text", "text", "imdb"],
+    ["text", "text", "text", "imdb"],
     "a movie without badges keeps IMDb on the first line"
   );
   copy.set(movie);
   assert.equal(copy.block.alpha, 0, "hidden until every text is measured");
   const { primary, secondary, title, description } = copy.parts();
   assert.equal(secondary, null);
+  // renderModernHeroPrimary: the leading tokens in one text, then dots.
   assert.deepEqual(tokenTexts(primary), [
-    [movie.leadingMeta[0]],
-    ["Drama"],
+    [movie.leadingMeta.join(" • ")],
     ["2h"],
     ["2020"],
     ["7.8"]
   ]);
-  assert.equal(title.weight, 600, "title and meta in the 600 atlas");
-  assert.equal(description.weight, 400);
+  assert.equal(title.weight, 600, "title in the 600 atlas");
+  assert.deepEqual(
+    [title.fontSize, title.lineHeight, title.maxWidth],
+    [51.52, 66.24, 806],
+    "DOM title size, copy width"
+  );
+  // WF-07: the first meta line in gray, regular (500 in the DOM, no 500 atlas), 24 px on 32.
+  const metaText = primary.tokens[0].texts[0];
+  assert.deepEqual(
+    [metaText.color, metaText.weight, metaText.fontSize, metaText.lineHeight],
+    [HERO_COPY.metaColor, 400, 24, 32]
+  );
+  // WF-08: white description, 25.2 px on 36, up to 4 lines in the room the copy box leaves.
+  assert.deepEqual(
+    [description.weight, description.color, description.fontSize, description.maxLines],
+    [400, 0xffffffff, 25.2, 4]
+  );
   report();
   assert.equal(copy.block.alpha, 1, "shown once laid out");
-  // Tokens and dots: 14 px, 6 px dot, 14 px.
+  // Tokens and dots: a 7 px dot 43 px from token to token, as the DOM "•" glyph.
   const widths = primary.tokens.map((entry) => entry.texts[0].text.length * 10);
-  const step = 2 * HERO_COPY.gap + HERO_COPY.dot;
+  const step = 2 * HERO_COPY.dotGap + HERO_COPY.dot;
+  assert.equal(step, 43);
   assert.equal(primary.tokens[1].group.x, widths[0] + step);
-  assert.equal(primary.dots[0].x, widths[0] + HERO_COPY.gap);
-  assert.equal(
-    primary.tokens[4].texts[0].x,
-    HERO_COPY.imdb.w + HERO_COPY.imdb.gap,
-    "value after the IMDb logo"
-  );
-  assert.equal(primary.tokens[4].texts[0].color, HERO_COPY.imdb.color);
-  // Bottom-up: description (2 lines), 20, primary, 28, title.
-  assert.equal(description.y, 486 - 72);
-  assert.equal(primary.group.y, 486 - 72 - 20 - 40);
-  assert.equal(title.y, 486 - 72 - 20 - 40 - 28 - 76);
-  assert.equal(title.alpha, 1, "title until the logo is ready");
+  assert.equal(primary.dots[0].x, widths[0] + HERO_COPY.dotGap);
+  assert.equal(primary.dots[0].y, (32 - HERO_COPY.dot) / 2, "dot centered on the 32 px line");
+  const imdbValue = primary.tokens[3].texts[0];
+  assert.equal(imdbValue.x, HERO_COPY.imdb.w + HERO_COPY.imdb.gap, "value after the IMDb logo");
+  assert.equal(imdbValue.color, HERO_COPY.metaColor, "IMDb value gray, as .home-hero-imdb");
+  // WF-09: bottom-up from the DOM copy box bottom (468), 14.72 px apart: description (2 lines),
+  // primary (32), the 200 px logo box. WF-15: the title stays hidden while the logo loads.
+  assert.equal(description.y, bottom - 72);
+  assert.equal(primary.group.y, at(bottom - 72 - gap - 32));
+  const { logo } = copy;
+  assert.equal(logo.y, at(bottom - 72 - 2 * gap - 32 - 200), "empty logo box while it loads");
+  assert.equal(title.alpha, 0, "no title while the logo loads (DOM)");
   // A one-line description moves everything above it down by one line.
   description.text = "Short";
   description.emit("loaded", { dimensions: { w: 50, h: 36 } });
-  assert.equal(title.y, 486 - 36 - 20 - 40 - 28 - 76, "title y follows the description height");
+  const box = at(bottom - 36 - 2 * gap - 32 - 200);
+  assert.equal(logo.y, box, "logo box follows the description height");
 
-  // Logo: fitted in 600×230 without distortion, bottom left; the title hides, then returns on failure.
-  const { logo } = copy;
+  // WF-06: logo contained in 440×200, left, vertically centered in its box.
   assert.equal(logo.src, "https://example.test/logo.png");
   logo.finish("https://example.test/logo.png", "loaded", { w: 1000, h: 200 });
-  assert.deepEqual([logo.w, logo.h], [600, 120]);
+  assert.deepEqual([logo.w, logo.h], [440, 88]);
+  assert.equal(logo.y, box + 56);
   assert.equal(title.alpha, 0, "title hidden behind the loaded logo");
-  assert.equal(logo.y, 486 - 36 - 20 - 40 - 28 - 120);
   assert.equal(logo.alpha, 1);
   copy.set({ ...movie, logo: "https://example.test/other.png" });
   assert.equal(copy.parts().title, title, "same copy: nodes kept");
-  assert.equal(title.alpha, 1, "a new logo shows the title until it is ready");
+  assert.equal(title.alpha, 0, "a new logo keeps its box empty until it is ready");
   logo.finish("https://example.test/logo.png", "loaded", { w: 10, h: 10 });
-  assert.equal(title.alpha, 1, "the previous logo's late event is ignored");
+  assert.deepEqual([logo.w, logo.h], [440, 200], "the previous logo's late event is ignored");
   logo.finish("https://example.test/other.png", "failed");
   assert.equal(title.alpha, 1, "failed logo: title");
   assert.equal(logo.alpha, 0);
+  assert.equal(title.y, at(bottom - 36 - 2 * gap - 32 - 76), "the title in place of the box");
 
-  // Series with badges: IMDb on the second line, after the badges, then the language.
+  // Series with badges: IMDb on the second line, after the badges, then the language. The copy
+  // on screen stays (no empty frame) until the new one is measured (WF-10).
   const series = buildModernHeroPresentation({
     id: "tt2",
     type: "series",
@@ -387,29 +446,37 @@ assert.deepEqual(
     releaseInfo: "2020"
   });
   copy.set(series);
-  assert.equal(copy.block.alpha, 0, "new copy hidden while it is measured");
+  assert.equal(copy.block.alpha, 1, "another title: the shown copy stays while measuring");
   const next = copy.parts();
   assert.notEqual(next.title, title);
-  assert.equal(title.destroyed, true, "previous copy destroyed");
+  assert.equal(title.destroyed, undefined, "previous copy kept meanwhile");
+  assert.equal(next.title.alpha, 0, "the new copy waits hidden");
   assert.equal(next.description, null);
-  assert.deepEqual(tokenTexts(next.primary), [["Series"], ["Drama"], ["2020"]]);
+  assert.deepEqual(tokenTexts(next.primary), [["Series • Drama"], ["2020"]]);
   assert.deepEqual(
     next.secondary.tokens.map((entry) => entry.texts[0].text),
     ["TV-MA", "ENDED", "8.1", "EN"]
   );
+  assert.equal(next.secondary.tokens[2].texts[0].weight, 600, "second line in 600");
   report();
+  assert.equal(title.destroyed, true, "previous copy destroyed once replaced");
+  assert.deepEqual([copy.block.alpha, copy.block.y], [1, 0], "no rise without motion");
   const badge = next.secondary.tokens[0];
   assert.equal(
     badge.group.children[0].w,
     50 + 2 * HERO_COPY.badge.padX,
     "badge outline around its text"
   );
-  assert.equal(badge.group.children[0].shader.shader["border-w"], 2);
-  assert.equal(next.secondary.group.y, 486 - 40);
-  assert.equal(next.primary.group.y, 486 - 40 - 12 - 40);
-  assert.equal(next.title.y, 486 - 40 - 12 - 40 - 28 - 76);
+  assert.equal(badge.group.children[0].shader.shader["border-w"], 1);
+  assert.deepEqual([badge.group.children[0].h, badge.texts[0].fontSize], [40, 18]);
+  // A line with a badge is 40 px tall (.home-modern-hero-badge min-height), the other 32.
+  assert.equal(next.secondary.group.y, bottom - 40);
+  assert.equal(next.primary.group.y, at(bottom - 40 - gap - 32));
+  assert.equal(next.title.y, at(bottom - 40 - 2 * gap - 32 - 76));
+  assert.equal(next.title.alpha, 1);
   // Enrichment of the same title (enrichCurrentHeroAsync): the shown copy stays until the
-  // enriched one is measured, without a blink, then gives way to it.
+  // enriched one is measured, without a blink nor a rise, then gives way to it.
+  fade = { duration: 150 };
   copy.set({ ...series, description: "Enriched" });
   const enriched = copy.parts();
   assert.equal(copy.block.alpha, 1, "same title: no blink while measuring");
@@ -418,15 +485,38 @@ assert.deepEqual(
   report(1);
   assert.equal(next.title.destroyed, true, "previous copy destroyed once replaced");
   assert.equal(enriched.title.alpha, 1);
-  assert.equal(enriched.description.alpha, HERO_COPY.description.alpha);
-  assert.equal(enriched.description.y, 486 - 36);
+  assert.equal(enriched.description.alpha, 1);
+  assert.equal(enriched.description.y, bottom - 36);
+  assert.deepEqual([copy.block.alpha, copy.block.y], [1, 0], "an enrichment does not rise");
+  // WF-10: another title rises in from 0.7 and 5 px in 160 ms ease-out, never through 0.
+  copy.set(movie);
+  assert.equal(copy.block.alpha, 1);
+  animations.length = 0;
+  report();
+  assert.deepEqual([copy.block.alpha, copy.block.y], [HERO_COPY.swap.alpha, HERO_COPY.swap.y]);
+  assert.deepEqual(
+    animations.filter((run) => run.node === copy.block).map((run) => [run.to, run.settings]),
+    [
+      [{ alpha: 1 }, { duration: 160, easing: "ease-out" }],
+      [{ y: 0 }, { duration: 160, easing: "ease-out" }]
+    ]
+  );
+  settle(copy.block);
+  assert.deepEqual([copy.block.alpha, copy.block.y], [1, 0]);
+  fade = null;
+  copy.set({ ...series, description: "Enriched" });
+  report(1);
   // Lot W5, full-screen trailer: the meta lines and description fade, the title stays, an
   // enrichment meanwhile keeps them hidden, and they come back to their alphas after it.
+  const shownSeries = copy.parts();
   copy.hideMeta(true, null);
   assert.deepEqual(
-    [enriched.title, enriched.primary.group, enriched.secondary.group, enriched.description].map(
-      (node) => node.alpha
-    ),
+    [
+      shownSeries.title,
+      shownSeries.primary.group,
+      shownSeries.secondary.group,
+      shownSeries.description
+    ].map((node) => node.alpha),
     [1, 0, 0, 0]
   );
   copy.set({ ...series, description: "Enriched again" });
@@ -435,11 +525,14 @@ assert.deepEqual(
   assert.equal(during.title.alpha, 1);
   assert.equal(during.description.alpha, 0, "a copy laid out under the trailer stays hidden");
   copy.set(movie);
-  assert.equal(copy.parts().primary.group.alpha, 0, "a new title under the trailer too");
   report();
+  assert.equal(copy.parts().primary.group.alpha, 0, "a new title under the trailer too");
   copy.hideMeta(false, null);
   assert.equal(copy.parts().primary.group.alpha, 1);
-  assert.equal(copy.parts().description.alpha, HERO_COPY.description.alpha);
+  assert.equal(copy.parts().description.alpha, 1);
+  // Breaking Bad's case (logo, a badge line): the description gets the 3 lines left.
+  copy.set({ ...series, description: "Long", logo: "https://example.test/bb.png" });
+  assert.equal(copy.parts().description.maxLines, 3);
   copy.set(null);
   assert.equal(copy.block.alpha, 0);
 }

@@ -219,7 +219,7 @@ export function homeMotion(root) {
   };
 }
 
-// One animated property per node (track x, rows y, card scale, hero alpha).
+// Running animation per node and property (track x, rows y, card scale, hero alpha, copy y).
 const running = new WeakMap();
 
 /**
@@ -229,7 +229,8 @@ const running = new WeakMap();
  * handle is dropped as soon as it stops, never stopped twice. `done` follows the end or the stop.
  */
 export function tween(node, prop, value, settings, done) {
-  const run = running.get(node);
+  const runs = running.get(node);
+  const run = runs?.get(prop);
   if (run ? run.value === value : node[prop] === value) return void (!run && done?.());
   run?.ctrl.stop(false);
   if (!settings) {
@@ -237,21 +238,27 @@ export function tween(node, prop, value, settings, done) {
     return void done?.();
   }
   const ctrl = node.animate({ [prop]: value }, settings);
-  running.set(node, { ctrl, prop, value });
+  if (!runs) running.set(node, new Map([[prop, { ctrl, value }]]));
+  else runs.set(prop, { ctrl, value });
   ctrl.once("stopped", () => {
-    if (running.get(node)?.ctrl === ctrl) running.delete(node);
+    if (running.get(node)?.get(prop)?.ctrl === ctrl) running.get(node).delete(prop);
     done?.();
   });
   ctrl.start();
 }
 
-/** Ends a running animation of `node` now, at its target (its `done` runs): never half-faded. */
+/** Ends the running animations of `node` now, at their targets (`done` runs): never half-faded. */
 export function settle(node) {
-  const run = running.get(node);
-  if (!run) return;
-  run.ctrl.stop(false);
-  node[run.prop] = run.value;
+  const runs = running.get(node);
+  if (!runs) return;
+  for (const [prop, run] of [...runs]) {
+    run.ctrl.stop(false);
+    node[prop] = run.value;
+  }
 }
+
+/** Whether `node` is animating `prop` (a rail sliding, WF-20). */
+const animating = (node, prop) => Boolean(running.get(node)?.has(prop));
 
 function hostClass(url) {
   if (/^(?:\/_vercel\/image\?|https:\/\/res\.cloudinary\.com\/)/.test(url)) return "proxy";
@@ -993,8 +1000,8 @@ export function createLightningHomeRenderer(
       tertiary: themeColor(root, "--text-tertiary", "#808080"),
       card: themeColor(root, "--card-bg", "#222222"),
       focus: themeColor(root, "--focus-color", "#ffffff"),
-      // Mobile hero meta: dots at alpha 0.7, badge outline at 0.55 (HomeHeroMetaRows.kt).
-      dot: themeColor(root, "--text-color", "#ffffff", 0.7),
+      // DOM .home-hero-dot (white at 0.34), badge outline at 0.55 (.home-modern-hero-badge).
+      dot: 0xffffff57,
       badge: themeColor(root, "--focus-color", "#ffffff", 0.55),
       // Continue Watching (mobile): scrim to the background at 0.95, badge at 0.80, accent progress.
       scrim: themeColor(root, "--bg-color", "#0d0d0d", 0.95),

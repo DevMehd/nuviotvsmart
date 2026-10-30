@@ -368,8 +368,20 @@
           lightning.stage.drawFrame();
           const shown = pixelsAt(1600, 120);
           assert(shown[2] > 200 && shown[0] < 40, `new hero shown: ${shown}`);
-          // WF-03: the bottom fade starts at 82 % of the 650 px media (components-16.css), not at 40 %.
-          const [clear, faded] = [460, 640].map((y) => pixelsAt(1600, y));
+          // WF-10: another title's copy rises in from 0.7 and 5 px, never through an empty frame.
+          const textIn = (node, value) =>
+            node.text === value ? node : node.children.map((child) => textIn(child, value)).find(Boolean);
+          const copyBlock = textIn(sceneNode(), "Next").parent;
+          const rise = [];
+          const sampleRise = () => rise.push([copyBlock.alpha, copyBlock.y]);
+          lightning.stage.eventBus.on("frameTick", sampleRise);
+          view.setHero({ id: "tt7", type: "movie", name: "Risen", background: blue, poster: red });
+          await settle("copy rise", () => textIn(sceneNode(), "Risen")?.alpha === 1 && copyBlock.y === 0 && rise.some(([, y]) => y > 0));
+          lightning.stage.eventBus.off("frameTick", sampleRise);
+          assert(rise.every(([alpha]) => alpha >= 0.69), `copy never empty: ${rise.map(([a]) => a.toFixed(2))}`);
+          assert(rise.some(([, y]) => y > 0 && y < 5), `copy rises: ${rise.map(([, y]) => y.toFixed(1))}`);
+          // WF-03: the bottom fade starts at 82 % of the 632 px media (components-16.css, WF-16).
+          const [clear, faded] = [460, 625].map((y) => pixelsAt(1600, y));
           assert(clear[2] > 200 && faded[2] < 60, `hero bottom fade: ${clear} / ${faded}`);
 
           // A row left by a jump (Back to the top, restore) lets its artwork go, not kept on the GPU.
@@ -505,12 +517,14 @@
             return title && title.parent.alpha === 1 && logoNode.alpha === 1 && skeleton.alpha === 0;
           });
           assert(title.alpha === 0, "title hidden behind the logo");
-          assert(logoNode.w === 600 && logoNode.h === 120, `logo fitted ${logoNode.w}×${logoNode.h}`);
+          // WF-06: contained in the DOM's 440×200 logo box, vertically centered in it.
+          assert(logoNode.w === 440 && logoNode.h === 88, `logo fitted ${logoNode.w}×${logoNode.h}`);
           lightning.stage.drawFrame();
-          const logoPixel = pixelsAt(300, Math.round(logoNode.y + 60));
+          const logoPixel = pixelsAt(300, Math.round(logoNode.y + 44));
           assert(logoPixel[0] > 200 && logoPixel[1] < 40, `logo drawn: ${logoPixel}`);
+          // WF-08/09: the description ends at the DOM copy box bottom (468), 4 lines at most.
           const describe = findText(sceneNode(), heroItem("").description);
-          assert(describe.y + describe.h === 486 && describe.h <= 72, `description ${describe.y}+${describe.h}`);
+          assert(describe.y + describe.h === 468 && describe.h <= 144, `description ${describe.y}+${describe.h}`);
           assert(lum(pixelsAt(220, Math.round(describe.y), 300, 30)) > 90, "description drawn");
 
           // No logo, then a logo that fails: the title is drawn in the 600 atlas.
