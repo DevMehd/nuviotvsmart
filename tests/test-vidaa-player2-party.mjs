@@ -189,8 +189,11 @@ assert.equal(seeks.length, 1);
 assert.ok(Math.abs(seeks[0] - 63) < 0.01, `seek to the party position (${seeks[0]})`);
 assert.equal(statuses.at(-1).status, PartyMemberStatus.Ready);
 assert.deepEqual(engine.rates, []);
+// The host's speed (applied through the shared <video>) ends with the party: no speed control here.
+video.playbackRate = 1.5;
 screen.stopPartySync();
 assert.equal(screen.partySyncTimer, null);
+assert.equal(video.playbackRate, 1, "the party's speed does not outlive it");
 screen.seekPlaybackSeconds = seek;
 
 // 5. Start position: where the party is now wins over the route's and the media server's;

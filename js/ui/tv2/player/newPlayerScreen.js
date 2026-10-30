@@ -159,15 +159,22 @@ const ROOT_HTML = `
   </div>
   <div class="player-aspect-toast p2-toast hidden"></div>${OSD_HTML}`;
 
+const partyMethods = createPlayerPartyMethods();
+
 export const NewPlayerScreen = {
   // Stream info (i) overlay of the old player, shared as is; it drives the OSD through the
   // setControlsVisible / resetControlsAutoHide / clearControlsAutoHide names below.
   ...StreamInfoMethods,
   // Watch Party of the old player as is (P7): pill, side panel, sync tick, guest lock.
-  ...createPlayerPartyMethods(),
+  ...partyMethods,
   // Drift is corrected by a seek, never by speed: a rate other than 1 can break TrueHD passthrough.
   partyNudgeSupported() {
     return false;
+  },
+  // No speed control here: a host's speed must not outlive the party (left, ended or unbound).
+  stopPartySync() {
+    partyMethods.stopPartySync.call(this);
+    if (this.video && this.video.playbackRate !== 1) this.video.playbackRate = 1;
   },
   partyPanelVisible: false,
   // Forwardable request headers of the source playing (HLS through hls.js), shared by the Party.
