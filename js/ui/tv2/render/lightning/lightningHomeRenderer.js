@@ -65,22 +65,37 @@ const FALLBACK_TEXT = 0x969ca3ff;
 const SKELETON = { colorTop: 0x262626ff, colorBottom: 0x101010ff };
 const COVER = { resizeMode: { type: "cover" } };
 /**
- * Continue Watching card (lot W4a): mobile HomeContinueWatchingSection.kt at the TV sizes of the
- * mobile reference (dp × 2, sp × 1.75–2). Copy stacked bottom-up from `pad`, badge top right,
- * progress pill track 20 px from the sides and 8 px from the bottom.
+ * Continue Watching card (lot W4a, WF-12): the DOM .tv2-continue-card (tv2-home.css), itself the
+ * mobile HomeContinueWatchingSection.kt at TV sizes. Copy stacked bottom-up from `pad`, badge top
+ * right, rounded progress track 20 px from the sides and 8 px from the bottom. Weight 500 is
+ * drawn in 400 (no 500 atlas); one line each, cut at a character as text-overflow: ellipsis.
  */
 export const CW_CARD = {
   pad: 24,
-  gap: 4,
+  gap: 0,
   // Bottom-up order; keys of continueCardModel.
   lines: [
-    { key: "subtitle", fontSize: 22, lineHeight: 30, alpha: 0.72 },
-    { key: "title", fontSize: 28, lineHeight: 38, weight: 600 },
-    { key: "kicker", fontSize: 22, lineHeight: 30, weight: 600 }
+    { key: "subtitle", fontSize: 24, lineHeight: 32, alpha: 0.72, letterSpacing: 0.8 },
+    { key: "title", fontSize: 28, lineHeight: 40, letterSpacing: 0.2 },
+    { key: "kicker", fontSize: 24, lineHeight: 32, alpha: 0.88, letterSpacing: 1 }
   ],
-  // The scrim starts at 45 % of the height (mobile l. 741-761).
-  scrimTop: 0.45,
-  badge: { inset: 16, padX: 16, padY: 8, fontSize: 20, lineHeight: 28, radius: 8 },
+  // Bottom scrim: transparent to 45 %, the background at 0.7 at 78 %, 0.95 at the bottom.
+  scrim: [
+    [0.45, 0],
+    [0.78, 0.7],
+    [1, 0.95]
+  ],
+  // .tv2-cw-badge: rgba(19, 19, 19, 0.88), text white at 0.94.
+  badge: {
+    inset: 16,
+    padX: 16,
+    padY: 8,
+    fontSize: 20,
+    lineHeight: 28,
+    radius: 8,
+    color: 0x131313e0,
+    alpha: 0.94
+  },
   progress: { side: 20, bottom: 8, h: 6, track: 0x0000004d },
   // Release badges of the mobile (l. 79-81): new episode, new season.
   newEpisode: 0x1d4ed8ff,
@@ -770,15 +785,19 @@ function continueParts(scene, parent, width, height) {
     alpha: 0,
     shader: scene.round(scene.radius)
   });
-  const top = Math.round(height * C.scrimTop);
-  scene.node({
-    parent,
-    y: top,
-    w: width,
-    h: height - top,
-    colorTop: scene.colors.bgClear,
-    colorBottom: scene.colors.scrim,
-    shader: scene.round([0, 0, scene.radius, scene.radius])
+  // One gradient node per pair of stops; only the bottom one reaches the rounded corners.
+  C.scrim.slice(1).forEach(([to, alpha], i) => {
+    const [from, previous] = C.scrim[i];
+    const y = Math.round(height * from);
+    scene.node({
+      parent,
+      y,
+      w: width,
+      h: Math.round(height * to) - y,
+      colorTop: scene.colors.bgAt(previous),
+      colorBottom: scene.colors.bgAt(alpha),
+      ...(to === 1 ? { shader: scene.round([0, 0, scene.radius, scene.radius]) } : {})
+    });
   });
   const badge = scene.node({
     parent,
@@ -786,7 +805,7 @@ function continueParts(scene, parent, width, height) {
     y: C.badge.inset,
     mountX: 1,
     h: C.badge.lineHeight + 2 * C.badge.padY,
-    color: scene.colors.cwBadge,
+    color: C.badge.color,
     shader: scene.shader({ radius: C.badge.radius, "border-w": 0 })
   });
   const parts = { veil, badge, badgeText: null };
@@ -798,29 +817,38 @@ function continueParts(scene, parent, width, height) {
       y: C.badge.padY,
       fontSize: C.badge.fontSize,
       lineHeight: C.badge.lineHeight,
-      weight: 600,
+      alpha: C.badge.alpha,
       contain: "none",
       // Cards are not clipped: a long badge (German, small posters) ends with "…" inside the card.
       maxWidth: width - 2 * (C.badge.inset + C.badge.padX)
     })
   );
-  C.lines.forEach((line) => {
-    const { key, weight = 400, ...props } = line;
-    parts[key] = scene.text({ parent, x: C.pad, weight, maxWidth: width - 2 * C.pad, ...props });
+  C.lines.forEach(({ key, ...props }) => {
+    parts[key] = scene.text({
+      parent,
+      x: C.pad,
+      maxWidth: width - 2 * C.pad,
+      wordBreak: "break-all",
+      ...props
+    });
   });
+  // .tv2-cw-progress: rounded ends on the track and the fill (border-radius 3px, inherit).
+  const pill = () => scene.round(C.progress.h / 2);
   parts.track = scene.node({
     parent,
     x: C.progress.side,
     y: height - C.progress.bottom - C.progress.h,
     w: width - 2 * C.progress.side,
     h: C.progress.h,
-    color: C.progress.track
+    color: C.progress.track,
+    shader: pill()
   });
   parts.fill = scene.node({
     parent: parts.track,
     w: 0,
     h: C.progress.h,
-    color: scene.colors.accent
+    color: scene.colors.accent,
+    shader: pill()
   });
   return parts;
 }
@@ -869,7 +897,7 @@ export function fillGlCard(scene, card, item, source, watchedIds = null) {
       ? isNewSeasonRelease
         ? CW_CARD.newSeason
         : CW_CARD.newEpisode
-      : scene.colors.cwBadge;
+      : CW_CARD.badge.color;
   parts.fill.w = Math.round(
     (Math.max(0, Math.min(100, cw.progressPct || 0)) / 100) * parts.track.w
   );
@@ -993,7 +1021,6 @@ export function createLightningHomeRenderer(
   function buildScene({ renderer, fonts, variant }) {
     const colors = {
       bg: themeColor(root, "--bg-color", "#0d0d0d"),
-      bgClear: themeColor(root, "--bg-color", "#0d0d0d", 0),
       text: themeColor(root, "--text-color", "#ffffff"),
       secondary: themeColor(root, "--text-secondary", "#b3b3b3"),
       tertiary: themeColor(root, "--text-tertiary", "#808080"),
@@ -1002,9 +1029,8 @@ export function createLightningHomeRenderer(
       // DOM .home-hero-dot (white at 0.34), badge outline at 0.55 (.home-modern-hero-badge).
       dot: 0xffffff57,
       badge: themeColor(root, "--focus-color", "#ffffff", 0.55),
-      // Continue Watching (mobile): scrim to the background at 0.95, badge at 0.80, accent progress.
-      scrim: themeColor(root, "--bg-color", "#0d0d0d", 0.95),
-      cwBadge: themeColor(root, "--bg-color", "#0d0d0d", 0.8),
+      // Continue Watching scrim stops (CW_CARD.scrim) in the background color; accent progress.
+      bgAt: (alpha) => themeColor(root, "--bg-color", "#0d0d0d", alpha),
       accent: themeColor(root, "--secondary-color", "#f5f5f5"),
       // Next Up veil (mobile spec): the background at 0.6.
       veil: themeColor(root, "--bg-color", "#0d0d0d", 0.6)
@@ -1084,7 +1110,7 @@ export function createLightningHomeRenderer(
     const skeleton = node({ parent: sceneRoot, ...hero, ...SKELETON, alpha: 0 });
     // Left and bottom fades of the hero media: one gradient node per pair of CSS stops.
     const fades = HERO_FADES[layout.modernHeroFullScreenBackdropEnabled ? "fullScreen" : "framed"];
-    const bgAt = (alpha) => themeColor(root, "--bg-color", "#0d0d0d", alpha);
+    const { bgAt } = colors;
     const segments = (stops, place) =>
       stops.slice(1).forEach(([to, alpha], i) => {
         const [from, previous] = stops[i];

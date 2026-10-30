@@ -602,6 +602,9 @@
           const filled = pixelsAt(cwLeft + 30, progressY);
           const rest = pixelsAt(cwLeft + 20 + Math.round(0.7 * (cwSize.width - 40)), progressY);
           assert(filled[1] > 200 && rest[1] < 60, `progress 25 %: ${filled} / ${rest}`);
+          // Rounded ends (.tv2-cw-progress border-radius): the fill's corner pixel stays the art.
+          const fillCorner = pixelsAt(cwLeft + 20, Math.round(cwTop() + cwSize.height - 8 - 6));
+          assert(fillCorner[1] < 150, `rounded progress end: ${fillCorner} / ${filled}`);
           const badgeLeft = cwLeft + cwSize.width - 16 - badgeFrame.w;
           const inBadge = pixelsAt(badgeLeft + 6, Math.round(cwTop() + 16 + 22));
           const besideBadge = pixelsAt(badgeLeft - 10, Math.round(cwTop() + 16 + 22));

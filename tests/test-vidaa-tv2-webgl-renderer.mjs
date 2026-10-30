@@ -587,7 +587,7 @@ assert.deepEqual(
     shader: (props) => ({ shader: props }),
     round: (radius) => ({ round: radius }),
     radius: 24,
-    colors: { card: 1, bgClear: 2, scrim: 3, cwBadge: 4, accent: 5 }
+    colors: { card: 1, accent: 5, bgAt: (alpha) => `bg${alpha}` }
   };
   const textsIn = (node) =>
     [node, ...node.children.flatMap(textsIn)].filter((child) => typeof child.text === "string");
@@ -634,13 +634,27 @@ assert.deepEqual(
     assert.equal(card.fallback, null, `${cardStyle}: no text tile, the copy stays`);
     assert.deepEqual([kicker.text, title.text, subtitle.text], [cw.kicker, "Show", "Pilot 2"]);
     assert.ok(cw.kicker, "episode code");
-    assert.deepEqual([title.weight, subtitle.alpha], [600, 0.72]);
-    // Bottom-up from 24 px: subtitle 30, 4, title 38, 4, kicker 30.
-    assert.equal(subtitle.y, size.height - 24 - 30, `${cardStyle} subtitle y`);
-    assert.equal(title.y, subtitle.y - 4 - 38);
-    assert.equal(kicker.y, title.y - 4 - 30);
+    // WF-12: the DOM .tv2-cw-* sizes (weight 500 drawn in 400), cut at a character.
+    assert.deepEqual(
+      [kicker, title, subtitle].map((node) => [node.weight, node.fontSize, node.alpha ?? 1]),
+      [
+        [400, 24, 0.88],
+        [400, 28, 1],
+        [400, 24, 0.72]
+      ]
+    );
+    assert.equal(title.wordBreak, "break-all", "text-overflow: ellipsis cuts inside a word");
+    // Bottom-up from 24 px: subtitle 32, title 40, kicker 32 (DOM line heights, no gap).
+    assert.equal(subtitle.y, size.height - 24 - 32, `${cardStyle} subtitle y`);
+    assert.equal(title.y, subtitle.y - 40);
+    assert.equal(kicker.y, title.y - 32);
     assert.equal(track.w, size.width - 40, `${cardStyle} progress track`);
     assert.equal(track.y, size.height - 8 - 6);
+    assert.deepEqual(
+      [track.shader, fill.shader],
+      [{ round: 3 }, { round: 3 }],
+      "rounded progress ends"
+    );
     assert.equal(fill.w, Math.round(0.25 * (size.width - 40)), `${cardStyle} progress 25 %`);
     assert.equal(badgeText.text, cw.badge);
     assert.ok(cw.badge, "remaining time badge");
@@ -652,11 +666,12 @@ assert.deepEqual(
       size.width - 64,
       `${cardStyle}: a long badge stays in the card`
     );
-    assert.equal(badge.color, 4, "badge in the background color at 0.80");
+    assert.equal(badge.color, CW_CARD.badge.color, "badge rgba(19, 19, 19, 0.88)");
+    assert.equal(badgeText.weight, 400);
     // A movie: no episode code nor subtitle, the title sits on the bottom line.
     const movie = { contentId: "tt5", type: "movie", title: "Heat", positionMs: 0, durationMs: 0 };
     fillGlCard(scene, card, movie, { cw: continueCardModel(movie, { cardStyle }) });
-    assert.equal(title.y, size.height - 24 - 38, `${cardStyle} movie title y`);
+    assert.equal(title.y, size.height - 24 - 40, `${cardStyle} movie title y`);
     assert.equal(fill.w, 0);
   }
   const release = createGlCard(scene, glNode(), "continue", geometry.continueCard);
@@ -765,8 +780,29 @@ assert.deepEqual(
   fillGlCard(scene, nextUp, episode, { url: "/other.jpg", fallbacks: [], veil: true, cw: nextCw });
   assert.equal(nextUp.cw.veil.alpha, 1, "veil over artwork that cannot be shrunk");
   assert.deepEqual(nextUp.cw.veil.shader, { round: 24 }, "rounded veil");
-  const cwScrim = nextUp.node.children.find((child) => child.colorBottom === 3);
-  assert.deepEqual(cwScrim.shader, { round: [0, 0, 24, 24] }, "scrim rounded at the bottom only");
+  // WF-12: the DOM scrim stops, transparent to 45 %, 0.7 at 78 %, 0.95 at the bottom.
+  const scrims = nextUp.node.children.filter((child) => String(child.colorBottom).startsWith("bg"));
+  const cwHeight = geometry.continueCard.height;
+  assert.deepEqual(
+    scrims.map((node) => [node.y, node.h, node.colorTop, node.colorBottom, node.shader]),
+    [
+      [
+        Math.round(cwHeight * 0.45),
+        Math.round(cwHeight * 0.78) - Math.round(cwHeight * 0.45),
+        "bg0",
+        "bg0.7",
+        undefined
+      ],
+      [
+        Math.round(cwHeight * 0.78),
+        cwHeight - Math.round(cwHeight * 0.78),
+        "bg0.7",
+        "bg0.95",
+        { round: [0, 0, 24, 24] }
+      ]
+    ],
+    "scrim rounded at the bottom only"
+  );
 
   const deep = { ...scene, depth: { posters: true, continue: false, edge: 7, sheen: 8 } };
   const plainCount = createGlCard(scene, glNode(), "poster", geometry.poster).node.children.length;
