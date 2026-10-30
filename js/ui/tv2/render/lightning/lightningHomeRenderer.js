@@ -174,13 +174,14 @@ const shimmers = (motion) =>
 
 /**
  * Modern hero media node: components-16.css draws it 72 % wide, 56 px past the right edge and
- * (48 % + 132 px) tall, i.e. 594/0/1382×650 at 1080p, or the full screen with
+ * (48 % + 132 px of the hero card) tall: 594/0/1382×632 measured in the DOM Home at 1080p
+ * (WF-16), or the full screen with
  * modernHeroFullScreenBackdropEnabled; cropped as cover from the top right (object-position 100% 0).
  */
 export function heroNodeProps(layout = {}) {
   const rect = layout.modernHeroFullScreenBackdropEnabled
     ? { x: 0, y: 0, w: APP_WIDTH, h: APP_HEIGHT }
-    : { x: 594, y: 0, w: 1382, h: 650 };
+    : { x: 594, y: 0, w: 1382, h: 632 };
   return { ...rect, textureOptions: { resizeMode: { type: "cover", clipX: 1, clipY: 0 } } };
 }
 

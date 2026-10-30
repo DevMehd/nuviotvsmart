@@ -136,12 +136,13 @@ const visibleWithoutUrl = (node) => node.alpha > 0 && !node.src;
   assert.equal(node.textures, before + 1);
 }
 
-// Hero: the modern hero media rectangle, cover from the top right; full screen when enabled.
+// Hero: the modern hero media rectangle (WF-16: 632 px tall as measured in the DOM Home), cover
+// from the top right; full screen when enabled.
 assert.deepEqual(heroNodeProps(), {
   x: 594,
   y: 0,
   w: 1382,
-  h: 650,
+  h: 632,
   textureOptions: { resizeMode: { type: "cover", clipX: 1, clipY: 0 } }
 });
 assert.deepEqual(
