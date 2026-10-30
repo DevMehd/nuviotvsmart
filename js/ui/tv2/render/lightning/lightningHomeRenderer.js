@@ -50,6 +50,8 @@ export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
 // A throttled idle loop (10 fps, lot W6) delayed the first frame after a key by up to 100 ms, then
 // fed it a 100 ms delta that ended the 140 ms slides at once (WF-01). Away from Home: AWAY_FPS.
 const AWAY_FPS = 4;
+// Back on Home, what the kept engine still holds shows without transitions for this long (WF-02).
+const RETURN_QUIET_MS = 300;
 // Rows around the focus whose artwork stays attached off screen (lot W6 warm ring), so a short
 // move back finds its textures; rows farther away let theirs go.
 const WARM_ROWS = { before: 2, after: 3 };
@@ -499,6 +501,32 @@ async function createEngine(report) {
 
 const keeper = createEngineKeeper(createEngine);
 
+/**
+ * Back from AWAY_FPS, Lightning's next tick may be 250 ms away (a timer it cannot cancel): draws
+ * the rebuilt scene now and drives the frames, as its loop does, until that loop runs again.
+ */
+export function resumeFrames(stage, stopped = () => false) {
+  let own = false;
+  let resumed = false;
+  const tick = () => {
+    if (own) return;
+    resumed = true;
+    stage.eventBus.off("frameTick", tick);
+  };
+  stage.eventBus.on("frameTick", tick);
+  const frame = () => {
+    if (resumed || stopped()) return;
+    own = true;
+    stage.updateFrameTime();
+    own = false;
+    stage.updateAnimations();
+    if (stage.hasSceneUpdates()) stage.drawFrame();
+    stage.flushFrameEvents();
+    requestAnimationFrame(frame);
+  };
+  frame();
+}
+
 let colorContext = null;
 /** CSS color of a theme variable as Lightning's 0xRRGGBBAA. */
 function themeColor(element, name, fallback, alpha = 1) {
@@ -528,6 +556,7 @@ function themeColor(element, name, fallback, alpha = 1) {
 export function imageSlot(node, alpha = 1, onState = () => {}) {
   node.alpha = 0;
   const slot = {
+    node,
     url: "",
     loading: false,
     onload: null,
@@ -912,6 +941,9 @@ export function createLightningHomeRenderer(
   let stopTrailer = null;
   let trailerShown = false;
   const motion = homeMotion(root);
+  // Return to Home on a kept engine: no fade for what shows at once (fadeOf).
+  let quietUntil = 0;
+  const fadeOf = (settings) => (performance.now() < quietUntil ? null : settings);
 
   function fail(reason) {
     if (failed) return;
@@ -1009,7 +1041,6 @@ export function createLightningHomeRenderer(
     const heroSlots = [0, 1].map(() => {
       const image = node({ parent: heroLayer, ...hero });
       const slot = imageSlot(image, HERO_LOADING_ALPHA, (state) => heroState(slot, state));
-      slot.node = image;
       return slot;
     });
     // Over the hero images until the first backdrop is loaded (setHero loading).
@@ -1055,7 +1086,9 @@ export function createLightningHomeRenderer(
       tween,
       settle,
       colors,
-      fade: motion.copy,
+      get fade() {
+        return fadeOf(motion.copy);
+      },
       // With the rails: after the legacy rail (220) or at the pill's inset (104).
       x: geometry.contentStart
     });
@@ -1336,7 +1369,13 @@ export function createLightningHomeRenderer(
       hero.shown = hero.wanted;
       slot.node.zIndex = 1;
       old.node.zIndex = 0;
-      tween(slot.node, "alpha", 1, motion.hero, () => !closed && heroQueue.request(old, ""));
+      tween(
+        slot.node,
+        "alpha",
+        1,
+        fadeOf(motion.hero),
+        () => !closed && heroQueue.request(old, "")
+      );
     } else if (state === "failed") {
       // No backdrop for this title: never keep the previous title's one.
       heroQueue.request(hero.front, "");
@@ -1503,7 +1542,9 @@ export function createLightningHomeRenderer(
     .then((ready) => {
       if (closed || failed) return keeper.release(fail);
       engine = ready;
+      const returning = engine.renderer.targetFPS === AWAY_FPS;
       engine.renderer.targetFPS = 0;
+      if (returning) quietUntil = performance.now() + RETURN_QUIET_MS;
       host.appendChild(engine.canvas);
       root.classList.toggle("tv2-gl-trailer-above", engine.variant === "trailer-above");
       scene = buildScene(engine);
@@ -1511,6 +1552,10 @@ export function createLightningHomeRenderer(
       if (last.focus) update(last.rows, last.focus, last.options);
       setHero(last.hero, { loading: last.heroLoading });
       if (trailerShown) revealTrailer(true);
+      // The nodes above took their textures back: the away pins go (destroy).
+      engine.pinned?.forEach((texture) => (texture.preventCleanup = false));
+      engine.pinned = null;
+      if (returning) resumeFrames(engine.renderer.stage, () => closed);
     })
     .catch((error) => fail(error?.message || "init"));
 
@@ -1535,6 +1580,17 @@ export function createLightningHomeRenderer(
       heroQueue.clear();
       if (scene) {
         views.forEach((view) => setRowSkeletons(scene, view, 0));
+        // The rows around the focus and the hero keep their textures through the threshold
+        // cleanup while away, so the return draws them at once (WF-02); released on the return.
+        const near = last.rows
+          .slice(Math.max(0, (last.focus?.row ?? 0) - 1), (last.focus?.row ?? 0) + 2)
+          .flatMap((row) => views.get(row.key)?.slots || [])
+          .filter((card) => card.node.alpha > 0)
+          .map((card) => card.image.node);
+        engine.pinned = [...near, scene.hero.front.node, scene.heroCopy.logo]
+          .map((node) => node.texture)
+          .filter(Boolean);
+        engine.pinned.forEach((texture) => (texture.preventCleanup = true));
         // Leaving Home (often for the player). No full cleanup (lot W6): the released textures
         // stay cached until Lightning's own threshold cleanup (oldest first), so a return from
         // the player finds the focused row's artwork without reloading it.

@@ -387,8 +387,46 @@
           assert(!artworkOf(1).length, `off-screen row keeps ${artworkOf(1).length} textures`);
           // WF-01: the display rate at rest too (the slides above start after a 1.2 s rest), 4 fps away.
           assert(lightning.targetFPS === 0, `display rate at rest: ${lightning.targetFPS}`);
+          const heroTexture = heroNodes.find((node) => node.src === blue).texture;
           view.destroy();
           assert(lightning.targetFPS === 4, "4 fps while Home is away");
+          // WF-02: the hero (and the rows around the focus) keep their textures while away.
+          assert(heroTexture.preventCleanup === true, "hero texture kept while away");
+          // Back to Home after a stay elsewhere: the first frame is drawn while attaching (not at
+          // the next 4 fps tick), the cached hero shows without a fade, and the pins are released.
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          let draws = 0;
+          const drawFrame = lightning.stage.drawFrame;
+          lightning.stage.drawFrame = function () {
+            draws += 1;
+            return drawFrame.call(this);
+          };
+          let drawsAtAttach = null;
+          const attachObserver = new MutationObserver(() => {
+            if (document.querySelector(".tv2-gl-canvas")) drawsAtAttach ??= draws;
+          });
+          attachObserver.observe(document.getElementById("home"), { childList: true, subtree: true });
+          const backView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern" },
+            onFailure: (reason) => failures.push(reason)
+          });
+          backView.setRows(tall);
+          backView.update(tall, scrolled, { sidebarIndex: -1 });
+          backView.setHero({ id: "tt8", type: "movie", name: "Next", background: blue, poster: red });
+          const backAlphas = [];
+          const backHero = () => sceneNode()?.children[0]?.children.find((node) => node.src === blue);
+          const sampleBack = () => backHero() && backAlphas.push(backHero().alpha);
+          lightning.stage.eventBus.on("frameTick", sampleBack);
+          await settle("return hero", () => backHero()?.alpha === 1);
+          lightning.stage.eventBus.off("frameTick", sampleBack);
+          attachObserver.disconnect();
+          lightning.stage.drawFrame = drawFrame;
+          assert(drawsAtAttach > 0, `return drawn while attaching: ${drawsAtAttach} frames`);
+          assert(!backAlphas.some((alpha) => alpha > 0.05 && alpha < 0.95), `return hero faded: ${backAlphas}`);
+          assert(heroTexture.preventCleanup === false, "pins released on the return");
+          backView.destroy();
 
           // Final positions equal homeLayout for each preference (pill, landscape posters, poster-style Continue Watching).
           const variants = [

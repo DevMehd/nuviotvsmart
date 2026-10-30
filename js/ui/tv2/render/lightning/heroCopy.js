@@ -310,6 +310,7 @@ export function createHeroCopy(deps) {
 
   return {
     block,
+    logo,
     /** `display` of buildModernHeroPresentation, or null to clear. */
     set(display) {
       // Images are not part of the copy: a new backdrop or logo keeps the laid-out texts.
