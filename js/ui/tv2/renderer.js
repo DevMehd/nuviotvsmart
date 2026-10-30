@@ -1,10 +1,5 @@
 import { Platform } from "../../platform/index.js";
 import { getTvHeroTransitionMode } from "../../platform/tvRuntimePerformance.js";
-import {
-  getRootSidebarNodes,
-  renderRootSidebar,
-  setModernSidebarPillIconOnly
-} from "../components/sidebarNavigationHelpers-03-render-root-sidebar.js";
 import { posterCardModel } from "../screens/home/homeScreenHelpers-15-create-poster-card-markup.js";
 import {
   buildHeroIndicators,
@@ -41,6 +36,7 @@ import { getVidaaArtworkOriginal } from "../screens/home/vidaaArtworkOptimizatio
 import { useVidaaHeroTransition } from "../screens/home/vidaaHeroTransition.js";
 import { isTitleItemWatched, renderTitleWatchedBadge } from "../components/watchedTitleBadge.js";
 import { I18n } from "../../i18n/index.js";
+import { createHomeSidebar } from "./homeSidebar.js";
 import { t } from "../screens/home/homeScreenHelpers-01-modern-sidebar-pill-auto-collapse-ms.js";
 import {
   gridStickyTitle,
@@ -59,8 +55,8 @@ import { sizedImageUrl, TMDB_LOGO_SIZES } from "./imagePipeline.js";
 //   setRows(rows), update(rows, focus, { sidebarIndex, hideFocus }), setHero(item, { loading, candidates }),
 //   setProfile(state),
 //   sidebarItems(), destroy(); optionally setWatched(ids), playHeroTrailer(source),
-//   stopHeroTrailer({ deferred }), setFocusGif(url), setSidebarPill(iconOnly) and suspend()
-//   (Lightning has setWatched and setFocusGif, none of the others yet, and keeps the legacy sidebar).
+//   stopHeroTrailer({ deferred }), setFocusGif(url), setSidebarPill(iconOnly) and suspend().
+//   Both renderers have every method (lot W6) and share the DOM sidebar (homeSidebar.js).
 // This is the DOM one, the universal fallback and the only one drawing classic and grid (D9);
 // render/lightning/ draws the modern Home in WebGL.
 
@@ -205,9 +201,10 @@ export function setNavPosition(node, navRow, col) {
 export function createDomHomeRenderer(container, { geometry, imageQueue, layout = {} }) {
   const mode = geometry.layoutMode || "modern";
   const legacy = mode !== "modern";
+  const sidebar = createHomeSidebar(container, layout);
   container.innerHTML = `
     <div class="tv2-home tv2-layout-${mode}">
-      ${renderRootSidebar({ selectedRoute: "home", layout })}
+      ${sidebar.markup()}
       ${legacy ? "" : HERO_MARKUP}
       <div class="home-main tv2-main">${mode === "grid" ? '<div class="tv2-grid-sticky"></div>' : ""}<div class="tv2-rows"></div></div>
     </div>`;
@@ -250,8 +247,6 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
   // Bumped by every row emit: continue cards refill then, their release labels depend on time.
   let rowsVersion = 0;
   let focusedNode = null;
-  let sidebarOpen = false;
-  let pillIconOnly = false;
   // Stop of the hero trailer or folder video, and the card showing its focus GIF.
   let stopTrailer = null;
   let gifNode = null;
@@ -550,7 +545,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     focusedNode?.classList.remove("focused");
     focusedNode = null;
     if (sidebarIndex >= 0) {
-      focusedNode = sidebarItems()[sidebarIndex] || null;
+      focusedNode = sidebar.items()[sidebarIndex] || null;
     } else {
       const row = rows[focus.row];
       const view = row && views.get(row.key);
@@ -565,22 +560,7 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     // A hold menu is open (current Home lockHomeHoldFocus): no focused card.
     if (hideFocus) focusedNode = null;
     focusedNode?.classList.add("focused");
-    root.classList.toggle("tv2-sidebar-open", sidebarIndex >= 0);
-    sidebarOpen = sidebarIndex >= 0;
-    if (layout.modernSidebar) {
-      // Class writes of the current Home's setModernSidebarExpanded fast path, never measured.
-      const shell = container.querySelector(".modern-sidebar-shell");
-      shell?.classList.toggle("expanded", sidebarOpen);
-      shell?.classList.toggle("panel-visible", sidebarOpen);
-      container
-        .querySelector(".modern-sidebar-panel")
-        ?.setAttribute("aria-hidden", sidebarOpen ? "false" : "true");
-      return;
-    }
-    const sidebar = container.querySelector(".home-sidebar");
-    sidebar?.classList.toggle("expanded", sidebarOpen);
-    // Labels show only with content-expanded, as the current Home's setLegacySidebarExpanded.
-    sidebar?.classList.toggle("content-expanded", sidebarOpen);
+    sidebar.setOpen(sidebarIndex >= 0);
   }
 
   /**
@@ -713,31 +693,6 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     imageQueue.request(gif, url, { priority: true });
   }
 
-  function setProfile(profile) {
-    const sidebar = container.querySelector(
-      layout.modernSidebar ? ".modern-sidebar-shell" : ".home-sidebar"
-    );
-    if (!sidebar) return;
-    sidebar.outerHTML = renderRootSidebar({
-      selectedRoute: "home",
-      layout,
-      profile,
-      expanded: sidebarOpen,
-      pillIconOnly
-    });
-  }
-
-  /** Modern sidebar pill (modernSidebar): icon only or with its label. */
-  function setSidebarPill(iconOnly) {
-    pillIconOnly = Boolean(iconOnly);
-    setModernSidebarPillIconOnly(container, pillIconOnly);
-  }
-
-  /** Legacy items, or the modern panel's (the pill itself is not a stop). */
-  function sidebarItems() {
-    return getRootSidebarNodes(container, layout);
-  }
-
   /** Watched title ids (homeModel onWatched): visible cards refill at the next update. */
   function setWatched(ids) {
     // The same set again (route return, refresh): visible cards keep their fill.
@@ -770,9 +725,9 @@ export function createDomHomeRenderer(container, { geometry, imageQueue, layout 
     playHeroTrailer,
     stopHeroTrailer,
     setFocusGif,
-    setProfile,
-    setSidebarPill,
-    sidebarItems,
+    setProfile: sidebar.setProfile,
+    setSidebarPill: sidebar.setPill,
+    sidebarItems: sidebar.items,
     focusedNode: () => focusedNode,
     suspend,
     destroy() {

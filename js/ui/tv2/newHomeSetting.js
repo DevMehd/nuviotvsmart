@@ -63,14 +63,16 @@ export function homeEngineFallback() {
   return webglFailure || mountedEngine.split(":")[1] || null;
 }
 
-// Diagnostic A/B variant of the WebGL engine (lot W1a: hero stripes on the TV), one at a time,
-// read when the engine is created: it applies from the next app launch.
+// Diagnostic A/B variant of the WebGL engine (lot W1a: hero stripes on the TV; lot W5:
+// trailer-above, the trailer over an opaque canvas if the TV cannot show video under a transparent
+// one), one at a time, read when the engine is created: it applies from the next app launch.
 const WEBGL_VARIANT_KEY = "tvWebglVariant";
 export const WEBGL_VARIANTS = Object.freeze([
   "standard",
   "bitmap-basic",
   "platform-legacy",
-  "hero-780"
+  "hero-780",
+  "trailer-above"
 ]);
 
 export function getWebglVariant() {

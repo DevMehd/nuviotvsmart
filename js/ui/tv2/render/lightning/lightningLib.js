@@ -6,7 +6,7 @@ import { RendererMain } from "@lightningjs/renderer";
 import { WebGlCoreRenderer, SdfTextRenderer } from "@lightningjs/renderer/webgl";
 import { CanvasTextRenderer } from "@lightningjs/renderer/canvas";
 import { WebPlatform, WebPlatformLegacy } from "@lightningjs/renderer/platforms";
-import { RoundedWithBorder } from "@lightningjs/renderer/webgl/shaders";
+import { Rounded, RoundedWithBorder } from "@lightningjs/renderer/webgl/shaders";
 
 globalThis.NuvioLightning = {
   RendererMain,
@@ -15,5 +15,6 @@ globalThis.NuvioLightning = {
   CanvasTextRenderer,
   WebPlatform,
   WebPlatformLegacy,
+  Rounded,
   RoundedWithBorder
 };

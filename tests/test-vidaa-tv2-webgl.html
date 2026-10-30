@@ -47,7 +47,7 @@
           const { RendererMain } = await import(`${lib}/index.js`);
           const { WebGlCoreRenderer, SdfTextRenderer } = await import(`${lib}/webgl.js`);
           const { WebPlatform, WebPlatformLegacy } = await import(`${lib}/platform.js`);
-          const { RoundedWithBorder } = await import(`${lib}/webgl-shaders.js`);
+          const { Rounded, RoundedWithBorder } = await import(`${lib}/webgl-shaders.js`);
           const { CanvasTextRenderer } = await import(`${lib}/canvas.js`);
           let lightning = null;
           // Same modules as lightningLib.js; the subclass only exposes the instance to this page.
@@ -64,10 +64,12 @@
             CanvasTextRenderer,
             WebPlatform,
             WebPlatformLegacy,
+            Rounded,
             RoundedWithBorder
           };
           const { createLightningHomeRenderer, glInfo } =
             await import("/js/ui/tv2/render/lightning/lightningHomeRenderer.js");
+          const { createDomHomeRenderer } = await import("/js/ui/tv2/renderer.js");
           const { createImageQueue } = await import("/js/ui/tv2/imagePipeline.js");
           const { cardGeometry, homeLayout } = await import("/js/ui/tv2/railEngine.js");
           await document.fonts?.ready;
@@ -111,6 +113,29 @@
           };
           const geometry = cardGeometry({ homeLayout: "modern" });
           const failures = [];
+          // Lot W6: VIDAA refuses a software WebGL (this SwiftShader) with its renderer string, so
+          // the Home draws in DOM; off VIDAA it is used, which the rest of this page relies on.
+          const probe = document.createElement("canvas").getContext("webgl");
+          const probeDebug = probe?.getExtension("WEBGL_debug_renderer_info");
+          const gpu = String(probe?.getParameter(probeDebug ? probeDebug.UNMASKED_RENDERER_WEBGL : probe.RENDERER) || "");
+          if (/swiftshader|llvmpipe|softpipe/i.test(gpu)) {
+            const refused = [];
+            createLightningHomeRenderer(document.getElementById("home"), {
+              geometry,
+              imageQueue: createImageQueue(),
+              layout: { homeLayout: "modern" },
+              onFailure: (reason) => refused.push(reason)
+            });
+            for (const until = performance.now() + 5000; !refused.length && performance.now() < until; )
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            assert(refused[0] === `no-webgl:${gpu}`, `software WebGL refused on VIDAA: ${refused[0]} (${gpu})`);
+            assert(!document.querySelector(".tv2-gl-canvas"), "no canvas after the refusal");
+          }
+          // Only the engine's creation sees "not VIDAA": the cached TV profile stays VIDAA's.
+          const { getTvRuntimePerformanceProfile } = await import("/js/platform/tvRuntimePerformance.js");
+          getTvRuntimePerformanceProfile();
+          const isVidaa = Platform.isVidaa;
+          Platform.isVidaa = () => false;
           const view = createLightningHomeRenderer(document.getElementById("home"), {
             geometry,
             imageQueue: createImageQueue(),
@@ -130,8 +155,8 @@
             return out;
           };
           const { width, height } = geometry.poster;
-          // The legacy sidebar is drawn (lot W6 brings the pill): content starts at 220.
-          const drawn = (geo) => ({ ...geo, contentStart: 220, viewport: 1700 });
+          // Lot W6: the WebGL rails start at the geometry's contentStart (220 with the legacy rail).
+          const drawn = (geo) => geo;
           const [first] = homeLayout([row], focus, drawn(geometry)).rows;
           const top = 560 + first.top + 56;
           const cardX = (i) => 220 + first.win.offset + i * first.pitch;
@@ -149,7 +174,7 @@
             if (lightning && document.querySelector(".tv2-gl-canvas")) {
               lightning.stage.drawFrame();
               const image = pixelsAt(cardX(0) + width / 2, top + height / 2);
-              const tileCorner = pixelsAt(cardX(1) + 6, top + 6);
+              const tileCorner = pixelsAt(cardX(1) + 12, top + 12);
               const tileBand = pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80);
               const noArtBand = pixelsAt(cardX(3) + 20, top + height / 2 - 40, width - 40, 80);
               const row = pixelsAt(1240, 120, 670, 1);
@@ -177,6 +202,8 @@
               throw Error(`WebGL Home never settled: ${JSON.stringify(state)}`);
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
+          // The engine is kept for the page: back to VIDAA for everything else.
+          Platform.isVidaa = isVidaa;
           const [r, g, b] = state.tileCorner;
           assert(r < 80 && g < 80 && b < 80, `no-CORS card shows the dark tile, not white: ${state.tileCorner}`);
           const median = (list) => [...list].sort((x, y) => x - y)[list.length >> 1];
@@ -192,19 +219,23 @@
           view.setWatched(new Set([items[2].id]));
           view.update([row], focus, { sidebarIndex: -1 });
           // Card 2: red art, not focused, so not scaled. The canvas texture uploads asynchronously.
-          const watchedLeft = cardX(2) + width - 12 - 40;
+          // WF-13: the DOM badge's 34 px circle, 14 px from the corner.
+          const watchedLeft = cardX(2) + width - 14 - 34;
           let badgeCorner = null;
           let badgeCenter = null;
           for (const until = performance.now() + 3000; performance.now() < until; ) {
             lightning.stage.drawFrame();
-            badgeCorner = pixelsAt(watchedLeft + 2, top + 12 + 2);
-            badgeCenter = pixelsAt(watchedLeft + 20, top + 12 + 20);
+            badgeCorner = pixelsAt(watchedLeft + 2, top + 14 + 2);
+            badgeCenter = pixelsAt(watchedLeft + 17, top + 14 + 17);
             if (badgeCenter[0] < 80) break;
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
           assert(badgeCorner[0] > 200 && badgeCorner[1] < 40, `badge corner shows the art: ${badgeCorner}`);
           assert(badgeCenter[0] < 80 && badgeCenter[1] < 80, `badge pupil drawn: ${badgeCenter}`);
-          const refilledCorner = pixelsAt(cardX(1) + 6, top + 6);
+          // WF-04: rounded corners (24 px): the red art stops short of the card's corner.
+          const [artCorner, artInside] = [2, 30].map((d) => pixelsAt(cardX(2) + d, top + d));
+          assert(artCorner[0] - artCorner[1] < 40 && artInside[0] > 200, `rounded card: ${artCorner} / ${artInside}`);
+          const refilledCorner = pixelsAt(cardX(1) + 12, top + 12);
           const refilledText = Math.max(
             ...Array.from(pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80).filter((_, i) => i % 4 === 0))
           );
@@ -228,13 +259,18 @@
               await nextFrame();
             }
           };
-          // Runs `act` from an idle scene (so the first frame's delta is one frame, not the work
-          // before it) and reads the value at every Lightning frame until it reaches `end`: some
-          // frame must show it strictly between `start` and `end`.
-          const slide = async (label, act, read, start, end) => {
-            await new Promise((resolve) => setTimeout(resolve, 250));
+          // Runs `act` from a scene at rest for `rest` ms (WF-01: more than a second, where a
+          // throttled idle loop once ended the slide in one frame) and reads the value at every
+          // Lightning frame until it reaches `end`: some frame must show it strictly between, and
+          // the first frame must advance it by about one display frame, not by a 100 ms idle tick.
+          const slide = async (label, act, read, start, end, rest = 1200) => {
+            await new Promise((resolve) => setTimeout(resolve, rest));
             const seen = [];
-            const sample = () => seen.push(read());
+            let firstDelta = null;
+            const sample = () => {
+              firstDelta ??= lightning.stage.deltaTime;
+              seen.push(read());
+            };
             lightning.stage.eventBus.on("frameTick", sample);
             act();
             try {
@@ -246,6 +282,7 @@
               seen.some((value) => (value - start) * (value - end) < 0),
               `${label}: no position between ${start} and ${end} (${seen.join(",")})`
             );
+            assert(firstDelta < 50, `${label}: first frame after a rest advanced ${firstDelta} ms`);
           };
           const many = (key, kind = "poster", count = 14) => ({
             key,
@@ -332,18 +369,81 @@
           lightning.stage.drawFrame();
           const shown = pixelsAt(1600, 120);
           assert(shown[2] > 200 && shown[0] < 40, `new hero shown: ${shown}`);
+          // WF-10: another title's copy rises in from 0.7 and 5 px, never through an empty frame.
+          const textIn = (node, value) =>
+            node.text === value ? node : node.children.map((child) => textIn(child, value)).find(Boolean);
+          const copyBlock = textIn(sceneNode(), "Next").parent;
+          const rise = [];
+          const sampleRise = () => rise.push([copyBlock.alpha, copyBlock.y]);
+          lightning.stage.eventBus.on("frameTick", sampleRise);
+          view.setHero({ id: "tt7", type: "movie", name: "Risen", background: blue, poster: red });
+          await settle("copy rise", () => textIn(sceneNode(), "Risen")?.alpha === 1 && copyBlock.y === 0 && rise.some(([, y]) => y > 0));
+          lightning.stage.eventBus.off("frameTick", sampleRise);
+          assert(rise.every(([alpha]) => alpha >= 0.69), `copy never empty: ${rise.map(([a]) => a.toFixed(2))}`);
+          assert(rise.some(([, y]) => y > 0 && y < 5), `copy rises: ${rise.map(([, y]) => y.toFixed(1))}`);
+          // WF-03: the bottom fade starts at 82 % of the 632 px media (components-16.css, WF-16).
+          const [clear, faded] = [460, 625].map((y) => pixelsAt(1600, y));
+          assert(clear[2] > 200 && faded[2] < 60, `hero bottom fade: ${clear} / ${faded}`);
 
           // A row left by a jump (Back to the top, restore) lets its artwork go, not kept on the GPU.
           const tall = Array.from({ length: 8 }, (_, n) => many(`t${n}`));
           const scrolled = { row: 0, columns: {} };
           view.setRows(tall);
           view.update(tall, scrolled, { sidebarIndex: -1 });
-          const artwork = () => trackOf(0).children.filter((card) => card.children[0].src);
+          const artworkOf = (index) => trackOf(index).children.filter((card) => card.children[0].src);
+          const artwork = () => artworkOf(0);
           assert(artwork().length > 0, "first row artwork requested");
+          await settle("second row artwork", () => artworkOf(1).length > 0);
+          // Lot W6 warm ring (focus − 2 to focus + 3): row 1 keeps its textures off screen, row 0 not.
+          scrolled.row = 3;
+          view.update(tall, scrolled, { sidebarIndex: -1 });
+          assert(artworkOf(1).length > 0, "a warm row keeps its artwork");
+          assert(!artwork().length, `row 0, outside the warm ring, keeps ${artwork().length} textures`);
           scrolled.row = 6;
           view.update(tall, scrolled, { sidebarIndex: -1 });
-          assert(!artwork().length, `off-screen row keeps ${artwork().length} textures`);
+          assert(!artworkOf(1).length, `off-screen row keeps ${artworkOf(1).length} textures`);
+          // WF-01: the display rate at rest too (the slides above start after a 1.2 s rest), 4 fps away.
+          assert(lightning.targetFPS === 0, `display rate at rest: ${lightning.targetFPS}`);
+          const heroTexture = heroNodes.find((node) => node.src === blue).texture;
           view.destroy();
+          assert(lightning.targetFPS === 4, "4 fps while Home is away");
+          // WF-02: the hero (and the rows around the focus) keep their textures while away.
+          assert(heroTexture.preventCleanup === true, "hero texture kept while away");
+          // Back to Home after a stay elsewhere: the first frame is drawn while attaching (not at
+          // the next 4 fps tick), the cached hero shows without a fade, and the pins are released.
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          let draws = 0;
+          const drawFrame = lightning.stage.drawFrame;
+          lightning.stage.drawFrame = function () {
+            draws += 1;
+            return drawFrame.call(this);
+          };
+          let drawsAtAttach = null;
+          const attachObserver = new MutationObserver(() => {
+            if (document.querySelector(".tv2-gl-canvas")) drawsAtAttach ??= draws;
+          });
+          attachObserver.observe(document.getElementById("home"), { childList: true, subtree: true });
+          const backView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern" },
+            onFailure: (reason) => failures.push(reason)
+          });
+          backView.setRows(tall);
+          backView.update(tall, scrolled, { sidebarIndex: -1 });
+          backView.setHero({ id: "tt8", type: "movie", name: "Next", background: blue, poster: red });
+          const backAlphas = [];
+          const backHero = () => sceneNode()?.children[0]?.children.find((node) => node.src === blue);
+          const sampleBack = () => backHero() && backAlphas.push(backHero().alpha);
+          lightning.stage.eventBus.on("frameTick", sampleBack);
+          await settle("return hero", () => backHero()?.alpha === 1);
+          lightning.stage.eventBus.off("frameTick", sampleBack);
+          attachObserver.disconnect();
+          lightning.stage.drawFrame = drawFrame;
+          assert(drawsAtAttach > 0, `return drawn while attaching: ${drawsAtAttach} frames`);
+          assert(!backAlphas.some((alpha) => alpha > 0.05 && alpha < 0.95), `return hero faded: ${backAlphas}`);
+          assert(heroTexture.preventCleanup === false, "pins released on the return");
+          backView.destroy();
 
           // Final positions equal homeLayout for each preference (pill, landscape posters, poster-style Continue Watching).
           const variants = [
@@ -369,7 +469,7 @@
             assert(rowsLayer().y === expected.offsetY, `${JSON.stringify(prefs)} rows y`);
             expected.rows.forEach(({ win, size, pitch: step }, index) => {
               const track = trackOf(index);
-              assert(track.x === 220 + win.offset, `${JSON.stringify(prefs)} row ${index} x ${track.x}`);
+              assert(track.x === geo.contentStart + win.offset, `${JSON.stringify(prefs)} row ${index} x ${track.x}`);
               const card = cardAt(track, win.start * step);
               assert(card && card.w === size.width && card.h === size.height, `${JSON.stringify(prefs)} row ${index} card ${card?.w}×${card?.h}`);
             });
@@ -418,12 +518,14 @@
             return title && title.parent.alpha === 1 && logoNode.alpha === 1 && skeleton.alpha === 0;
           });
           assert(title.alpha === 0, "title hidden behind the logo");
-          assert(logoNode.w === 600 && logoNode.h === 120, `logo fitted ${logoNode.w}×${logoNode.h}`);
+          // WF-06: contained in the DOM's 440×200 logo box, vertically centered in it.
+          assert(logoNode.w === 440 && logoNode.h === 88, `logo fitted ${logoNode.w}×${logoNode.h}`);
           lightning.stage.drawFrame();
-          const logoPixel = pixelsAt(300, Math.round(logoNode.y + 60));
+          const logoPixel = pixelsAt(300, Math.round(logoNode.y + 44));
           assert(logoPixel[0] > 200 && logoPixel[1] < 40, `logo drawn: ${logoPixel}`);
+          // WF-08/09: the description ends at the DOM copy box bottom (468), 4 lines at most.
           const describe = findText(sceneNode(), heroItem("").description);
-          assert(describe.y + describe.h === 486 && describe.h <= 72, `description ${describe.y}+${describe.h}`);
+          assert(describe.y + describe.h === 468 && describe.h <= 144, `description ${describe.y}+${describe.h}`);
           assert(lum(pixelsAt(220, Math.round(describe.y), 300, 30)) > 90, "description drawn");
 
           // No logo, then a logo that fails: the title is drawn in the 600 atlas.
@@ -501,6 +603,9 @@
           const filled = pixelsAt(cwLeft + 30, progressY);
           const rest = pixelsAt(cwLeft + 20 + Math.round(0.7 * (cwSize.width - 40)), progressY);
           assert(filled[1] > 200 && rest[1] < 60, `progress 25 %: ${filled} / ${rest}`);
+          // Rounded ends (.tv2-cw-progress border-radius): the fill's corner pixel stays the art.
+          const fillCorner = pixelsAt(cwLeft + 20, Math.round(cwTop() + cwSize.height - 8 - 6));
+          assert(fillCorner[1] < 150, `rounded progress end: ${fillCorner} / ${filled}`);
           const badgeLeft = cwLeft + cwSize.width - 16 - badgeFrame.w;
           const inBadge = pixelsAt(badgeLeft + 6, Math.round(cwTop() + 16 + 22));
           const besideBadge = pixelsAt(badgeLeft - 10, Math.round(cwTop() + 16 + 22));
@@ -560,7 +665,8 @@
           const { size: wideSize, pitch: widePitch } = homeLayout(w4bRows, w4bFocus, drawn(wideGeo)).rows[0];
           const wideCard = cardAt(trackOf(0), widePitch);
           assert(wideCard && wideCard.w === wideSize.width && wideCard.w > wideCard.h, `landscape card ${wideCard?.w}×${wideCard?.h}`);
-          const badgeNode = wideCard.children.find((node) => node.w === 40 && node.h === 40);
+          const isBadge = (node) => node.w === 82 && node.h === 82;
+          const badgeNode = wideCard.children.find(isBadge);
           assert(badgeNode?.alpha === 1, "watched badge after setWatched");
           const logoOf = (card) => card.children.find((node) => node.mountY === 1 && typeof node.text !== "string");
           const wideTop = () => 560 + rowsLayer().y + rowsLayer().children[0].y + trackOf(0).y;
@@ -574,12 +680,12 @@
           await settle("W4b drawn", () => {
             lightning.stage.drawFrame();
             const logoPixel = pixelsAt(Math.round(wideLeft + 20 + 116), Math.round(wideTop() + logoOf(wideCard).y - 23));
-            const badgePixel = pixelsAt(Math.round(wideLeft + wideSize.width - 12 - 36), Math.round(wideTop() + 12 + 20));
+            const badgePixel = pixelsAt(Math.round(wideLeft + wideSize.width - 14 - 17), Math.round(wideTop() + 14 + 17));
             const artPixel = pixelsAt(Math.round(wideLeft + 60), Math.round(wideTop() + 40));
             // The red art is drawn, the badge over it is not red.
             return logoPixel[1] > 200 && logoPixel[0] < 60 && artPixel[0] > 200 && artPixel[1] < 40 && !(badgePixel[0] > 200 && badgePixel[1] < 40);
           });
-          assert(cardAt(trackOf(0), 0).children.find((node) => node.w === 40 && node.h === 40).alpha === 0, "unwatched: no badge");
+          assert(cardAt(trackOf(0), 0).children.find(isBadge).alpha === 0, "unwatched: no badge");
 
           // Folder row: emoji without cover; the GIF follows the focused folder card, then leaves.
           w4bFocus.row = 1;
@@ -608,12 +714,117 @@
           assert(!gifNode.classList.contains("is-active") && !gifNode.getAttribute("src"), "focus left: GIF cleared");
           w4bView.destroy();
 
+          // Lot W6: the shared DOM sidebar over the canvas. The pill sequence of the DOM renderer
+          // (icon only, open, profile, closed) gives the same classes and focus in WebGL, and both
+          // renderers expose the same methods (base ones never optional).
+          const pillLayout = { homeLayout: "modern", modernSidebar: true };
+          const pillGeo = cardGeometry(pillLayout);
+          const home = document.getElementById("home");
+          const sidebarRuns = {};
+          const methods = {};
+          for (const [engine, create] of [["dom", createDomHomeRenderer], ["webgl", createLightningHomeRenderer]]) {
+            const pillView = create(home, {
+              geometry: pillGeo,
+              imageQueue: createImageQueue(),
+              layout: pillLayout,
+              onFailure: (reason) => failures.push(reason)
+            });
+            const pillFocus = { row: 0, columns: { a: 0 } };
+            pillView.setRows([row]);
+            pillView.update([row], pillFocus, { sidebarIndex: -1 });
+            if (engine === "webgl") {
+              await settle("pill scene", () => document.querySelector(".tv2-gl-canvas") && rowsLayer()?.children.length === 1);
+              assert(trackOf(0).x === pillGeo.contentStart + homeLayout([row], pillFocus, pillGeo).rows[0].win.offset, "rails at the pill inset (104)");
+              assert(home.querySelector(".tv2-gl-proxy [data-engine='webgl']"), "focus proxy tagged data-engine=webgl");
+            }
+            const shell = () => home.querySelector(".modern-sidebar-shell");
+            const pill = () => home.querySelector(".modern-sidebar-pill");
+            const classes = (node) => ["expanded", "panel-visible", "icon-only"].filter((name) => node.classList.contains(name)).join(" ");
+            const snapshot = (label) => `${label}: shell[${classes(shell())}] pill[${classes(pill())}] open=${home.querySelector(".tv2-home").classList.contains("tv2-sidebar-open")} focus=${pillView.focusedNode()?.dataset.action || pillView.focusedNode()?.className.split(" ")[0] || "none"}`;
+            const run = [];
+            if (engine === "webgl") {
+              // WF-23: the sidebar's Material ligatures show once their font is there, never as text.
+              await settle("icon font", () => !home.querySelector(".tv2-icons-pending"));
+              const ligature = home.querySelector(".material-icons");
+              assert(ligature && document.fonts.check('24px "Material Icons"') && getComputedStyle(ligature).visibility === "visible", "Material icons drawn");
+            }
+            pillView.setSidebarPill(true);
+            run.push(snapshot("icon only"));
+            if (engine === "webgl") {
+              const box = pill().getBoundingClientRect();
+              const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+              assert(shell().contains(hit), `the pill is above the canvas: ${hit?.className}`);
+            }
+            pillView.update([row], pillFocus, { sidebarIndex: 0 });
+            run.push(snapshot("open"), `items=${pillView.sidebarItems().length}`);
+            pillView.setProfile({ activeProfileName: "Fixture", profileIndex: 1 });
+            pillView.update([row], pillFocus, { sidebarIndex: 0 });
+            run.push(snapshot("profile"));
+            pillView.update([row], pillFocus, { sidebarIndex: -1 });
+            pillView.setSidebarPill(false);
+            run.push(snapshot("closed"));
+            sidebarRuns[engine] = run;
+            methods[engine] = Object.keys(pillView).filter((key) => typeof pillView[key] === "function").sort().join();
+            pillView.destroy();
+          }
+          assert(JSON.stringify(sidebarRuns.dom) === JSON.stringify(sidebarRuns.webgl), `sidebar DOM ≠ WebGL:\n${sidebarRuns.dom.join("\n")}\n---\n${sidebarRuns.webgl.join("\n")}`);
+          assert(sidebarRuns.dom[0].includes("icon-only") && sidebarRuns.dom[1].includes("expanded panel-visible"), sidebarRuns.dom.join(" | "));
+          assert(methods.dom === methods.webgl, `same methods: ${methods.dom} / ${methods.webgl}`);
+          for (const name of ["setRows", "update", "setHero", "setProfile", "sidebarItems", "focusedNode", "destroy", "setWatched", "playHeroTrailer", "stopHeroTrailer", "setFocusGif", "setSidebarPill", "suspend"])
+            assert(methods.dom.split(",").includes(name), `contract method ${name}`);
+
+          // Lot W5: the hero trailer plays in a DOM layer under the transparent canvas. On its first
+          // frame the hero image fades out (the canvas reads transparent there) while the WebGL fade
+          // stays over it; full screen also fades the rails. Stop brings the hero back; destroy
+          // unloads the video (no audio after Home). Whether the TV shows video under the canvas is
+          // for the TV to confirm (variant trailer-above otherwise).
+          const { trailerVideoFixture } = await import("/tests/helpers/trailerVideoFixture.mjs");
+          const trailerView = createLightningHomeRenderer(document.getElementById("home"), {
+            geometry,
+            imageQueue: createImageQueue(),
+            layout: { homeLayout: "modern", modernHeroFullScreenBackdropEnabled: true },
+            onFailure: (reason) => failures.push(reason)
+          });
+          trailerView.setRows([row]);
+          trailerView.update([row], { row: 0, columns: { a: 0 } }, { sidebarIndex: -1 });
+          trailerView.setHero({ id: "tt9", type: "movie", name: "Hero", background: checker, poster: red });
+          const trailerLayer = document.querySelector(".tv2-gl-trailer");
+          const heroAlpha = () => {
+            lightning.stage.drawFrame();
+            return pixelsAt(1700, 100)[3];
+          };
+          await settle("trailer hero drawn", () => document.querySelector(".tv2-gl-canvas") && heroAlpha() === 255);
+          assert(
+            trailerLayer.compareDocumentPosition(document.querySelector(".tv2-gl-host")) & Node.DOCUMENT_POSITION_FOLLOWING &&
+              getComputedStyle(trailerLayer).zIndex === "auto",
+            "trailer layer under the canvas"
+          );
+          assert(
+            ["left", "top", "width", "height"].map((key) => trailerLayer.style[key]).join() === "0px,0px,1920px,1080px",
+            `full-screen trailer rectangle ${trailerLayer.style.cssText}`
+          );
+          const showTrailer = async () => {
+            trailerView.playHeroTrailer({ kind: "video", url: trailerVideoFixture, muted: true });
+            await settle("trailer first frame", () => trailerLayer.classList.contains("is-active"));
+          };
+          await showTrailer();
+          await settle("hero image faded over the trailer", () => heroAlpha() === 0);
+          assert(pixelsAt(100, 1000)[3] > 200, "the WebGL fade stays over the trailer");
+          await settle("full screen: rails faded", () => rowsLayer().parent.alpha === 0);
+          trailerView.stopHeroTrailer();
+          assert(!trailerLayer.querySelector("video") && !trailerLayer.classList.contains("is-active"), "stop unloads the trailer");
+          await settle("hero and rails back", () => heroAlpha() === 255 && rowsLayer().parent.alpha === 1);
+          await showTrailer();
+          const playing = trailerLayer.querySelector("video");
+          trailerView.destroy();
+          assert(!trailerLayer.querySelector("video") && playing.paused && !playing.getAttribute("src"), "destroy unloads the trailer: no audio");
+
           assert(!failures.length, `WebGL fell back to DOM: ${failures.join(",")}`);
           // Failures are forgotten on leaving Home: the kept engine retries them on the next visit.
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF, hero trailer under the canvas, software WebGL refused on VIDAA, warm ring, slides after a rest, shared pill sidebar and contract (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;
