@@ -1004,6 +1004,14 @@ export function createLightningHomeRenderer(
   const proxy = container.querySelector(".tv2-gl-proxy .tv2-card");
   const gifImage = container.querySelector(".tv2-gl-gif");
   const trailerLayer = container.querySelector(".tv2-gl-trailer");
+  // WF-23: the sidebar's Material ligatures ("person", "style") stay hidden until their font is
+  // there; the WebGL library loading at boot can hold the font back past the first paint.
+  const iconFont = '24px "Material Icons"';
+  if (document.fonts?.check && !document.fonts.check(iconFont)) {
+    root.classList.add("tv2-icons-pending");
+    const shown = () => root.classList.remove("tv2-icons-pending");
+    document.fonts.load(iconFont).then(shown, shown);
+  }
   // On the WebGL hero media rectangle (or the full screen), at the canvas scale innerWidth / 1920.
   const heroRect = heroNodeProps(layout);
   const px = (value) => `${(value * (globalThis.innerWidth || APP_WIDTH)) / APP_WIDTH}px`;

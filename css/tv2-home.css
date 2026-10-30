@@ -576,6 +576,11 @@ html[data-card-depth="true"][data-card-depth-posters="true"]
   transform: scaleX(-1);
 }
 
+/* WebGL Home (WF-23): Material ligatures hidden until the icon font has loaded. */
+.tv2-icons-pending .material-icons {
+  visibility: hidden;
+}
+
 /* WebGL prototype (lot B2): the canvas draws hero and rails under the DOM sidebar. */
 .tv2-gl-host {
   position: absolute;

@@ -742,6 +742,12 @@
             const classes = (node) => ["expanded", "panel-visible", "icon-only"].filter((name) => node.classList.contains(name)).join(" ");
             const snapshot = (label) => `${label}: shell[${classes(shell())}] pill[${classes(pill())}] open=${home.querySelector(".tv2-home").classList.contains("tv2-sidebar-open")} focus=${pillView.focusedNode()?.dataset.action || pillView.focusedNode()?.className.split(" ")[0] || "none"}`;
             const run = [];
+            if (engine === "webgl") {
+              // WF-23: the sidebar's Material ligatures show once their font is there, never as text.
+              await settle("icon font", () => !home.querySelector(".tv2-icons-pending"));
+              const ligature = home.querySelector(".material-icons");
+              assert(ligature && document.fonts.check('24px "Material Icons"') && getComputedStyle(ligature).visibility === "visible", "Material icons drawn");
+            }
             pillView.setSidebarPill(true);
             run.push(snapshot("icon only"));
             if (engine === "webgl") {
