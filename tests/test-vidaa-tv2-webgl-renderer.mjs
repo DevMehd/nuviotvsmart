@@ -560,9 +560,14 @@ assert.deepEqual(
       on: (event, fn) => (listeners[event] = listeners[event] || []).push(fn),
       emit: (event, payload = {}) => (listeners[event] || []).forEach((fn) => fn(node, payload)),
       animate: (to, settings) => {
+        const listeners = [];
         const ctrl = { to, settings, started: false, stopped: false };
         ctrl.start = () => (ctrl.started = true);
-        ctrl.stop = () => (ctrl.stopped = true);
+        ctrl.stop = () => {
+          ctrl.stopped = true;
+          listeners.splice(0).forEach((fn) => fn());
+        };
+        ctrl.once = (event, fn) => listeners.push(fn);
         animations.push(ctrl);
         return ctrl;
       },
@@ -710,8 +715,35 @@ assert.deepEqual(
   setRowSkeletons(scene, view, 0);
   assert.equal(pulse.stopped, true, "pulse stopped with the skeletons");
 
+  // WF-20: artwork arriving on a resting rail fades in over 150 ms; while the rail slides it
+  // shows at once; a new URL ends a running fade (a node without texture is painted white).
+  {
+    const track = glNode();
+    const fading = { ...scene, imageFade: { duration: 150 }, rowsLayer: glNode() };
+    const fadeCard = createGlCard(fading, track, "poster", geometry.poster);
+    const art = fadeCard.node.children[0];
+    fadeCard.image.src = "/a.jpg";
+    art.emit("loaded");
+    const run = animations.at(-1);
+    assert.deepEqual(
+      [art.alpha, run.to, run.settings, run.started],
+      [0, { alpha: 1 }, { duration: 150 }, true]
+    );
+    fadeCard.image.src = "";
+    assert.deepEqual([run.stopped, art.alpha], [true, 0], "cleared: the fade ends, nothing drawn");
+    tween(track, "x", -10, { duration: 140 });
+    fadeCard.image.src = "/b.jpg";
+    art.emit("loaded");
+    assert.equal(art.alpha, 1, "no fade while the rail slides");
+    settle(track);
+    const still = createGlCard(scene, glNode(), "poster", geometry.poster);
+    still.image.src = "/c.jpg";
+    still.node.children[0].emit("loaded");
+    assert.equal(still.node.children[0].alpha, 1, "no fade without motion");
+  }
+
   // Lot W4b: watched badge, landscape logo then title, folder emoji, Next Up blur, depth.
-  const { CARD_EXTRAS, blurredSource } =
+  const { CARD_EXTRAS, blurredSource, watchedBadgeBox } =
     await import("../js/ui/tv2/render/lightning/lightningHomeRenderer.js");
   const { cardImage } = await import("../js/ui/tv2/renderer.js");
   const { Router } = await import("../js/ui/navigation/routerState.js");

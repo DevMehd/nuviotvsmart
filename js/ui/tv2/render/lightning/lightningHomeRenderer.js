@@ -593,6 +593,8 @@ export function imageSlot(node, alpha = 1, onState = () => {}) {
     }
   };
   function set(url) {
+    // A running fade-in (WF-20) never outlives its texture: a node without one is painted white.
+    settle(node);
     slot.url = url || "";
     slot.loading = Boolean(url);
     // Lightning ignores the same src again: reattach so its texture reports loaded/failed anew.
@@ -705,6 +707,13 @@ export function createGlCard(scene, parent, kind, { width, height }) {
     card.showTile(state === "failed");
     // Given back (out of bounds, freed) or cleared: the next update asks again.
     if (state === "empty") card.wanted = null;
+    // WF-20: artwork arriving on a resting rail fades in (mobile Coil, 150 ms); while a rail or
+    // the rows slide, it shows at once (no animation added to a moving frame).
+    const fade = state === "loaded" && scene.imageFade;
+    if (fade && !animating(parent, "x") && !animating(scene.rowsLayer, "y")) {
+      image.alpha = 0;
+      tween(image, "alpha", 1, fade);
+    }
   });
   return card;
 }
@@ -1191,6 +1200,10 @@ export function createLightningHomeRenderer(
       shader,
       round,
       radius: geometry.radius ?? 24,
+      // Card artwork fade-in (WF-20): none outside the motion guard or on a quiet return.
+      get imageFade() {
+        return fadeOf(motion.copy);
+      },
       root: sceneRoot,
       heroLayer,
       rowsClip,
