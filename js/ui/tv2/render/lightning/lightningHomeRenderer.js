@@ -458,8 +458,9 @@ async function createEngine(report) {
     } catch (_) {}
     throw new Error(refusal);
   }
-  // The focus ring's rounded border (not in Lightning's default shader set).
+  // The focus ring's rounded border and the cards' rounded corners (not in the default set).
   renderer.stage.shManager.registerShaderType("RoundedWithBorder", L.RoundedWithBorder);
+  renderer.stage.shManager.registerShaderType("Rounded", L.Rounded);
   const canvas = renderer.canvas;
   canvas.className = "tv2-gl-canvas";
   canvas.addEventListener("webglcontextlost", () => report("context-lost"));
@@ -616,15 +617,24 @@ export function imageSlot(node, alpha = 1, onState = () => {}) {
  */
 export function createGlCard(scene, parent, kind, { width, height }) {
   const continueCard = kind === "continue";
+  // Rounded corners (WF-04, the DOM's --tv2-card-radius): the background, the artwork and every
+  // overlay reaching a corner. One draw call per rounded node (one texture per call).
   const node = scene.node({
     parent,
     w: width,
     h: height,
     ...(continueCard ? CW_CARD.background : { color: scene.colors.card }),
     pivot: 0.5,
-    zIndex: 1
+    zIndex: 1,
+    shader: scene.round(scene.radius)
   });
-  const image = scene.node({ parent: node, w: width, h: height, textureOptions: COVER });
+  const image = scene.node({
+    parent: node,
+    w: width,
+    h: height,
+    textureOptions: COVER,
+    shader: scene.round(scene.radius)
+  });
   const card = {
     node,
     kind,
@@ -677,14 +687,17 @@ export function createGlCard(scene, parent, kind, { width, height }) {
 // Mobile depth (top edge and sheen over the top 22 %), white at the user's strengths.
 function depthParts(scene, parent, width, height) {
   const { edge, sheen } = scene.depth;
+  const r = scene.radius;
   scene.node({
     parent,
     w: width,
     h: Math.round(height * CARD_EXTRAS.depth.sheen),
     colorTop: sheen,
-    colorBottom: 0xffffff00
+    colorBottom: 0xffffff00,
+    shader: scene.round([r, r, 0, 0])
   });
-  scene.node({ parent, w: width, h: CARD_EXTRAS.depth.edge, color: edge });
+  // The top edge between the rounded corners.
+  scene.node({ parent, x: r, w: width - 2 * r, h: CARD_EXTRAS.depth.edge, color: edge });
 }
 
 /** Landscape overlay: logo fitted bottom left once loaded, else the title; subtitle under it. */
@@ -697,7 +710,8 @@ function landscapeParts(scene, parent, width, height) {
     w: width,
     h: height - top,
     colorTop: 0x00000000,
-    colorBottom: L.scrimColor
+    colorBottom: L.scrimColor,
+    shader: scene.round([0, 0, scene.radius, scene.radius])
   });
   const logoNode = scene.node({ parent, x: L.pad, mountY: 1, w: L.logo.w, h: L.logo.h });
   const maxWidth = width - 2 * L.pad;
@@ -742,7 +756,14 @@ function watchedBadgeTexture(renderer, fill, glyph) {
 function continueParts(scene, parent, width, height) {
   const C = CW_CARD;
   // Next Up veil for artwork that cannot be shrunk (blurredSource), under the scrim and copy.
-  const veil = scene.node({ parent, w: width, h: height, color: scene.colors.veil, alpha: 0 });
+  const veil = scene.node({
+    parent,
+    w: width,
+    h: height,
+    color: scene.colors.veil,
+    alpha: 0,
+    shader: scene.round(scene.radius)
+  });
   const top = Math.round(height * C.scrimTop);
   scene.node({
     parent,
@@ -750,7 +771,8 @@ function continueParts(scene, parent, width, height) {
     w: width,
     h: height - top,
     colorTop: scene.colors.bgClear,
-    colorBottom: scene.colors.scrim
+    colorBottom: scene.colors.scrim,
+    shader: scene.round([0, 0, scene.radius, scene.radius])
   });
   const badge = scene.node({
     parent,
@@ -885,7 +907,14 @@ export function setRowSkeletons(scene, view, count, gap, pulse) {
   const { width, height } = view.size;
   const group = scene.group({ parent: view.track });
   for (let i = 0; i < count; i += 1)
-    scene.node({ parent: group, x: i * (width + gap), w: width, h: height, color: ROW_SKELETON });
+    scene.node({
+      parent: group,
+      x: i * (width + gap),
+      w: width,
+      h: height,
+      color: ROW_SKELETON,
+      shader: scene.round(scene.radius)
+    });
   view.skeleton = { count, group, ctrl: null };
   if (!pulse) return;
   view.skeleton.ctrl = group.animate(
@@ -991,6 +1020,8 @@ export function createLightningHomeRenderer(
           }
         : null;
     const shader = (props) => renderer.createShader("RoundedWithBorder", props);
+    // One per node: Lightning's shader node keeps the node it is attached to.
+    const round = (radius) => renderer.createShader("Rounded", { radius });
     const node = (props) => renderer.createNode(props);
     // Lightning paints any sized node white unless its color is 0: containers stay transparent.
     const group = (props) => renderer.createNode({ color: 0, ...props });
@@ -1107,6 +1138,8 @@ export function createLightningHomeRenderer(
       text,
       retext,
       shader,
+      round,
+      radius: geometry.radius ?? 24,
       root: sceneRoot,
       heroLayer,
       rowsClip,
@@ -1482,7 +1515,8 @@ export function createLightningHomeRenderer(
       left: `${rect.x * ratio}px`,
       top: `${rect.y * ratio}px`,
       width: `${rect.w * ratio}px`,
-      height: `${rect.h * ratio}px`
+      height: `${rect.h * ratio}px`,
+      borderRadius: `${(geometry.radius ?? 24) * ratio}px`
     });
     gif.timer = setTimeout(() => gifImage.classList.add("is-active"), motion.rail?.duration || 0);
   }

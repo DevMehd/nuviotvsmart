@@ -490,6 +490,8 @@ assert.deepEqual(
     text: ({ weight = 400, text = "", ...props }) => Object.assign(glNode(props), { weight, text }),
     retext: (node, value) => Object.assign(node, { text: value }),
     shader: (props) => ({ shader: props }),
+    round: (radius) => ({ round: radius }),
+    radius: 24,
     colors: { card: 1, bgClear: 2, scrim: 3, cwBadge: 4, accent: 5 }
   };
   const textsIn = (node) =>
@@ -508,6 +510,11 @@ assert.deepEqual(
   poster.showTile(true);
   assert.equal(poster.fallback.alpha, 1, "text tile of a failed image");
   assert.equal(poster.node.children[0].w, geometry.poster.width, "image first, at the card size");
+  // WF-04: the card and its artwork have the DOM's 24 px rounded corners.
+  assert.deepEqual(
+    [poster.node.shader, poster.node.children[0].shader],
+    [{ round: 24 }, { round: 24 }]
+  );
 
   const episode = {
     contentId: "tt6",
@@ -575,6 +582,7 @@ assert.deepEqual(
   assert.equal(group.children.length, 4);
   assert.equal(group.children[3].x, 3 * (geometry.poster.width + geometry.gap));
   assert.equal(group.children[0].color, 0x1a1a1aff, "mobile surface");
+  assert.deepEqual(group.children[0].shader, { round: 24 }, "rounded skeleton cards");
   assert.equal(animations.length, 0, "no pulse when constrained or without motion");
   setRowSkeletons(scene, view, 4, geometry.gap, null);
   assert.equal(view.track.children[0], group, "same count: kept");
@@ -661,6 +669,9 @@ assert.deepEqual(
   assert.equal(nextUp.cw.veil.alpha, 0, "small TMDB image: no veil");
   fillGlCard(scene, nextUp, episode, { url: "/other.jpg", fallbacks: [], veil: true, cw: nextCw });
   assert.equal(nextUp.cw.veil.alpha, 1, "veil over artwork that cannot be shrunk");
+  assert.deepEqual(nextUp.cw.veil.shader, { round: 24 }, "rounded veil");
+  const cwScrim = nextUp.node.children.find((child) => child.colorBottom === 3);
+  assert.deepEqual(cwScrim.shader, { round: [0, 0, 24, 24] }, "scrim rounded at the bottom only");
 
   const deep = { ...scene, depth: { posters: true, continue: false, edge: 7, sheen: 8 } };
   const plainCount = createGlCard(scene, glNode(), "poster", geometry.poster).node.children.length;
@@ -668,6 +679,8 @@ assert.deepEqual(
   assert.equal(deepCard.node.children.length, plainCount + 2, "edge and sheen");
   const [sheen, edge] = deepCard.node.children.slice(-2);
   assert.deepEqual([edge.color, edge.h, sheen.colorTop], [7, 2, 8]);
+  assert.deepEqual([edge.x, edge.w], [24, geometry.poster.width - 48], "edge between the corners");
+  assert.deepEqual(sheen.shader, { round: [24, 24, 0, 0] }, "sheen rounded at the top");
   assert.equal(sheen.h, Math.round(geometry.poster.height * 0.22));
   assert.equal(
     createGlCard(deep, glNode(), "continue", geometry.continueCard).node.children.length,

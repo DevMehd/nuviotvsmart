@@ -47,7 +47,7 @@
           const { RendererMain } = await import(`${lib}/index.js`);
           const { WebGlCoreRenderer, SdfTextRenderer } = await import(`${lib}/webgl.js`);
           const { WebPlatform, WebPlatformLegacy } = await import(`${lib}/platform.js`);
-          const { RoundedWithBorder } = await import(`${lib}/webgl-shaders.js`);
+          const { Rounded, RoundedWithBorder } = await import(`${lib}/webgl-shaders.js`);
           const { CanvasTextRenderer } = await import(`${lib}/canvas.js`);
           let lightning = null;
           // Same modules as lightningLib.js; the subclass only exposes the instance to this page.
@@ -64,6 +64,7 @@
             CanvasTextRenderer,
             WebPlatform,
             WebPlatformLegacy,
+            Rounded,
             RoundedWithBorder
           };
           const { createLightningHomeRenderer, glInfo } =
@@ -173,7 +174,7 @@
             if (lightning && document.querySelector(".tv2-gl-canvas")) {
               lightning.stage.drawFrame();
               const image = pixelsAt(cardX(0) + width / 2, top + height / 2);
-              const tileCorner = pixelsAt(cardX(1) + 6, top + 6);
+              const tileCorner = pixelsAt(cardX(1) + 12, top + 12);
               const tileBand = pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80);
               const noArtBand = pixelsAt(cardX(3) + 20, top + height / 2 - 40, width - 40, 80);
               const row = pixelsAt(1240, 120, 670, 1);
@@ -230,7 +231,10 @@
           }
           assert(badgeCorner[0] > 200 && badgeCorner[1] < 40, `badge corner shows the art: ${badgeCorner}`);
           assert(badgeCenter[0] < 80 && badgeCenter[1] < 80, `badge pupil drawn: ${badgeCenter}`);
-          const refilledCorner = pixelsAt(cardX(1) + 6, top + 6);
+          // WF-04: rounded corners (24 px): the red art stops short of the card's corner.
+          const [artCorner, artInside] = [2, 30].map((d) => pixelsAt(cardX(2) + d, top + d));
+          assert(artCorner[0] - artCorner[1] < 40 && artInside[0] > 200, `rounded card: ${artCorner} / ${artInside}`);
+          const refilledCorner = pixelsAt(cardX(1) + 12, top + 12);
           const refilledText = Math.max(
             ...Array.from(pixelsAt(cardX(1) + 20, top + height / 2 - 40, width - 40, 80).filter((_, i) => i % 4 === 0))
           );
