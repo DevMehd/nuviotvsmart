@@ -64,6 +64,8 @@ const FALLBACK_TEXT = 0x969ca3ff;
 // Hero skeleton (lot W3): the DOM loading gradient, shimmering outside constrained runtimes.
 const SKELETON = { colorTop: 0x262626ff, colorBottom: 0x101010ff };
 const COVER = { resizeMode: { type: "cover" } };
+// Lightning CoreNodeRenderState.InViewport (2 is OutOfBounds, 4 InBounds: preloaded off screen).
+const IN_VIEWPORT = 8;
 /**
  * Continue Watching card (lot W4a, WF-12): the DOM .tv2-continue-card (tv2-home.css), itself the
  * mobile HomeContinueWatchingSection.kt at TV sizes. Copy stacked bottom-up from `pad`, badge top
@@ -708,8 +710,8 @@ export function createGlCard(scene, parent, kind, { width, height }) {
     // Given back (out of bounds, freed) or cleared: the next update asks again.
     if (state === "empty") card.wanted = null;
     // WF-20: artwork arriving on a resting rail fades in (mobile Coil, 150 ms); while a rail or
-    // the rows slide, it shows at once (no animation added to a moving frame).
-    const fade = state === "loaded" && scene.imageFade;
+    // the rows slide, or off screen (preloaded), it shows at once (no animation nobody sees).
+    const fade = state === "loaded" && image.renderState === IN_VIEWPORT && scene.imageFade;
     if (fade && !animating(parent, "x") && !animating(scene.rowsLayer, "y")) {
       image.alpha = 0;
       tween(image, "alpha", 1, fade);

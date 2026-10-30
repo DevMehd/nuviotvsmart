@@ -401,6 +401,11 @@ assert.deepEqual(
   assert.equal(primary.tokens[1].group.x, widths[0] + step);
   assert.equal(primary.dots[0].x, widths[0] + HERO_COPY.dotGap);
   assert.equal(primary.dots[0].y, (32 - HERO_COPY.dot) / 2, "dot centered on the 32 px line");
+  // Inside the trailing group (gap 12, not 16): 35 px from token to token.
+  const groupStep = 2 * HERO_COPY.groupDotGap + HERO_COPY.dot;
+  assert.equal(groupStep, 35);
+  assert.equal(primary.tokens[2].group.x, widths[0] + step + widths[1] + groupStep);
+  assert.equal(primary.dots[1].x, widths[0] + step + widths[1] + HERO_COPY.groupDotGap);
   const imdbValue = primary.tokens[3].texts[0];
   assert.equal(imdbValue.x, HERO_COPY.imdb.w + HERO_COPY.imdb.gap, "value after the IMDb logo");
   assert.equal(imdbValue.color, HERO_COPY.metaColor, "IMDb value gray, as .home-hero-imdb");
@@ -433,6 +438,16 @@ assert.deepEqual(
   assert.equal(title.alpha, 1, "failed logo: title");
   assert.equal(logo.alpha, 0);
   assert.equal(title.y, at(bottom - 36 - 2 * gap - 32 - 76), "the title in place of the box");
+  // A logo given back before it loaded (out of bounds, freed): the title, never an empty box
+  // for good; the same hero again asks for it anew.
+  const third = { ...movie, logo: "https://example.test/third.png" };
+  copy.set(third);
+  assert.equal(title.alpha, 0, "loading: empty box");
+  logo.emit("freed");
+  assert.deepEqual([title.alpha, logo.src], [1, null], "given back: the title");
+  copy.set(third);
+  assert.deepEqual([title.alpha, logo.src], [0, "https://example.test/third.png"], "asked again");
+  logo.finish("https://example.test/third.png", "failed");
 
   // Series with badges: IMDb on the second line, after the badges, then the language. The copy
   // on screen stays (no empty frame) until the new one is measured (WF-10).
@@ -722,6 +737,10 @@ assert.deepEqual(
     const fading = { ...scene, imageFade: { duration: 150 }, rowsLayer: glNode() };
     const fadeCard = createGlCard(fading, track, "poster", geometry.poster);
     const art = fadeCard.node.children[0];
+    fadeCard.image.src = "/p.jpg";
+    art.emit("loaded");
+    assert.equal(art.alpha, 1, "preloaded off screen (InBounds): no fade nobody sees");
+    art.renderState = 8;
     fadeCard.image.src = "/a.jpg";
     art.emit("loaded");
     const run = animations.at(-1);

@@ -26,6 +26,8 @@ export const HERO_COPY = {
   // .home-hero-dot: a 7 px "•" at white 0.34, 43 px from token to token (16 + 11 + 16).
   dot: 7,
   dotGap: 18,
+  // Inside the first line's trailing group (.home-modern-hero-meta-group, gap 12): 35 px.
+  groupDotGap: 14,
   description: { fontSize: 25.2, lineHeight: 36, maxLines: 4, letterSpacing: 0.5 },
   badge: { padX: 18, fontSize: 18, border: 1, radius: 12, letterSpacing: 0.54 },
   imdb: { w: 40, h: 20, gap: 10 },
@@ -43,9 +45,11 @@ export const HERO_COPY = {
 export function heroCopyLines(display) {
   const imdb = { type: "imdb", text: display.imdbText };
   // renderModernHeroPrimary: the leading tokens in one text joined by " • ", then dots.
-  const primary = [display.leadingMeta.filter(Boolean).join(" • "), ...display.trailingMeta]
+  const lead = display.leadingMeta.filter(Boolean).join(" • ");
+  const primary = [lead, ...display.trailingMeta]
     .filter(Boolean)
     .map((text) => ({ type: "text", text: String(text), style: "meta" }));
+  if (lead) primary[0].lead = true;
   if (display.showImdbPrimary) primary.push(imdb);
   const secondary = [];
   if (display.secondaryHighlightText)
@@ -77,6 +81,13 @@ export function createHeroCopy(deps) {
   let logoState = "none";
   let logoUrl = "";
   const logoSlot = deps.slot(logo, 0.01, (state) => {
+    // Given back before loading (out of bounds, freed): the title meanwhile, the next set() asks
+    // again; never an empty brand box for good.
+    if (state === "empty" && logoState === "loading") {
+      logoState = "none";
+      logoUrl = "";
+      return layout();
+    }
     // Our own set() reports loading/empty: logoState was set there.
     if (state !== "loaded" && state !== "failed") return;
     logoState = state;
@@ -236,7 +247,11 @@ export function createHeroCopy(deps) {
         group,
         height,
         tokens: specs.map((spec) => token(group, spec, first, height)),
-        dots: specs.slice(1).map(() => dot(group, height))
+        dots: specs.slice(1).map(() => dot(group, height)),
+        // Only the dot after the leading text sits in the line's 16 px gaps (renderModernHeroPrimary).
+        gaps: specs
+          .slice(1)
+          .map((_, i) => (first && !(i === 0 && specs[0].lead) ? C.groupDotGap : C.dotGap))
       };
     };
     const primary = lineOf(lines.primary, true);
@@ -335,8 +350,9 @@ export function createHeroCopy(deps) {
       let x = 0;
       line.tokens.forEach((entry, index) => {
         if (index) {
-          line.dots[index - 1].x = x + C.dotGap;
-          x += 2 * C.dotGap + C.dot;
+          const between = line.gaps[index - 1];
+          line.dots[index - 1].x = x + between;
+          x += 2 * between + C.dot;
         }
         entry.group.x = x;
         x += entry.place();
