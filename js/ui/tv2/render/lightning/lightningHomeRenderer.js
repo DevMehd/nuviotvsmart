@@ -194,8 +194,9 @@ const glStats = {
 let liveEngine = null;
 
 /**
- * Motion of the current Home on VIDAA, as the DOM renderer: rails and rows slide in 140 ms (100
- * on constrained runtimes, tv2-home.css); the focused card scales and the hero fades behind
+ * Motion of the current Home on VIDAA, as the DOM renderer: rails and rows slide in 140 ms, also
+ * on constrained runtimes, where components-44.css forces 140 ms over tv2-home.css's 100 (WF-11,
+ * measured with getAnimations); the focused card scales and the hero fades behind
  * useVidaaHeroTransition (vidaa-balanced-motion), which animateHeroBackdropSwap checks before its
  * transition mode; the hero copy fades in over 150 ms (mobile). Nothing under reduced motion.
  * `null` means a direct jump.
@@ -208,10 +209,7 @@ export function homeMotion(root) {
   return {
     rail:
       html?.contains("vidaa-tv") && !reduced
-        ? {
-            duration: html.contains("performance-constrained") ? 100 : 140,
-            easing: "cubic-bezier(0.33, 0, 0.67, 1)"
-          }
+        ? { duration: 140, easing: "cubic-bezier(0.33, 0, 0.67, 1)" }
         : null,
     scale: balanced ? { duration: 160, easing: standard } : null,
     hero: balanced ? { duration: 200, easing: standard } : null,

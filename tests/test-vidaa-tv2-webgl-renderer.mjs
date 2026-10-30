@@ -162,8 +162,9 @@ assert.deepEqual(
     hero: { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" },
     copy: { duration: 150, easing: "cubic-bezier(0.2, 0, 0, 1)" }
   });
+  // WF-11: constrained runtimes slide in 140 ms too (components-44.css wins over tv2-home.css).
   rootClasses.add("performance-constrained");
-  assert.equal(homeMotion(domRoot).rail.duration, 100);
+  assert.deepEqual(homeMotion(domRoot).rail, rail);
   reducedMotion = true;
   assert.deepEqual(homeMotion(domRoot), still, "reduced motion");
   reducedMotion = false;
