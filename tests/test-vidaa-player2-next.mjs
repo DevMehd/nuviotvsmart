@@ -323,6 +323,60 @@ const settings = (partial) => PlayerSettingsStore.set(partial);
   next.destroy();
 }
 
+// 8b. The autoplay search outlives the episode (ended while searching) and finds nothing: the
+//     next episode's Sources open, as on a natural end, instead of a card over the last image.
+{
+  settings({
+    autoplayNextEpisode: true,
+    streamAutoPlayMode: "MANUAL",
+    stillWatchingEnabled: false
+  });
+  let answer;
+  const repository = {
+    ...fakeRepository(),
+    getStreamsFromAllAddons: () => new Promise((resolve) => (answer = resolve))
+  };
+  const { video, next, log } = setup({ repository });
+  video.at(2971);
+  await flushAsync();
+  assert.equal(next.state.launch?.phase, "searching");
+  video.paused = true;
+  video.ended = true;
+  video.at(3000, "ended");
+  await flushAsync();
+  answer({ status: "success", data: [] });
+  await flushAsync();
+  assert.equal(next.state.launch, null);
+  assert.equal(log.navigate.at(-1)?.route, "stream", "Sources of the next episode");
+  next.destroy();
+}
+
+// 8c. A failed search is not kept: OK on the card asks the addons again.
+{
+  settings({ autoplayNextEpisode: false, streamAutoPlayMode: "FIRST_STREAM" });
+  let calls = 0;
+  const repository = {
+    ...fakeRepository(),
+    getStreamsFromAllAddons: () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.reject(new Error("network"))
+        : Promise.resolve({ status: "success", data: [{ addonName: "Addon", streams: [stream] }] });
+    }
+  };
+  const { video, next } = setup({ repository });
+  video.at(2915);
+  await flushAsync();
+  assert.equal(calls, 1, "prefetch failed");
+  video.at(2971);
+  next.onKey(13, {});
+  await flushAsync();
+  assert.equal(calls, 2, "searched again");
+  assert.equal(next.state.launch?.phase, "countdown");
+  next.destroy();
+  settings({ streamAutoPlayMode: "MANUAL" });
+}
+
 // 9. Still watching after the threshold of automatic episodes: pause, then Exit leaves.
 {
   settings({

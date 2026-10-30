@@ -627,6 +627,10 @@ export function createPlayerNext(
         if (streams.promise === promise) streams = { key: items.length ? key : "", items };
         return items;
       });
+    // A failed search is not kept either (old getPlayableStreamsForVideo drops its promise).
+    promise.catch(() => {
+      if (streams.promise === promise) streams = { key: "", items: null, promise: null };
+    });
     streams = { key, items: null, promise };
     return promise;
   }
@@ -789,7 +793,8 @@ export function createPlayerNext(
     }
     if (!launchActive(token)) return false;
     const stream = resolution.selectedStream;
-    if (!stream && !pickOnMiss) {
+    // The episode ended during the search (onEnded skipped it): nothing left to keep playing.
+    if (!stream && !pickOnMiss && !video.ended) {
       launch = null;
       pausePlugins();
       render();
@@ -913,6 +918,7 @@ export function createPlayerNext(
   // ---- DOM ----
   let refs = null;
   let rendered = "";
+  let shownCounting = 0;
   if (root) {
     const holder = document.createElement("div");
     holder.className = "p2-next-root";
@@ -1000,6 +1006,12 @@ export function createPlayerNext(
     // The countdown bar is a CSS animation of that length; the logic waits on one timer.
     refs.bar.hidden = !counting;
     refs.fill.style.animationDuration = counting ? `${counting}ms` : "";
+    if (counting !== shownCounting) {
+      // Still prompt -> countdown can change within one task: restart the bar, one style flush.
+      refs.card.classList.remove("is-counting");
+      if (counting) void refs.fill.offsetWidth;
+      shownCounting = counting;
+    }
     refs.card.classList.toggle("is-counting", Boolean(counting));
   }
 

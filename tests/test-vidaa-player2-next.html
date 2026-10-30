@@ -137,6 +137,24 @@
         NewPlayerScreen.cleanup();
         assert(!container.querySelector(".p2-next-root") && NewPlayerScreen.next === null, "card removed");
 
+        // 3b. Still watching, then Continue: the 3 s bar starts from zero, not from the prompt's.
+        PlayerSettingsStore.set({
+          autoplayNextEpisode: true,
+          streamAutoPlayMode: "FIRST_STREAM",
+          stillWatchingEnabled: true,
+          stillWatchingEpisodeThreshold: 2
+        });
+        Router.current = "player";
+        await NewPlayerScreen.mount(params(1, { resumePositionMs: 99000, consecutiveAutoPlayCount: 2 }));
+        await waitFor(() => !card().hidden && card().querySelector('[data-p2-next="exit"]:not([hidden])'), 10000, "still watching");
+        await sleep(1500);
+        key(13);
+        await waitFor(() => card().classList.contains("is-counting") && !card().querySelector('[data-p2-next="exit"]:not([hidden])'), 4000, "countdown after Continue");
+        const restarted = container.querySelector(".p2-next-fill").getAnimations()[0];
+        assert(restarted && restarted.currentTime < 1000, `bar restarted (${Math.round(restarted?.currentTime)} ms)`);
+        NewPlayerScreen.cleanup();
+        PlayerSettingsStore.set({ stillWatchingEnabled: false });
+
         // 4. Autoplay: countdown bar, then the player route with the count.
         PlayerSettingsStore.set({ autoplayNextEpisode: true, streamAutoPlayMode: "FIRST_STREAM" });
         navigations.length = 0;
