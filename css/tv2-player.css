@@ -319,3 +319,117 @@
   color: #ff8a80;
   opacity: 1;
 }
+
+/* P6: skip intro button and next episode card, bottom right, under the OSD layer's hide rule
+   (the screen hides them while the OSD or a panel shows). Countdowns are one CSS scaleX
+   animation each: no timer or rAF repaints the bar. */
+.p2-next-root {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  color: #fff;
+}
+
+.p2-skip,
+.p2-next {
+  position: absolute;
+  right: 72px;
+  bottom: 96px;
+  box-sizing: border-box;
+  border-radius: 18px;
+  background: rgba(20, 20, 22, 0.9);
+  overflow: hidden;
+}
+
+.p2-skip {
+  padding: 16px 32px;
+  font-size: 24px;
+  font-weight: 700;
+  background: var(--focus-bg, #fff);
+  color: var(--on-secondary, #000);
+}
+
+.p2-skip-bar,
+.p2-next-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+.p2-skip-bar {
+  background: rgba(0, 0, 0, 0.45);
+  animation: p2-countdown 10s linear forwards;
+}
+
+.p2-next {
+  width: 520px;
+  padding: 24px 28px 28px;
+}
+
+.p2-next-kicker {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.p2-next-title {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.p2-next-status {
+  margin-top: 8px;
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.p2-next-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.p2-next-action {
+  height: 52px;
+  padding: 0 28px;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 52px;
+}
+
+.p2-next-action.focused {
+  background: var(--focus-bg, #fff);
+  color: var(--on-secondary, #000);
+}
+
+.p2-next-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.p2-next-fill {
+  height: 100%;
+  background: var(--focus-bg, #fff);
+}
+
+.p2-next.is-counting .p2-next-fill {
+  animation: p2-countdown 3s linear forwards;
+}
+
+@keyframes p2-countdown {
+  to {
+    transform: scaleX(1);
+  }
+}

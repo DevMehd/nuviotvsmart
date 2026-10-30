@@ -23,7 +23,8 @@ const defaultFixtures = [
   "test-vidaa-raw-video-probe.html",
   "test-vidaa-player2.html",
   "test-vidaa-player2-tracks.html",
-  "test-vidaa-player2-sources.html"
+  "test-vidaa-player2-sources.html",
+  "test-vidaa-player2-next.html"
 ];
 const fixtures = process.argv.slice(2).length ? process.argv.slice(2) : defaultFixtures;
 const allowedFixtures = new Set(
@@ -242,7 +243,11 @@ async function servePlayer2Fault(request, response, url) {
     return;
   }
   if (kind === "silent") return; // never answers; the fixture aborts by detaching the source
-  const body = await readFile(path.join(workspace, "tests/fixtures/player2/probe-5s.webm"));
+  // ?f= picks another WebM of the fixture folder (a bare file name only).
+  const name = /^[\w-]+\.webm$/.test(url.searchParams.get("f") || "")
+    ? url.searchParams.get("f")
+    : "probe-5s.webm";
+  const body = await readFile(path.join(workspace, "tests/fixtures/player2", name));
   const range = /bytes=(\d+)-(\d*)/.exec(request.headers.range || "");
   const start = range ? Number(range[1]) : 0;
   const end = range && range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;

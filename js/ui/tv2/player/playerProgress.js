@@ -27,13 +27,13 @@ const normalizeItemType = (value) =>
 const isSeriesItemType = (value) =>
   ["series", "tv", "show", "tvshow"].includes(normalizeItemType(value));
 
-function normalizePlayableImdbId(value = "") {
+export function normalizePlayableImdbId(value = "") {
   const candidate = String(value || "")
     .trim()
     .split(":")[0];
   return /^tt\d+$/i.test(candidate) ? candidate : "";
 }
-function normalizePlayableTmdbId(value = "") {
+export function normalizePlayableTmdbId(value = "") {
   const raw = String(value || "").trim();
   if (!raw || /^tt\d+$/i.test(raw)) return 0;
   const numeric = raw.replace(/^tmdb:/i, "").split(":")[0];

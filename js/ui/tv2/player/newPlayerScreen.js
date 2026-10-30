@@ -39,16 +39,16 @@ import { resolveStreamFilename } from "../../screens/player/streamFilename.js";
 import { SOURCE_WINDOW, createPlayerSources, sourceWindowStart } from "./playerSourcesPanel.js";
 import { loadStreamingLibs } from "../../../runtime/loadStreamingLibs.js";
 import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayText.js";
+import { createPlayerNext } from "./playerNext.js";
 
 // New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
 // switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js); OSD, seek preview,
 // media keys, buffering and the Back order (P3, playerOsd.js); audio and subtitle tracks with
 // their real names (P4, playerTracks.js); in-player Sources and the user's source switch (P5,
-// playerSourcesPanel.js), HLS with headers through hls.js on demand. Same route "player",
-// params and screen contract as the old player (router facade). Never imports
-// playerScreenMethods-* or playerScreenContext (asserted by the VIDAA build).
-// Deferred to later slices: next episode and skip intro (P6), Watch Party (P7, whose restore
-// will take priority over the route's).
+// playerSourcesPanel.js), HLS with headers through hls.js on demand; next episode and skip
+// intro (P6, playerNext.js). Same route "player", params and screen contract as the old player
+// (router facade). Never imports playerScreenMethods-* or playerScreenContext (asserted by the
+// VIDAA build). Deferred to P7: Watch Party (whose restore will take priority over the route's).
 
 const t = (key, params = [], fallback = key) => I18n.t(key, params, { fallback });
 const ERROR_ACTIONS = ["sources", "retry", "back"];
@@ -203,6 +203,8 @@ export const NewPlayerScreen = {
   // Sources panel line: { kind: "opening" } while a chosen source resolves, or
   // { kind: "failed", message } when it could not be opened (the current one stays).
   sourcesStatus: null,
+  // Next episode card, still-watching prompt and skip intro (P6).
+  next: null,
 
   get paused() {
     return this.session?.state === "paused";
@@ -289,6 +291,29 @@ export const NewPlayerScreen = {
       pause: () => this.session?.pause(),
       journal: () => this.personalWatchRun
     });
+    this.next = createPlayerNext(
+      this.video,
+      {
+        params: this.params,
+        isActive: () => this.isActiveMountToken(token),
+        firstFrame: () => Boolean(this.session?.firstFrame),
+        fatal: () => this.isErrorVisible() || Number(this.video?.error?.code || 0) > 0,
+        osdVisible: () =>
+          this.controlsVisible || Boolean(this.trackPanel) || this.streamInfoVisible,
+        hideControls: () => this.setControlsVisible(false),
+        currentStream: () => this.candidate,
+        seek: (seconds) => this.seekPlaybackSeconds(seconds),
+        pause: () => this.session?.pause(),
+        // Old playNextEpisode: flush with a cloud push before the next route.
+        flush: () => this.progress?.flush({ force: true }),
+        navigate: (route, params, options) => Router.navigate(route, params, options),
+        // Still watching "Exit" and a natural end without autoplay: Detail, like the old player.
+        leave: () => this.navigateBackToStreamScreen({ forceDetail: true }),
+        // shortcut: no Watch Party lock before P7, which wires isPartyControlLocked here.
+        partyLocked: () => false
+      },
+      { root: this.root }
+    );
     this.render();
     // The Router awaits mount: resolution and playback continue after it returns.
     void this.startCandidate(token);
@@ -458,7 +483,10 @@ export const NewPlayerScreen = {
       else if (session.firstFrame) this.sources.markFailed(this.candidate, false);
     }
     const loading = !error && !session.firstFrame;
-    if (session.firstFrame) this.tracks?.onFirstFrame();
+    if (session.firstFrame) {
+      this.tracks?.onFirstFrame();
+      this.next?.onFirstFrame();
+    }
     refs.loading.hidden = !loading;
     if (loading) {
       // The backdrop goes at the first image: a hardware video plane may sit under it.
@@ -539,6 +567,11 @@ export const NewPlayerScreen = {
     }
     // Loading: only Back acts (FocusEngine -> consumeBackRequest).
     if (!this.session?.firstFrame) return;
+    // Still watching owns the keys; OK on the next episode card or the skip button acts on it.
+    if (!this.streamInfoVisible && this.next?.onKey(keyCode, event)) {
+      event?.preventDefault?.();
+      return;
+    }
     if (this.streamInfoVisible) {
       event?.preventDefault?.();
       if (!event?.repeat && (isStreamInfoKey(event) || isSelectKey(keyCode)))
@@ -910,6 +943,8 @@ export const NewPlayerScreen = {
       preview: this.seekPreviewSeconds,
       action: this.controlFocusZone === "actions" ? this.controlFocusIndex : -1
     });
+    // The card and the skip button give way to the OSD and its panels.
+    this.next?.render();
   },
 
   // Zero OSD timer while it is hidden: the 1 Hz update and the auto-hide live only while shown.
@@ -1020,7 +1055,8 @@ export const NewPlayerScreen = {
   onPointerFocus() {},
   onPointerMove() {},
 
-  // Back order: panel, seek preview, (next card / skip intro: P6), visible OSD, then leave.
+  // Back order: panel, seek preview, still watching / next card / skip intro, visible OSD, then
+  // leave.
   // Loading and error leave once the panel (Sources over the error) is closed;
   // navigateBackToStreamScreen locks a doubled Back.
   consumeBackRequest() {
@@ -1038,6 +1074,8 @@ export const NewPlayerScreen = {
       this.cancelSeekPreview();
       return true;
     }
+    const nextBack = this.next?.back();
+    if (nextBack) return nextBack;
     if (this.controlsVisible) {
       this.setControlsVisible(false);
       return true;
@@ -1047,7 +1085,12 @@ export const NewPlayerScreen = {
 
   // Same list as the old player: a visible OSD alone lets a history Back return to Sources.
   hasBackDismissableOverlay() {
-    return Boolean(this.trackPanel || this.streamInfoVisible || this.seekPreviewSeconds != null);
+    return Boolean(
+      this.trackPanel ||
+      this.streamInfoVisible ||
+      this.seekPreviewSeconds != null ||
+      this.next?.hasOverlay()
+    );
   },
 
   cancelSourceLoad() {
@@ -1082,12 +1125,13 @@ export const NewPlayerScreen = {
     );
   },
 
-  // Same shape as the old player (playerScreenMethods-21), without the next episode fields (P6).
+  // Same shape as the old player (playerScreenMethods-21).
   buildReturnStreamRouteParamsFromPlayer() {
     const params = this.params || {};
     const itemType = normalizeItemType(params.itemType);
     const series = isSeriesItemType(itemType);
     const currentEpisode = series ? this.resolveCurrentEpisodeEntry() : null;
+    const nextEpisode = series ? this.resolveNextEpisodeInfo() : null;
     const positionMs = Math.round(this.getPlaybackCurrentSeconds() * 1000);
     const backdrop = params.playerBackdropUrl || params.backdrop || params.poster || null;
     const derived = {
@@ -1115,6 +1159,12 @@ export const NewPlayerScreen = {
         ? params.playerEpisodeTitle || params.playerSubtitle || currentEpisode?.title || ""
         : "",
       episodes: Array.isArray(params.episodes) ? params.episodes : [],
+      nextEpisodeVideoId: nextEpisode?.videoId || null,
+      nextEpisodeLabel: nextEpisode?.episodeLabel || null,
+      nextEpisodeSeason: nextEpisode?.season ?? null,
+      nextEpisodeEpisode: nextEpisode?.episode ?? null,
+      nextEpisodeTitle: nextEpisode?.episodeTitle || "",
+      nextEpisodeReleased: nextEpisode?.released || "",
       resumePositionMs: Number.isFinite(positionMs) && positionMs > 0 ? positionMs : 0
     };
     const original =
@@ -1236,11 +1286,12 @@ export const NewPlayerScreen = {
   renderControlButtons() {
     this.renderOsd();
   },
+  // Phone remote "next episode" (and the Watch Party in P7).
   resolveNextEpisodeInfo() {
-    return null;
+    return this.next?.info() || null;
   },
-  playNextEpisode() {
-    return false;
+  playNextEpisode({ userInitiated = true } = {}) {
+    return this.next ? this.next.play({ userInitiated }) : Promise.resolve(false);
   },
   // Tracks (P4): read by the phone remote and Stream info.
   get subtitleDialogVisible() {
@@ -1282,6 +1333,11 @@ export const NewPlayerScreen = {
     try {
       this.finishPlayback();
     } catch (_) {}
+    // Countdowns, the source search and the card go first (player -> player reuses this object).
+    try {
+      this.next?.destroy();
+    } catch (_) {}
+    this.next = null;
     try {
       this.session?.destroy();
     } catch (_) {

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <title>VIDAA new player P6 next episode (real Chrome media pipeline)</title>
+  <link rel="stylesheet" href="../css/tv2-player.css" />
+  <style>
+    #player { position: fixed; inset: 0; display: none; background: #000; }
+    #videoPlayer { position: absolute; inset: 0; width: 100%; height: 100%; }
+  </style>
+  <body>
+    <div id="app">
+      <div id="player" class="screen">
+        <video id="videoPlayer" autoplay playsinline webkit-playsinline preload="auto"></video>
+      </div>
+    </div>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      // Lot P, P6: skip intro and next episode card in the real screen, on a 130 s WebM (shorter
+      // clips are placeholders by rule). Skip button after the first image, OK seeks past the
+      // intro; the card at the mark, hidden by the OSD, Back dismisses it, a seek back re-arms
+      // it; MANUAL opens the next episode's Sources; autoplay counts down then routes to the
+      // player, and player -> player on the same screen object starts clean. Desktop only.
+      import { Router } from "../js/ui/navigation/routerState.js";
+      import { NewPlayerScreen } from "../js/ui/tv2/player/newPlayerScreen.js";
+      import { subtitleRepository } from "../js/data/repository/subtitleRepository.js";
+      import { skipIntroRepository } from "../js/data/repository/skipIntroRepository.js";
+      import { streamRepository } from "../js/data/repository/streamRepository.js";
+      import { addonRepository } from "../js/data/repository/addonRepository.js";
+      import { PlayerSettingsStore } from "../js/data/local/playerSettingsStore.js";
+
+      const result = document.getElementById("result");
+      const video = document.getElementById("videoPlayer");
+      const container = document.getElementById("player");
+      const assert = (value, message) => {
+        if (!value) throw Error(message);
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (predicate, ms, label) => {
+        const until = performance.now() + ms;
+        while (!predicate()) {
+          if (performance.now() > until) throw Error(`timeout: ${label}`);
+          await sleep(25);
+        }
+      };
+      const key = (keyCode) => NewPlayerScreen.onKeyDown({ keyCode, preventDefault() {} });
+      const href = (path) => new URL(path, location.href).href;
+      const url = href("/__player2/range?f=series-130s.webm");
+      const current = { id: "e1", url, name: "Addon 1080p", addonName: "Addon" };
+      const nextStream = { id: "e2", url, name: "Addon 1080p", addonName: "Addon" };
+      const episodes = [
+        { id: "tt0000006:1:1", season: 1, episode: 1, title: "Pilot" },
+        { id: "tt0000006:1:2", season: 1, episode: 2, title: "Second" },
+        { id: "tt0000006:1:3", season: 1, episode: 3, title: "Third" }
+      ];
+      const params = (episode, extra = {}) => ({
+        itemId: "tt0000006",
+        itemType: "series",
+        imdbId: "tt0000006",
+        videoId: `tt0000006:1:${episode}`,
+        season: 1,
+        episode,
+        playerTitle: "Series",
+        streamUrl: url,
+        preferredStreamId: `e${episode}`,
+        streamCandidates: [episode === 1 ? current : nextStream],
+        episodes,
+        ...extra
+      });
+      const skip = () => container.querySelector(".p2-skip");
+      const card = () => container.querySelector(".p2-next");
+      const navigations = [];
+      const notes = [];
+      try {
+        Router.current = "player";
+        Router.popToExistingRoute = () => true;
+        Router.navigate = async (route, routeParams, options) => {
+          navigations.push({ route, params: routeParams, options });
+        };
+        subtitleRepository.getSubtitles = async () => [];
+        let skipRequests = 0;
+        skipIntroRepository.getSkipIntervals = async () => {
+          skipRequests += 1;
+          return [{ type: "intro", startTime: 1, endTime: 20 }];
+        };
+        streamRepository.getStreamsFromAllAddons = async () => ({
+          status: "success",
+          data: [{ addonName: "Addon", streams: [nextStream] }]
+        });
+        addonRepository.getInstalledAddons = async () => [{ name: "Addon" }];
+        // The card 30 s before the end (100 s on this clip).
+        PlayerSettingsStore.set({
+          autoplayNextEpisode: false,
+          streamAutoPlayMode: "MANUAL",
+          streamAutoPlayPreferBingeGroupForNextEpisode: false,
+          stillWatchingEnabled: false,
+          skipIntroEnabled: true,
+          autoSkipSegmentTypes: [],
+          nextEpisodeThresholdMode: "MINUTES_BEFORE_END",
+          nextEpisodeThresholdMinutesBeforeEnd: 0.5
+        });
+
+        await NewPlayerScreen.mount(params(1));
+        const session = () => NewPlayerScreen.session;
+        assert(skipRequests === 0, "no skip request before the first image");
+
+        // 1. Skip intro after the first image; OK seeks to the end of the interval.
+        await waitFor(() => session()?.firstFrame, 6000, "first image");
+        await waitFor(() => !skip().hidden, 4000, "skip button");
+        assert(skipRequests === 1, "one skip request");
+        assert(skip().textContent.trim() && !skip().textContent.includes("http"), "skip label");
+        key(13);
+        await waitFor(() => video.currentTime >= 19.5, 4000, "seek past the intro");
+        assert(skip().hidden && !video.paused, "skip hidden, still playing");
+
+        // 2. The card at the mark; the OSD hides it; Back dismisses it; a seek back re-arms it.
+        NewPlayerScreen.seekPlaybackSeconds(99.5);
+        await waitFor(() => video.currentTime >= 100.2, 4000, "past the mark");
+        await waitFor(() => !card().hidden, 2000, "card");
+        assert(card().textContent.includes("S1E2") && card().textContent.includes("Second"), "next episode named");
+        assert(NewPlayerScreen.resolveNextEpisodeInfo()?.videoId === "tt0000006:1:2", "contract");
+        key(38);
+        assert(card().hidden && NewPlayerScreen.controlsVisible, "the OSD hides the card");
+        assert(NewPlayerScreen.consumeBackRequest() === true && !NewPlayerScreen.controlsVisible, "Back hides the OSD");
+        assert(!card().hidden, "card back");
+        assert(NewPlayerScreen.hasBackDismissableOverlay(), "card counts as an overlay");
+        assert(NewPlayerScreen.consumeBackRequest() === true && card().hidden, "Back dismisses the card");
+        NewPlayerScreen.seekPlaybackSeconds(50);
+        await waitFor(() => !video.seeking && video.currentTime < 60, 4000, "seek back");
+        NewPlayerScreen.seekPlaybackSeconds(100.5);
+        await waitFor(() => !card().hidden, 4000, "card re-armed");
+
+        // 3. MANUAL: OK opens the next episode's Sources, never the player route.
+        key(13);
+        await waitFor(() => navigations.length === 1, 2000, "Sources route");
+        assert(navigations[0].route === "stream" && navigations[0].params.videoId === "tt0000006:1:2", "next episode Sources");
+        assert(navigations[0].params.nextEpisodeVideoId === "tt0000006:1:3", "following episode");
+        NewPlayerScreen.cleanup();
+        assert(!container.querySelector(".p2-next-root") && NewPlayerScreen.next === null, "card removed");
+
+        // 4. Autoplay: countdown bar, then the player route with the count.
+        PlayerSettingsStore.set({ autoplayNextEpisode: true, streamAutoPlayMode: "FIRST_STREAM" });
+        navigations.length = 0;
+        Router.current = "player";
+        await NewPlayerScreen.mount(params(1, { resumePositionMs: 95000 }));
+        await waitFor(() => session()?.firstFrame, 6000, "first image (resume)");
+        await waitFor(() => card().classList.contains("is-counting"), 10000, "countdown");
+        const fill = getComputedStyle(container.querySelector(".p2-next-fill"));
+        assert(fill.animationName === "p2-countdown", `CSS countdown (${fill.animationName})`);
+        const countdownAt = performance.now();
+        await waitFor(() => navigations.length === 1, 5000, "player route");
+        notes.push(`countdown ${((performance.now() - countdownAt) / 1000).toFixed(1)} s`);
+        const nav = navigations[0];
+        assert(nav.route === "player" && nav.options?.replaceHistory, "player route, replaced");
+        assert(nav.params.videoId === "tt0000006:1:2" && nav.params.preferredStreamId === "e2", "next episode, chosen source");
+        assert(nav.params.consecutiveAutoPlayCount === 1, "count");
+
+        // 5. player -> player on the same object: cleanup then mount, a clean card.
+        NewPlayerScreen.cleanup();
+        assert(!video.getAttribute("src"), "decoder freed");
+        PlayerSettingsStore.set({ autoplayNextEpisode: false, streamAutoPlayMode: "MANUAL" });
+        await NewPlayerScreen.mount(nav.params);
+        await waitFor(() => session()?.firstFrame, 6000, "next episode first image");
+        assert(card().hidden && !card().classList.contains("is-counting"), "clean card");
+        assert(NewPlayerScreen.resolveNextEpisodeInfo()?.videoId === "tt0000006:1:3", "next of the next");
+        assert(container.querySelectorAll(".p2-next-root").length === 1, "one card root");
+        NewPlayerScreen.cleanup();
+
+        result.dataset.status = "passed";
+        result.textContent = `PASS: new player P6 next episode and skip intro (${notes.join(", ")}; desktop, not a TV measure)`;
+      } catch (error) {
+        result.dataset.status = "failed";
+        result.textContent = `FAIL: ${error?.message || error} [${notes.join(", ")}]`;
+      }
+    </script>
+  </body>
+</html>
