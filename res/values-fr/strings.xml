@@ -2866,4 +2866,25 @@
     <string name="layout_new_sources_sub">Liste des sources plus fluide en cours de refonte pour la télé ; effet au prochain démarrage</string>
     <string name="layout_new_sources_off">Désactivé</string>
     <string name="layout_new_sources_on">Activé</string>
+    <string name="playback_new_player">Nouveau lecteur</string>
+    <string name="playback_new_player_sub">Démarrage plus fiable, sans changement de source automatique ; effet au prochain démarrage</string>
+    <string name="player2_opening">Ouverture… %1$d s</string>
+    <string name="player2_error_decode">Ce format n’est pas lu par le décodeur de la TV.</string>
+    <string name="player2_error_network">La connexion à la source a été perdue.</string>
+    <string name="player2_error_stalled">La source n’envoie plus de données.</string>
+    <string name="player2_error_timeout">La vidéo n’a pas démarré à temps.</string>
+    <string name="player2_error_unreadable">Source illisible ou expirée.</string>
+    <string name="player2_audio_n">Audio %1$d</string>
+    <string name="player2_subtitle_n">Sous-titres %1$d</string>
+    <string name="player2_audio_names_pending">Noms des pistes : lecture de l’en-tête en cours…</string>
+    <string name="player2_audio_names_mismatch">Noms indisponibles : la TV liste %1$d pistes, le fichier en déclare %2$d</string>
+    <string name="player2_audio_names_missing">Noms indisponibles (%1$s)</string>
+    <string name="player2_audio_tv_managed">Choix de la piste géré par la TV.</string>
+    <string name="player2_audio_refused">La TV n’a pas gardé cette piste.</string>
+    <string name="player2_subtitle_failed">Ce sous-titre n’a pas pu être chargé.</string>
+    <string name="player2_subtitles_loading">Chargement des sous-titres des addons…</string>
+    <string name="player2_source_opening">Ouverture de la source…</string>
+    <string name="player2_source_failed">Cette source n’a pas pu être ouverte.</string>
+    <string name="player2_source_failed_short">Échec</string>
+    <string name="player2_subtitle_phone">Téléphone</string>
 </resources>

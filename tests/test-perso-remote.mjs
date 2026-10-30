@@ -58,4 +58,69 @@ globalThis.KeyboardEvent = class { constructor(type, init) { this.type = type; t
 simulateRemoteKey("ArrowDown", 40, target);
 assert.deepEqual(received, [["keydown", "ArrowDown", 40], ["keyup", "ArrowDown", 40]]);
 
+// The new VIDAA player screen (lot P, P3) answers the same adapter: snapshot, play/pause,
+// seek, volume and mute on #videoPlayer.
+{
+  globalThis.__NUVIO_PLATFORM__ = "vidaa";
+  globalThis.location = { search: "" };
+  globalThis.document.getElementById = () => null;
+  globalThis.document.documentElement.classList = { contains: () => false };
+  const { Router } = await import("../js/ui/navigation/routerState.js");
+  const { NewPlayerScreen } = await import("../js/ui/tv2/player/newPlayerScreen.js");
+  const { snapshot, applyPlan } = await import("../js/core/perso/tvRemoteReceiver.js");
+  const video = {
+    paused: false,
+    currentTime: 61.2,
+    duration: 2400,
+    volume: 0.5,
+    muted: false,
+    play() {
+      this.paused = false;
+    },
+    pause() {
+      this.paused = true;
+    }
+  };
+  let state = "playing";
+  NewPlayerScreen.video = video;
+  NewPlayerScreen.container = { querySelector: (selector) => (selector === "#videoPlayer" ? video : null) };
+  NewPlayerScreen.params = { playerTitle: "Show", season: 1, episode: 2, playerEpisodeTitle: "Pilot" };
+  NewPlayerScreen.session = {
+    firstFrame: true,
+    get state() {
+      return state;
+    },
+    currentSeconds: () => video.currentTime,
+    durationSeconds: () => video.duration,
+    pause: () => (video.pause(), (state = "paused")),
+    resume: () => (video.play(), (state = "playing"))
+  };
+  Router.current = "player";
+  Router.getCurrentScreen = () => NewPlayerScreen;
+  const shot = snapshot();
+  assert.deepEqual(
+    [shot.playing, shot.paused, shot.positionSeconds, shot.durationSeconds, shot.title, shot.subtitle],
+    [true, false, 61.2, 2400, "Show", "S1 E2 · Pilot"]
+  );
+  applyPlan({ action: "toggle" });
+  assert.equal(video.paused, true, "toggle pauses");
+  assert.equal(snapshot().paused, true);
+  assert.equal(NewPlayerScreen.osdHideTimer, null, "a paused OSD never hides by itself");
+  applyPlan({ action: "pause" });
+  assert.equal(video.paused, true, "pause keeps paused");
+  applyPlan({ action: "play" });
+  assert.equal(video.paused, false, "play resumes");
+  applyPlan({ action: "seekBy", seconds: -10 });
+  assert.equal(video.currentTime, 51.2);
+  applyPlan({ action: "seekTo", seconds: 9000 });
+  assert.equal(video.currentTime, 2400, "clamped to the duration");
+  applyPlan({ action: "volume", delta: -0.1 });
+  assert.equal(video.volume, 0.4);
+  applyPlan({ action: "mute" });
+  assert.equal(video.muted, true);
+  NewPlayerScreen.stopOsdTimers();
+  NewPlayerScreen.session = null;
+  Router.current = null;
+}
+
 console.log("perso remote tests passed");

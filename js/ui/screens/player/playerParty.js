@@ -275,7 +275,9 @@ export function createPlayerPartyMethods() {
       const url = String(this.activePlaybackUrl || candidate.url || "").trim();
       if (!isShareableStreamUrl(url)) return null;
       const hints = { ...(raw.behaviorHints || {}), ...(candidate.behaviorHints || {}) };
-      const playbackHeaders = PlayerController.currentPlaybackHeaders || {};
+      // The new VIDAA player keeps its own headers: PlayerController stays idle there.
+      const playbackHeaders =
+        this.currentPlaybackHeaders?.() || PlayerController.currentPlaybackHeaders || {};
       const headers = Object.keys(playbackHeaders).length
         ? playbackHeaders
         : hints.proxyHeaders?.request || {};

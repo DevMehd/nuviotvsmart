@@ -4,6 +4,8 @@ import { sessionNewHomeMode } from "../tv2/newHomeSetting.js";
 import { NewSourcesScreen } from "../tv2/sources/newSourcesScreen.js";
 import { sessionNewSourcesMode } from "../tv2/newSourcesSetting.js";
 import { PlayerScreen } from "../screens/player/playerScreen.js";
+import { NewPlayerScreen } from "../tv2/player/newPlayerScreen.js";
+import { sessionNewPlayerMode } from "../tv2/newPlayerSetting.js";
 import { AccountScreen } from "../screens/account/accountScreen.js";
 import { AuthQrSignInScreen } from "../screens/account/authQrSignInScreen.js";
 import { AuthSignInScreen } from "../screens/account/authSignInScreen.js";
@@ -155,6 +157,7 @@ function resolvePendingHistoryReturnParams(pending, state, stackEntry) {
 }
 
 const streamSlots = { off: StreamScreen, on: NewSourcesScreen };
+const playerSlots = { off: PlayerScreen, on: NewPlayerScreen };
 
 Object.assign(Router, {
   current: null,
@@ -177,7 +180,14 @@ Object.assign(Router, {
     get home() {
       return sessionNewHomeMode() === "off" ? HomeScreen : NewHomeScreen;
     },
-    player: PlayerScreen,
+    // "Nouveau lecteur" (VIDAA, lot P), read once per run. The setter lets the VIDAA lazy build
+    // (lazyRouteScreen.js) put the loaded screen in the slot of the session mode.
+    get player() {
+      return playerSlots[sessionNewPlayerMode()];
+    },
+    set player(screen) {
+      playerSlots[sessionNewPlayerMode()] = screen;
+    },
     account: AccountScreen,
     authQrSignIn: AuthQrSignInScreen,
     authSignIn: AuthSignInScreen,

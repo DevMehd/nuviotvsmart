@@ -8,6 +8,9 @@
     },
     "api/diagnostic-report.js": {
       "maxDuration": 10
+    },
+    "api/media-tracks.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

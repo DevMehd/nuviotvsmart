@@ -6,6 +6,7 @@ import {
   webglInfo
 } from "../../ui/tv2/newHomeSetting.js";
 import { sessionNewSourcesMode } from "../../ui/tv2/newSourcesSetting.js";
+import { sessionNewPlayerMode } from "../../ui/tv2/newPlayerSetting.js";
 import { VidaaFrameDiagnostics } from "./vidaaFrameDiagnostics.js";
 import { LayoutPreferences } from "../../data/local/layoutPreferences.js";
 
@@ -97,8 +98,8 @@ const ROUTES = new Set([
 const safeRoute = (value) => (ROUTES.has(value) ? value : "other");
 const finite = (value) =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-// P0 has only the existing player; lot P P1 replaces this with the session mode of its setting.
-const PLAYER_VARIANT = "old";
+// Player of this app run ("Nouveau lecteur", lot P): "new" or "old".
+const playerVariant = () => (sessionNewPlayerMode() === "on" ? "new" : "old");
 const STARTUP_RING = 10;
 const STARTUP_OUTCOMES = ["pending", "playing", "error", "abandoned", "timeout"];
 const STARTUP_EVENTS = [
@@ -240,7 +241,7 @@ export function readBenchmarkEnvironment(root, version = "unknown", mode = "auto
     sourcesVariant: sessionNewSourcesMode(),
     webglVariant: getWebglVariant(),
     homeLayout: ["modern", "classic", "grid"].includes(layout) ? layout : null,
-    playerVariant: PLAYER_VARIANT,
+    playerVariant: playerVariant(),
     viewport: [finite(root.innerWidth), finite(root.innerHeight)],
     screen: [finite(root.screen?.width), finite(root.screen?.height)],
     pixelRatio: finite(root.devicePixelRatio),
@@ -622,7 +623,7 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
   function startStartup() {
     finishStartup("abandoned");
     startup = {
-      entry: pushStartup({ variant: PLAYER_VARIANT, outcome: "pending" }),
+      entry: pushStartup({ variant: playerVariant(), outcome: "pending" }),
       t0: now(),
       src: "",
       base: null
@@ -1005,6 +1006,16 @@ export function createVidaaBenchmark(root = globalThis, frames = VidaaFrameDiagn
         last.audioNames = names;
         save();
       }
+    },
+    // New player events by name (freeze reloads, first use of each media key code): counts
+    // only, never a link. Bounded to 24 names.
+    notePlayerEvent(name) {
+      if (!enabled || !/^[a-zA-Z0-9_-]{1,32}$/.test(String(name))) return;
+      const events = (currentReport().playerEvents ||= {});
+      if (!(name in events) && Object.keys(events).length >= 24) return;
+      events[name] = (events[name] || 0) + 1;
+      save();
+      notify();
     },
     // One player startup (variant, marks relative to the player opening, outcome).
     noteStartup(entry) {

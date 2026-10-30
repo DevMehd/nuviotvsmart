@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./settingsScreenContext.js";
+import { getNewPlayerMode, setNewPlayerMode } from "../../tv2/newPlayerSetting.js";
 
 export function registerPlaybackActionsPart01(model) {
   const {
@@ -105,6 +106,8 @@ export function registerPlaybackActionsPart01(model) {
   });
   const togglePlayerSetting = (focusKey, field) =>
     this.actionMap.set(focusKey, () => PlayerSettingsStore.set({ [field]: !PlayerSettingsStore.get()[field] }));
+  // "Nouveau lecteur" (VIDAA, lot P): device-local, applies at the next launch.
+  this.actionMap.set("playback:newPlayer", () => setNewPlayerMode(getNewPlayerMode() === "on" ? "off" : "on"));
   togglePlayerSetting("playback:loadingOverlay", "loadingOverlayEnabled");
   togglePlayerSetting("playback:loadingStatus", "showPlayerLoadingStatus");
   togglePlayerSetting("playback:pauseOverlay", "pauseOverlayEnabled");

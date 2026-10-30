@@ -93,6 +93,17 @@ is opportunistic per function instance; it does not persist across deployments.
 A direct-source request races a server that takes longer than 700 ms. Other hosts
 and local archives use the original direct transport.
 
+When a media host refuses CORS to the new VIDAA player's header read, the hosted
+build asks `POST /api/media-tracks` once per source for the audio track names. The
+function reads only the file header (Range `bytes=a-b` GETs, 1 MiB, 8 s including
+the account check, five redirects rechecked, four concurrent reads), refuses
+private, loopback, link-local, CGNAT, multicast and reserved addresses after DNS
+resolution, and returns names, languages and codecs only, with error categories
+that never contain the URL. It answers signed-in Nuvio accounts listed in
+`NUVIO_MEDIA_TRACKS_USERS` (user ids or confirmed emails, comma-separated; empty
+refuses everyone) with 403 otherwise, never 401; the account is checked before a
+read slot is taken. The old player is not wired to it.
+
 VIDAA restores complete catalogue pages from a bounded local snapshot matching
 the active profile and the exact configured addon. Snapshots expire after one day
 and are refreshed by the normal Home loader. Build-hashed scripts and styles use

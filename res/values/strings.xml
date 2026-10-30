@@ -3357,4 +3357,25 @@
     <string name="layout_new_sources_sub">Faster Sources list being rebuilt for TVs; applies at next launch</string>
     <string name="layout_new_sources_off">Off</string>
     <string name="layout_new_sources_on">On</string>
+    <string name="playback_new_player">New player</string>
+    <string name="playback_new_player_sub">Reliable startup, no automatic source change; applies at next launch</string>
+    <string name="player2_opening">Opening… %1$d s</string>
+    <string name="player2_error_decode">This format is not played by the TV decoder.</string>
+    <string name="player2_error_network">The connection to the source was lost.</string>
+    <string name="player2_error_stalled">The source stopped sending data.</string>
+    <string name="player2_error_timeout">The video did not start in time.</string>
+    <string name="player2_error_unreadable">Source unreadable or expired.</string>
+    <string name="player2_audio_n">Audio %1$d</string>
+    <string name="player2_subtitle_n">Subtitles %1$d</string>
+    <string name="player2_audio_names_pending">Track names: reading the file header…</string>
+    <string name="player2_audio_names_mismatch">Names unavailable: the TV lists %1$d tracks, the file declares %2$d</string>
+    <string name="player2_audio_names_missing">Names unavailable (%1$s)</string>
+    <string name="player2_audio_tv_managed">Track choice is handled by the TV.</string>
+    <string name="player2_audio_refused">The TV did not keep this track.</string>
+    <string name="player2_subtitle_failed">This subtitle could not be loaded.</string>
+    <string name="player2_subtitles_loading">Loading addon subtitles…</string>
+    <string name="player2_source_opening">Opening the source…</string>
+    <string name="player2_source_failed">This source could not be opened.</string>
+    <string name="player2_source_failed_short">Failed</string>
+    <string name="player2_subtitle_phone">Phone</string>
 </resources>
