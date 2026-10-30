@@ -252,7 +252,8 @@ export function createMediaTracksService({
       });
       if (!response.ok) return false;
       const user = await response.json();
-      return [user?.id, user?.email].some(
+      // An e-mail counts only once confirmed: an unconfirmed sign-up must not borrow it.
+      return [user?.id, user?.email_confirmed_at ? user.email : ""].some(
         (value) => typeof value === "string" && allowed.has(value.trim().toLowerCase())
       );
     } catch {
@@ -281,18 +282,15 @@ export function createMediaTracksService({
     return JSON.parse(text);
   }
 
-  async function read(url) {
-    const guard = createGuardedFetch({ lookup, isBlocked, deadlineMs });
+  async function read(url, budgetMs) {
+    const guard = createGuardedFetch({ lookup, isBlocked, deadlineMs: budgetMs });
     const provider = createVidaaEmbeddedTextProvider({ fetchImpl: guard.fetch });
     let backstop;
     try {
       const tracks = await Promise.race([
         provider.getTracks(url, { audioOnly: true }),
         new Promise((resolve) => {
-          backstop = setTimeout(
-            () => resolve([]),
-            (deadlineMs ?? MEDIA_TRACKS_LIMITS.deadlineMs) + 500
-          );
+          backstop = setTimeout(() => resolve([]), budgetMs + 500);
         })
       ]);
       const audio = tracks.map((track) => ({
@@ -345,11 +343,14 @@ export function createMediaTracksService({
     if (body === 413) return refuse(413, "body");
     const url = parseMediaUrl(body?.url);
     if (!url) return refuse(400, "url");
+    // One deadline for the account check and the read: both fit in maxDuration (10 s).
+    const ends = Date.now() + (deadlineMs ?? MEDIA_TRACKS_LIMITS.deadlineMs);
+    // Account first: unauthenticated calls never take a read slot.
+    if (!(await authorized(token))) return refuse(403, "forbidden");
     if (active >= MEDIA_TRACKS_LIMITS.concurrent) return refuse(503, "busy");
     active++;
     try {
-      if (!(await authorized(token))) return refuse(403, "forbidden");
-      reply(200, await read(url.href));
+      reply(200, await read(url.href, Math.max(0, ends - Date.now())));
     } catch {
       refuse(502, "unavailable");
     } finally {

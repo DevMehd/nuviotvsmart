@@ -68,6 +68,12 @@ const openBlocked = (address, family) =>
   address === "127.0.0.1" ? false : isBlockedAddress(address, family);
 const lookup = (hostname, _options, callback) => {
   const map = { "media.test": "127.0.0.1", "private.test": "127.0.0.1", "lan.test": "10.0.0.7" };
+  // Rebinding-style answer: one public and one private address, all refused.
+  if (hostname === "mixed.test")
+    return callback(null, [
+      { address: "8.8.8.8", family: 4 },
+      { address: "127.0.0.1", family: 4 }
+    ]);
   if (!map[hostname]) return callback(new Error("ENOTFOUND"));
   callback(null, [{ address: map[hostname], family: 4 }]);
 };
@@ -76,10 +82,13 @@ const authFetch = async (url, init) => {
   authCalls.push({ url, apikey: init.headers.apikey, authorization: init.headers.Authorization });
   const users = {
     good: { id: "u1" },
-    email: { id: "u3", email: "ME@Example.test" },
+    email: { id: "u3", email: "ME@Example.test", email_confirmed_at: "2026-01-01T00:00:00Z" },
+    unconfirmed: { id: "u4", email: "me@example.test", email_confirmed_at: null },
     other: { id: "u2" }
   };
   const token = init.headers.Authorization.replace("Bearer ", "");
+  if (token.startsWith("slow")) await new Promise((resolve) => setTimeout(resolve, 300));
+  if (token === "slow-good") return new Response(JSON.stringify(users.good), { status: 200 });
   if (!users[token]) return new Response("{}", { status: 401 });
   return new Response(JSON.stringify(users[token]), { status: 200 });
 };
@@ -178,7 +187,7 @@ const pick = (audio) =>
 // 2. Account: 403 (never 401) for a missing, unknown or non-allowlisted token, or no allowlist.
 {
   const hits = v4.hits.length;
-  for (const token of ["", "unknown", "other"])
+  for (const token of ["", "unknown", "other", "unconfirmed"])
     assert.equal((await call(open, { url: `${base}/a.mkv`, token })).status, 403, token);
   assert.equal((await call(open, { url: `${base}/a.mkv`, token: "email" })).status, 200);
   const before = authCalls.length;
@@ -212,7 +221,12 @@ const pick = (audio) =>
     `http://private.test:${port}/a.mkv`,
     `http://10.0.0.1:${port}/a.mkv`,
     `http://169.254.169.254/latest/meta-data`,
-    `http://lan.test:${port}/a.mkv`
+    `http://lan.test:${port}/a.mkv`,
+    `http://mixed.test:${port}/a.mkv`,
+    `http://2130706433:${port}/a.mkv`,
+    `http://0x7f.1:${port}/a.mkv`,
+    `http://017700000001:${port}/a.mkv`,
+    `http://[64:ff9b::127.0.0.1]:${port}/a.mkv`
   ]) {
     const result = await call(strict, { url });
     assert.equal(result.status, 200, url);
@@ -291,6 +305,24 @@ const pick = (audio) =>
   assert.deepEqual(results.map((result) => result.status).sort(), [200, 200, 200, 200, 503]);
   for (const result of results.filter((item) => item.status === 200))
     assert.deepEqual(result.json, { result: "timeout", audio: [] });
+
+  // Unauthenticated calls never hold a read slot.
+  const busy = service({ deadlineMs: 2000 });
+  const mixed = await Promise.all([
+    ...Array.from({ length: 4 }, () => call(busy, { url: `${base}/a.mkv`, token: "slow" })),
+    call(busy, { url: `${base}/a.mkv` })
+  ]);
+  assert.deepEqual(
+    mixed.map((result) => result.status),
+    [403, 403, 403, 403, 200]
+  );
+
+  // One deadline covers the account check and the read (maxDuration 10 s).
+  const shared = service({ deadlineMs: 500 });
+  const begin = Date.now();
+  const late = await call(shared, { url: `${base}/hang`, token: "slow-good" });
+  assert.deepEqual(late.json, { result: "timeout", audio: [] });
+  assert.ok(Date.now() - begin < 750, `auth + read took ${Date.now() - begin} ms`);
 }
 
 // 6. No URL, host or path in any response or log line.
