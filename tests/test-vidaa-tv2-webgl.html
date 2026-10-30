@@ -219,13 +219,14 @@
           view.setWatched(new Set([items[2].id]));
           view.update([row], focus, { sidebarIndex: -1 });
           // Card 2: red art, not focused, so not scaled. The canvas texture uploads asynchronously.
-          const watchedLeft = cardX(2) + width - 12 - 40;
+          // WF-13: the DOM badge's 34 px circle, 14 px from the corner.
+          const watchedLeft = cardX(2) + width - 14 - 34;
           let badgeCorner = null;
           let badgeCenter = null;
           for (const until = performance.now() + 3000; performance.now() < until; ) {
             lightning.stage.drawFrame();
-            badgeCorner = pixelsAt(watchedLeft + 2, top + 12 + 2);
-            badgeCenter = pixelsAt(watchedLeft + 20, top + 12 + 20);
+            badgeCorner = pixelsAt(watchedLeft + 2, top + 14 + 2);
+            badgeCenter = pixelsAt(watchedLeft + 17, top + 14 + 17);
             if (badgeCenter[0] < 80) break;
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
@@ -664,7 +665,8 @@
           const { size: wideSize, pitch: widePitch } = homeLayout(w4bRows, w4bFocus, drawn(wideGeo)).rows[0];
           const wideCard = cardAt(trackOf(0), widePitch);
           assert(wideCard && wideCard.w === wideSize.width && wideCard.w > wideCard.h, `landscape card ${wideCard?.w}×${wideCard?.h}`);
-          const badgeNode = wideCard.children.find((node) => node.w === 40 && node.h === 40);
+          const isBadge = (node) => node.w === 82 && node.h === 82;
+          const badgeNode = wideCard.children.find(isBadge);
           assert(badgeNode?.alpha === 1, "watched badge after setWatched");
           const logoOf = (card) => card.children.find((node) => node.mountY === 1 && typeof node.text !== "string");
           const wideTop = () => 560 + rowsLayer().y + rowsLayer().children[0].y + trackOf(0).y;
@@ -678,12 +680,12 @@
           await settle("W4b drawn", () => {
             lightning.stage.drawFrame();
             const logoPixel = pixelsAt(Math.round(wideLeft + 20 + 116), Math.round(wideTop() + logoOf(wideCard).y - 23));
-            const badgePixel = pixelsAt(Math.round(wideLeft + wideSize.width - 12 - 36), Math.round(wideTop() + 12 + 20));
+            const badgePixel = pixelsAt(Math.round(wideLeft + wideSize.width - 14 - 17), Math.round(wideTop() + 14 + 17));
             const artPixel = pixelsAt(Math.round(wideLeft + 60), Math.round(wideTop() + 40));
             // The red art is drawn, the badge over it is not red.
             return logoPixel[1] > 200 && logoPixel[0] < 60 && artPixel[0] > 200 && artPixel[1] < 40 && !(badgePixel[0] > 200 && badgePixel[1] < 40);
           });
-          assert(cardAt(trackOf(0), 0).children.find((node) => node.w === 40 && node.h === 40).alpha === 0, "unwatched: no badge");
+          assert(cardAt(trackOf(0), 0).children.find(isBadge).alpha === 0, "unwatched: no badge");
 
           // Folder row: emoji without cover; the GIF follows the focused folder card, then leaves.
           w4bFocus.row = 1;

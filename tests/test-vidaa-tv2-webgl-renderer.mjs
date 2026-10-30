@@ -691,7 +691,11 @@ assert.deepEqual(
   const group = view.track.children[0];
   assert.equal(group.children.length, 4);
   assert.equal(group.children[3].x, 3 * (geometry.poster.width + geometry.gap));
-  assert.equal(group.children[0].color, 0x1a1a1aff, "mobile surface");
+  assert.deepEqual(
+    [group.children[0].colorTop, group.children[0].colorBottom],
+    [0x262626ff, 0x101010ff],
+    "DOM skeleton gradient (WF-14)"
+  );
   assert.deepEqual(group.children[0].shader, { round: 24 }, "rounded skeleton cards");
   assert.equal(animations.length, 0, "no pulse when constrained or without motion");
   setRowSkeletons(scene, view, 4, geometry.gap, null);
@@ -721,10 +725,12 @@ assert.deepEqual(
   assert.equal(watchedCard.watched.alpha, 0, "not watched");
   fillGlCard(scene, watchedCard, film, posterSource, new Set(["tt0000042"]));
   assert.equal(watchedCard.watched.alpha, 1, "badge after setWatched");
+  // WF-13: the DOM badge's 34 px circle 14 px from the corner, its texture wider for the shadow.
+  const shadowBox = watchedBadgeBox();
+  assert.deepEqual(shadowBox, { left: 24, top: 10, w: 82, h: 82 });
   assert.deepEqual(
-    [watchedCard.watched.x, watchedCard.watched.y, watchedCard.watched.w],
-    [geometry.poster.width - 12 - 40, 12, 40],
-    "mobile 20 dp badge, 6 dp inset"
+    [watchedCard.watched.x, watchedCard.watched.y, watchedCard.watched.w, watchedCard.watched.h],
+    [geometry.poster.width - 14 - 34 - 24, 14 - 10, 82, 82]
   );
 
   const wide = rowCardSize(

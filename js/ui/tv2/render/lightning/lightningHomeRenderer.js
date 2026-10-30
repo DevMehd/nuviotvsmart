@@ -103,15 +103,18 @@ export const CW_CARD = {
   // tv2-home.css .tv2-continue-card background (145deg #393939 → #111), two stops.
   background: { colorTop: 0x393939ff, colorBottom: 0x111111ff }
 };
-// Loading row cards (mobile HomeSkeletonLoading.kt): surface #1A1A1A; the row pulses 1 ↔ 0.6.
-const ROW_SKELETON = 0x1a1a1aff;
+// Loading row cards (WF-14): the DOM .tv2-card-skeleton gradient (#262626 → #101010, vertical
+// here: Lightning has no 145° gradient); the row pulses 1 ↔ 0.6 outside constrained runtimes.
+const ROW_SKELETON = SKELETON;
 /**
  * Card extras (lot W4b) at the TV sizes of the mobile reference: watched badge (PosterActionSheet.kt,
  * eye on the accent), landscape overlay (ShelfComponents.kt:207-247: logo box, else the title on
  * 2 lines, over a black scrim on the bottom 42 %), folder emoji, card depth (CardDepthEffect.kt).
  */
 export const CARD_EXTRAS = {
-  watched: { size: 40, inset: 12, icon: 24 },
+  // WF-13: the mobile eye kept, at the DOM badge's size, inset and shadow (.title-watched-badge
+  // 34 px, 14 px, 0 14px 24px rgba(0,0,0,.3)), painted in the texture around the circle.
+  watched: { size: 34, inset: 14, icon: 20, shadow: { y: 14, blur: 24, color: "rgba(0,0,0,0.3)" } },
   landscape: {
     scrim: 0.42,
     scrimColor: 0x000000bf,
@@ -685,12 +688,13 @@ export function createGlCard(scene, parent, kind, { width, height }) {
     });
   if (kind === "poster") {
     const { size, inset } = CARD_EXTRAS.watched;
+    const box = watchedBadgeBox();
     card.watched = scene.node({
       parent: node,
-      x: width - inset - size,
-      y: inset,
-      w: size,
-      h: size,
+      x: width - inset - size - box.left,
+      y: inset - box.top,
+      w: box.w,
+      h: box.h,
       texture: scene.watchedTexture,
       alpha: 0
     });
@@ -757,16 +761,31 @@ function landscapeParts(scene, parent, width, height) {
   return parts;
 }
 
-/** Watched badge texture shared by every card: accent circle, eye in the on-accent color. */
+/** Watched badge texture: the circle and the room its shadow takes on each side. */
+export function watchedBadgeBox() {
+  const { size, shadow } = CARD_EXTRAS.watched;
+  const top = Math.max(0, shadow.blur - shadow.y);
+  const left = shadow.blur;
+  return { left, top, w: size + 2 * left, h: top + size + shadow.y + shadow.blur };
+}
+
+/** Watched badge texture shared by every card: accent circle with its shadow, eye on it. */
 function watchedBadgeTexture(renderer, fill, glyph) {
-  const { size, icon } = CARD_EXTRAS.watched;
+  const { size, icon, shadow } = CARD_EXTRAS.watched;
+  const box = watchedBadgeBox();
   const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
+  canvas.width = box.w;
+  canvas.height = box.h;
   const ctx = canvas.getContext("2d");
+  ctx.translate(box.left, box.top);
+  ctx.shadowOffsetY = shadow.y;
+  ctx.shadowBlur = shadow.blur;
+  ctx.shadowColor = shadow.color;
   ctx.fillStyle = fill;
   ctx.beginPath();
   ctx.arc(size / 2, size / 2, size / 2, 0, 2 * Math.PI);
   ctx.fill();
+  ctx.shadowColor = "transparent";
   ctx.translate((size - icon) / 2, (size - icon) / 2);
   ctx.scale(icon / 24, icon / 24);
   ctx.fillStyle = glyph;
@@ -946,7 +965,7 @@ export function setRowSkeletons(scene, view, count, gap, pulse) {
       x: i * (width + gap),
       w: width,
       h: height,
-      color: ROW_SKELETON,
+      ...ROW_SKELETON,
       shader: scene.round(scene.radius)
     });
   view.skeleton = { count, group, ctrl: null };
