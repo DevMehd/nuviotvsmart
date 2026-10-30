@@ -126,6 +126,46 @@ export function blurredSource(source) {
   return { ...source, url, fallbacks, veil: url === source.url };
 }
 
+/**
+ * Hero media fades (components-16.css .home-modern-hero-media ::before and ::after, the framed
+ * hero and the full-screen backdrop): [position, background alpha] stops, the left one over
+ * `width` of the media.
+ */
+export const HERO_FADES = {
+  framed: {
+    width: 0.45,
+    left: [
+      [0, 1],
+      [0.22, 0.86],
+      [0.46, 0.56],
+      [0.76, 0.16],
+      [1, 0]
+    ],
+    bottom: [
+      [0.82, 0],
+      [0.892, 0.25],
+      [0.955, 0.65],
+      [1, 1]
+    ]
+  },
+  fullScreen: {
+    width: 0.65,
+    left: [
+      [0, 1],
+      [0.22, 0.9],
+      [0.46, 0.8],
+      [0.76, 0.42],
+      [1, 0]
+    ],
+    bottom: [
+      [0.64, 0],
+      [0.748, 0.35],
+      [0.856, 0.75],
+      [1, 1]
+    ]
+  }
+};
+
 const shimmers = (motion) =>
   Boolean(motion.copy) &&
   !globalThis.document?.documentElement?.classList?.contains("performance-constrained");
@@ -974,24 +1014,31 @@ export function createLightningHomeRenderer(
     });
     // Over the hero images until the first backdrop is loaded (setHero loading).
     const skeleton = node({ parent: sceneRoot, ...hero, ...SKELETON, alpha: 0 });
-    // Left and bottom fades of the hero media (components-16.css ::before/::after), two stops.
-    node({
-      parent: sceneRoot,
-      x: hero.x,
-      w: hero.w * 0.45,
+    // Left and bottom fades of the hero media: one gradient node per pair of CSS stops.
+    const fades = HERO_FADES[layout.modernHeroFullScreenBackdropEnabled ? "fullScreen" : "framed"];
+    const bgAt = (alpha) => themeColor(root, "--bg-color", "#0d0d0d", alpha);
+    const segments = (stops, place) =>
+      stops.slice(1).forEach(([to, alpha], i) => {
+        const [from, previous] = stops[i];
+        node({ parent: sceneRoot, ...place(from, to, bgAt(previous), bgAt(alpha)) });
+      });
+    const leftW = hero.w * fades.width;
+    segments(fades.left, (from, to, colorLeft, colorRight) => ({
+      x: hero.x + from * leftW,
+      y: hero.y,
+      w: (to - from) * leftW,
       h: hero.h,
-      colorLeft: colors.bg,
-      colorRight: colors.bgClear
-    });
-    node({
-      parent: sceneRoot,
+      colorLeft,
+      colorRight
+    }));
+    segments(fades.bottom, (from, to, colorTop, colorBottom) => ({
       x: hero.x,
-      y: hero.h * 0.4,
+      y: hero.y + from * hero.h,
       w: hero.w,
-      h: hero.h * 0.6,
-      colorTop: colors.bgClear,
-      colorBottom: colors.bg
-    });
+      h: (to - from) * hero.h,
+      colorTop,
+      colorBottom
+    }));
     const rowsClip = group({
       parent: sceneRoot,
       y: MAIN_TOP,

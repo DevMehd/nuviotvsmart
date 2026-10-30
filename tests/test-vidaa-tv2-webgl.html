@@ -364,6 +364,9 @@
           lightning.stage.drawFrame();
           const shown = pixelsAt(1600, 120);
           assert(shown[2] > 200 && shown[0] < 40, `new hero shown: ${shown}`);
+          // WF-03: the bottom fade starts at 82 % of the 650 px media (components-16.css), not at 40 %.
+          const [clear, faded] = [460, 640].map((y) => pixelsAt(1600, y));
+          assert(clear[2] > 200 && faded[2] < 60, `hero bottom fade: ${clear} / ${faded}`);
 
           // A row left by a jump (Back to the top, restore) lets its artwork go, not kept on the GPU.
           const tall = Array.from({ length: 8 }, (_, n) => many(`t${n}`));
