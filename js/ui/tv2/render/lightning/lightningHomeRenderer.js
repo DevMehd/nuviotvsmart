@@ -1199,6 +1199,8 @@ export function createLightningHomeRenderer(
             x: geometry.contentStart,
             y: 10,
             fontSize: 32,
+            // .tv2-row-title and the mobile shelf title: SemiBold.
+            weight: 600,
             maxWidth: geometry.viewport
           }),
           status: scene.text({
