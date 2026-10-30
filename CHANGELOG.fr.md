@@ -1,6 +1,14 @@
 # Nuvio personnel — Historique des modifications
 
-## 2026-10-30 — 1.3.12
+## 2026-10-30 — 1.3.13
+
+- Nouveau lecteur sur la télé VIDAA, activé par défaut. La vidéo démarre directement avec le lecteur de la télé, sans changement de source automatique : si une source ne démarre pas, un message clair l’explique, avec « Sources », « Réessayer » et « Retour ». Plus de chargement infini.
+- Dans ce lecteur : reprise là où tu t’étais arrêté et suivi Trakt ; pistes audio et sous-titres avec leurs vrais noms, y compris quand le serveur de la source bloque la lecture directe de l’en-tête ; panneau Sources dans le lecteur pour changer de source toi-même ; épisode suivant et saut d’intro ; Watch Party.
+- Pas encore dans le nouveau lecteur (toujours dans l’ancien) : écran de fin et recommandations, panneau Épisodes, vitesse de lecture, format d’image, décalage des sous-titres, et sous-titres PGS/ASS dessinés par l’application.
+- Pour revenir à l’ancien lecteur : Paramètres → Lecture → désactiver « Nouveau lecteur ». Le changement s’applique au prochain démarrage. Les télés Samsung et LG gardent le lecteur actuel.
+- Nouvel accueil WebGL (bêta, Paramètres → Disposition → « Nouvel accueil (bêta) » → « Activé, WebGL ») : bande-annonce dans la bannière, menu latéral en pastille, coins arrondis des cartes, animations qui reprennent après une pause, retour instantané depuis une fiche, et une bannière et des cartes « Continuer à regarder » fidèles à l’accueil actuel. L’accueil actuel reste celui par défaut.
+
+## 2026-10-29 — 1.3.12
 
 - Diagnostic guidé : nouveau test « Lecture brute de la dernière source », qui lance la vidéo sans aucune couche de l’application et mesure son démarrage. Le Diagnostic note aussi les temps de démarrage de chaque lecture, et l’étape vidéo du parcours atteint maintenant une vraie source.
 - Nouvel accueil WebGL (bêta, Paramètres → Disposition → « Nouvel accueil (bêta) » → « Activé, WebGL ») : les affiches s’affichent partout, la bannière n’est plus déformée et montre le logo, les infos, les notes et le résumé ; les rangées et le focus sont animés ; les cartes « Continuer à regarder » ont leur progression, les titres vus leur badge, et les affiches paysage sont prises en charge, comme sur le mobile.
