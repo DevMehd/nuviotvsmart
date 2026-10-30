@@ -42,6 +42,8 @@ import { normalizeStreamDisplayText } from "../../../core/streams/streamDisplayT
 import { createPlayerNext } from "./playerNext.js";
 import { createPlayerPartyMethods } from "../../screens/player/playerParty.js";
 import { PartyRepository } from "../../../core/party/partyRepository.js";
+import { httpRequest } from "../../../core/network/httpClient.js";
+import { SessionStore } from "../../../core/storage/sessionStore.js";
 
 // New VIDAA player (lot P): start, stop and teardown, explicit errors, no automatic source
 // switch (P1); resume, progress, Trakt and journal (P2, playerProgress.js); OSD, seek preview,
@@ -65,6 +67,28 @@ let headerReader = null;
 const loadHeaderReader = async () =>
   (headerReader ||= (await import("../../../platform/vidaa/vidaaEmbeddedTextProvider.js"))
     .vidaaEmbeddedTextProvider);
+// The media host refused CORS: the site's server reads the header (server/mediaTracksService.js).
+// Only the hosted build has that server, and it answers signed-in allowlisted accounts only.
+// null = not available here: the client category stays in the Diagnostic. The old player is
+// not wired to it.
+async function fetchServerAudioTracks(url) {
+  if (globalThis.__NUVIO_ADDON_DATA_SERVICE__ !== true || !SessionStore.accessToken) return null;
+  const data = await httpRequest("/api/media-tracks", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+    cache: "no-store",
+    timeoutMs: 12000
+  });
+  return (Array.isArray(data?.audio) ? data.audio.slice(0, 64) : [])
+    .filter((track) => track && typeof track === "object")
+    .map((track) => ({
+      name: String(track.name || "").slice(0, 200),
+      language: String(track.language || "").slice(0, 32),
+      codecId: String(track.codecId || "").slice(0, 64),
+      codec: String(track.codec || "").slice(0, 32),
+      channels: Number(track.channels) || ""
+    }));
+}
 
 function normalizeItemType(value) {
   return (
@@ -310,6 +334,7 @@ export const NewPlayerScreen = {
       },
       probe: async (url) => (await loadHeaderReader()).getTracks(url, { audioOnly: true }),
       probeDiagnostics: () => headerReader?.diagnostics().audio || {},
+      probeServer: fetchServerAudioTracks,
       loadAddonSubtitles: () => this.loadAddonSubtitles(),
       guardSwitch: () => this.session?.guardTrackSwitch(),
       onChange: () => token === this.playerMountToken && this.renderTrackPanel(),

@@ -349,11 +349,13 @@ export async function fetchSubtitleVtt(subtitle, { root = globalThis, timeoutMs 
 }
 
 const SUBTITLE_KINDS = new Set(["subtitles", "captions", ""]);
+const CORS_CATEGORIES = new Set(["cors", "cors-headers"]);
 
 /**
  * Track state of one player screen. host: preferences() -> { audio, subtitle, targets },
  * remember: { audio(pref), subtitle(pref) }, probe(url) -> header audio tracks,
- * probeDiagnostics() -> { result, headerCount, started, ... }, loadAddonSubtitles() -> list,
+ * probeDiagnostics() -> { result, headerCount, started, ... }, probeServer(url) -> header audio
+ * tracks read by the site's server (null when unavailable), loadAddonSubtitles() -> list,
  * guardSwitch() (session filter of a track-switch media error), onChange(), note(status).
  */
 export function createPlayerTracks(
@@ -365,6 +367,7 @@ export function createPlayerTracks(
     remember = {},
     probe = async () => [],
     probeDiagnostics = () => ({}),
+    probeServer = null,
     loadAddonSubtitles = async () => [],
     fetchSubtitle = (subtitle) => fetchSubtitleVtt(subtitle, { root }),
     guardSwitch = () => {},
@@ -377,6 +380,9 @@ export function createPlayerTracks(
   let url = "";
   let header = null;
   let probing = false;
+  // Server read of the header after a CORS refusal: once per source; "", "server", "server-error".
+  let serverTried = false;
+  let serverResult = "";
   let probeTimer = null;
   let started = false;
   let audioPrefApplied = false;
@@ -413,11 +419,14 @@ export function createPlayerTracks(
 
   function status() {
     const diagnostics = probeDiagnostics() || {};
-    return audioNamesStatus(audioEntries(), header, {
+    const current = audioNamesStatus(audioEntries(), header, {
       ...diagnostics,
       started: started && (probing || Boolean(diagnostics.started) || header !== null),
       result: probing ? "pending" : diagnostics.result
     });
+    if (current.mapped && serverResult === "server") current.result = "server";
+    else if (!probing && !header && current.missing && serverResult) current.result = serverResult;
+    return current;
   }
 
   function report() {
@@ -601,8 +610,25 @@ export function createPlayerTracks(
     Promise.resolve()
       .then(() => probe(url))
       .then(
-        (tracks) => {
-          if (current === generation && Array.isArray(tracks) && tracks.length) header = tracks;
+        async (tracks) => {
+          if (current !== generation) return;
+          if (Array.isArray(tracks) && tracks.length) {
+            header = tracks;
+            return;
+          }
+          // The media host refused CORS: the site's server reads the header instead.
+          const category = (probeDiagnostics() || {}).result;
+          if (header || serverTried || !probeServer || !CORS_CATEGORIES.has(category)) return;
+          serverTried = true;
+          let named = null;
+          try {
+            named = await probeServer(url);
+          } catch (_) {
+            named = [];
+          }
+          if (current !== generation || named === null) return;
+          if (Array.isArray(named) && named.length) header = named;
+          serverResult = header ? "server" : "server-error";
         },
         () => {}
       )
@@ -634,6 +660,8 @@ export function createPlayerTracks(
       url = String(nextUrl || "");
       header = null;
       probing = false;
+      serverTried = false;
+      serverResult = "";
       started = false;
       if (probeTimer !== null) root.clearTimeout(probeTimer);
       probeTimer = null;

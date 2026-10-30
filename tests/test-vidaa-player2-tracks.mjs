@@ -452,6 +452,78 @@ const enabledIndexes = (list) =>
   player.destroy();
 }
 
+// 10. The media host refuses CORS: the site's server reads the header, once per source.
+{
+  const run = async ({ category, server, client = [] }) => {
+    const clock = createClock();
+    const tracks = [new NativeAudioTrack("1", { enabled: true }), new NativeAudioTrack("2")];
+    const calls = { client: 0, server: [] };
+    const notes = [];
+    const player = createPlayerTracks(fakeVideo(tracks), {
+      root: clock.root,
+      locale: () => "en",
+      probe: async () => (calls.client++, client),
+      probeDiagnostics: () => ({ started: true, result: category }),
+      probeServer:
+        server === undefined
+          ? null
+          : async (url) => {
+              calls.server.push(url);
+              if (server instanceof Error) throw server;
+              return server;
+            },
+      note: (status) => notes.push(status)
+    });
+    player.reset("http://media.invalid/e.mkv");
+    player.onFirstFrame();
+    clock.advance(1500);
+    for (let i = 0; i < 4; i++) await tick();
+    return { player, calls, notes };
+  };
+  const named = [
+    { codecId: "A_EAC3", codec: "eac3", language: "fre", name: "VFF", channels: 6 },
+    { codecId: "A_AAC", codec: "aac", language: "eng", name: "", channels: 2 }
+  ];
+  const ok = await run({ category: "cors", server: named });
+  assert.deepEqual(ok.calls.server, ["http://media.invalid/e.mkv"]);
+  assert.deepEqual(
+    ok.player.audioEntries().map((entry) => entry.label),
+    ["French", "English"],
+    "server names go through the same count/order guard"
+  );
+  assert.equal(ok.notes.at(-1).result, "server");
+  ok.player.probeAgain();
+  for (let i = 0; i < 4; i++) await tick();
+  assert.equal(ok.calls.server.length, 1, "once per source");
+  assert.equal(ok.calls.client, 2);
+  assert.equal(ok.player.status().result, "server");
+  for (const status of ok.notes) assert.ok(!JSON.stringify(status).includes("media.invalid"));
+  ok.player.reset("http://media.invalid/f.mkv");
+  ok.player.onFirstFrame();
+  ok.player.probeAgain();
+  ok.player.destroy();
+
+  const headers = await run({ category: "cors-headers", server: [named[0]] });
+  assert.equal(headers.calls.server.length, 1);
+  assert.equal(headers.player.status().result, "count-mismatch", "count guard applies");
+  assert.ok(headers.player.audioEntries().every((entry) => !entry.named));
+
+  const failed = await run({ category: "cors", server: new Error("403") });
+  assert.equal(failed.notes.at(-1).result, "server-error");
+  const empty = await run({ category: "cors", server: [] });
+  assert.equal(empty.player.status().result, "server-error");
+  const unavailable = await run({ category: "cors", server: null });
+  assert.equal(unavailable.calls.server.length, 1);
+  assert.equal(unavailable.player.status().result, "cors", "no server here: client category");
+  for (const category of ["timeout", "range-refused", "not-matroska-or-mp4"]) {
+    const other = await run({ category, server: named });
+    assert.equal(other.calls.server.length, 0, `${category}: no server read`);
+  }
+  const clientNamed = await run({ category: "cors", server: named, client: named });
+  assert.equal(clientNamed.calls.server.length, 0, "client header read: no server read");
+  assert.equal(clientNamed.player.status().result, "ok");
+}
+
 console.log(
-  "PASS: new VIDAA player tracks (getter-safe names, header order, MKV eng, preference once, revert, reload keeps choices)"
+  "PASS: new VIDAA player tracks (getter-safe names, header order, MKV eng, preference once, revert, reload keeps choices, server read after CORS)"
 );
