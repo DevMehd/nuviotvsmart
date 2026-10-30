@@ -46,10 +46,10 @@ const TRAILER_FADE = { duration: 480, easing: "ease" };
 // Fixed GPU budget: the image windows of renderer.js need about 45 MB (poster ~0.7 MB, hero
 // 3.7 MB). Still above it after Lightning's own cleanup means the TV cannot hold the scene.
 export const TEXTURE_BUDGET_BYTES = 64 * 1024 * 1024;
-// Idle loop (lot W6): once the scene has rested IDLE_THROTTLE_MS, the render loop wakes about
-// IDLE_FPS times a second instead of 60; any change puts it back to the display rate first.
-export const IDLE_FPS = 10;
-const IDLE_THROTTLE_MS = 1000;
+// Render loop at the display rate while Home is shown: at rest Lightning only polls, draws nothing.
+// A throttled idle loop (10 fps, lot W6) delayed the first frame after a key by up to 100 ms, then
+// fed it a 100 ms delta that ended the 140 ms slides at once (WF-01). Away from Home: AWAY_FPS.
+const AWAY_FPS = 4;
 // Rows around the focus whose artwork stays attached off screen (lot W6 warm ring), so a short
 // move back finds its textures; rows farther away let theirs go.
 const WARM_ROWS = { before: 2, after: 3 };
@@ -244,7 +244,7 @@ export function glInfo() {
     peakTextureBytes: glStats.peakTextureBytes,
     failed: { ...glStats.failed },
     proxiedUrls: glStats.proxied.size,
-    // Render loop rate now: 0 (display rate), IDLE_FPS at rest, 4 while Home is away (lot W6).
+    // Render loop rate now: 0 (display rate) on Home, AWAY_FPS while Home is away.
     targetFPS: engine.renderer.targetFPS,
     heroBand: null
   };
@@ -871,7 +871,6 @@ export function createLightningHomeRenderer(
   const gif = { url: "", id: "", key: "", timer: null };
   let stopTrailer = null;
   let trailerShown = false;
-  let idleTimer = null;
   const motion = homeMotion(root);
 
   function fail(reason) {
@@ -1056,7 +1055,6 @@ export function createLightningHomeRenderer(
     // Bumped by every row emit: continue cards refill then, their release labels depend on time.
     rowsVersion += 1;
     if (!scene) return;
-    wake();
     const kept = new Map(
       rows.map((row) => [row.key, { ...rowCardSize(row, geometry), kind: row.kind }])
     );
@@ -1140,22 +1138,6 @@ export function createLightningHomeRenderer(
     sidebar.setOpen(sidebarIndex >= 0);
   }
 
-  /** Before any scene change: the loop back to the display rate, the idle throttle cancelled. */
-  function wake() {
-    clearTimeout(idleTimer);
-    idleTimer = null;
-    if (engine && !closed) engine.renderer.targetFPS = 0;
-  }
-
-  /** Lightning `idle` (a frame without scene changes): throttle once the scene stays at rest. */
-  function onIdle() {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      idleTimer = null;
-      if (engine && !closed) engine.renderer.targetFPS = IDLE_FPS;
-    }, IDLE_THROTTLE_MS);
-  }
-
   /**
    * Card position and focus scale, as the DOM renderer's placeCard: only a card staying in place
    * tweens its scale; a placed or recycled card jumps instead of sliding across the rail.
@@ -1178,7 +1160,6 @@ export function createLightningHomeRenderer(
     Object.assign(last, { rows, focus, options });
     updateProxy(rows, focus, sidebarIndex, hideFocus);
     if (!scene) return;
-    wake();
     samplePeak();
     const placed = homeLayout(rows, focus, geometry);
     const focusIndex = focusedIndex(focus, rows);
@@ -1336,7 +1317,6 @@ export function createLightningHomeRenderer(
     last.hero = item;
     last.heroLoading = loading;
     if (!scene) return;
-    wake();
     const display = item ? buildModernHeroPresentation(item) : null;
     if (!item) setSkeleton(loading);
     scene.heroCopy.set(display);
@@ -1477,9 +1457,6 @@ export function createLightningHomeRenderer(
       if (closed || failed) return keeper.release(fail);
       engine = ready;
       engine.renderer.targetFPS = 0;
-      engine.renderer.on("idle", onIdle);
-      // Something changed on its own (an image loaded, a fade started): full rate again.
-      engine.renderer.on("active", wake);
       host.appendChild(engine.canvas);
       root.classList.toggle("tv2-gl-trailer-above", engine.variant === "trailer-above");
       scene = buildScene(engine);
@@ -1522,14 +1499,9 @@ export function createLightningHomeRenderer(
           if (texture.state === "failed") txManager.removeTextureFromCache(texture);
       }
       scene = null;
-      // The kept engine's idle loop would wake 60 times a second while away (e.g. in the player);
-      // 4 fps keeps the return to Home under 250 ms. stopLoop() cannot be undone safely.
-      clearTimeout(idleTimer);
-      if (engine) {
-        engine.renderer.off("idle", onIdle);
-        engine.renderer.off("active", wake);
-        engine.renderer.targetFPS = 4;
-      }
+      // The kept engine's idle loop would wake 60 times a second while away (e.g. in the player).
+      // stopLoop() cannot be undone safely.
+      if (engine) engine.renderer.targetFPS = AWAY_FPS;
       engine?.canvas.remove();
       keeper.release(fail);
       views.clear();

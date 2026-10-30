@@ -66,7 +66,7 @@
             WebPlatformLegacy,
             RoundedWithBorder
           };
-          const { createLightningHomeRenderer, glInfo, IDLE_FPS } =
+          const { createLightningHomeRenderer, glInfo } =
             await import("/js/ui/tv2/render/lightning/lightningHomeRenderer.js");
           const { createDomHomeRenderer } = await import("/js/ui/tv2/renderer.js");
           const { createImageQueue } = await import("/js/ui/tv2/imagePipeline.js");
@@ -254,13 +254,18 @@
               await nextFrame();
             }
           };
-          // Runs `act` from an idle scene (so the first frame's delta is one frame, not the work
-          // before it) and reads the value at every Lightning frame until it reaches `end`: some
-          // frame must show it strictly between `start` and `end`.
-          const slide = async (label, act, read, start, end) => {
-            await new Promise((resolve) => setTimeout(resolve, 250));
+          // Runs `act` from a scene at rest for `rest` ms (WF-01: more than a second, where a
+          // throttled idle loop once ended the slide in one frame) and reads the value at every
+          // Lightning frame until it reaches `end`: some frame must show it strictly between, and
+          // the first frame must advance it by about one display frame, not by a 100 ms idle tick.
+          const slide = async (label, act, read, start, end, rest = 1200) => {
+            await new Promise((resolve) => setTimeout(resolve, rest));
             const seen = [];
-            const sample = () => seen.push(read());
+            let firstDelta = null;
+            const sample = () => {
+              firstDelta ??= lightning.stage.deltaTime;
+              seen.push(read());
+            };
             lightning.stage.eventBus.on("frameTick", sample);
             act();
             try {
@@ -272,6 +277,7 @@
               seen.some((value) => (value - start) * (value - end) < 0),
               `${label}: no position between ${start} and ${end} (${seen.join(",")})`
             );
+            assert(firstDelta < 50, `${label}: first frame after a rest advanced ${firstDelta} ms`);
           };
           const many = (key, kind = "poster", count = 14) => ({
             key,
@@ -376,21 +382,8 @@
           scrolled.row = 6;
           view.update(tall, scrolled, { sidebarIndex: -1 });
           assert(!artworkOf(1).length, `off-screen row keeps ${artworkOf(1).length} textures`);
-          // Lot W6 idle loop: about 10 fps once the scene rests, the display rate again on a key.
-          const throttled = async (label) => {
-            for (const until = performance.now() + 8000; lightning.targetFPS !== IDLE_FPS; ) {
-              assert(performance.now() < until, `${label}: ${lightning.targetFPS}`);
-              await new Promise((resolve) => setTimeout(resolve, 100));
-            }
-          };
-          await throttled("idle loop never throttled");
-          // The same hero again (enrichment, applyHeroToDom): the display rate, then the idle rate.
-          view.setHero({ id: "tt8", type: "movie", name: "Next", background: blue, poster: red });
-          assert(lightning.targetFPS === 0, `setHero restores the display rate: ${lightning.targetFPS}`);
-          await throttled("idle loop stuck at the display rate after setHero");
-          scrolled.row = 5;
-          view.update(tall, scrolled, { sidebarIndex: -1 });
-          assert(lightning.targetFPS === 0, `a key restores the display rate: ${lightning.targetFPS}`);
+          // WF-01: the display rate at rest too (the slides above start after a 1.2 s rest), 4 fps away.
+          assert(lightning.targetFPS === 0, `display rate at rest: ${lightning.targetFPS}`);
           view.destroy();
           assert(lightning.targetFPS === 4, "4 fps while Home is away");
 
@@ -761,7 +754,7 @@
           const cached = [...lightning.stage.txManager.keyCache.values()];
           assert(!cached.some((texture) => texture.state === "failed"), "no failed texture kept");
           result.dataset.status = "passed";
-          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF, hero trailer under the canvas, software WebGL refused on VIDAA, warm ring, idle loop, shared pill sidebar and contract (${info.renderer}; SwiftShader, not a TV measure)`;
+          result.textContent = `PASS: WebGL Home image, no-CORS text tile, hero cover, slides, focus scale, hero fade, hero copy, Continue Watching cards, skeletons, watched badge, landscape logo, folder emoji and focus GIF, hero trailer under the canvas, software WebGL refused on VIDAA, warm ring, slides after a rest, shared pill sidebar and contract (${info.renderer}; SwiftShader, not a TV measure)`;
         } catch (error) {
           result.dataset.status = "failed";
           result.textContent = `FAIL: ${error?.stack || error}`;
