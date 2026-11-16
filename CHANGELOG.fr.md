@@ -1,5 +1,9 @@
 # Nuvio personnel — Historique des modifications
 
+## 2026-11-17 — 1.3.14
+
+- Thème : un accent choisi sur le téléphone que la télé ne connaît pas encore (comme « Système ») est gardé tel quel. La télé l’affiche avec son accent blanc par défaut, sans remplacer ton choix par « Blanc » à la prochaine synchronisation.
+
 ## 2026-10-30 — 1.3.13
 
 - Nouveau lecteur sur la télé VIDAA, activé par défaut. La vidéo démarre directement avec le lecteur de la télé, sans changement de source automatique : si une source ne démarre pas, un message clair l’explique, avec « Sources », « Réessayer » et « Retour ». Plus de chargement infini.
