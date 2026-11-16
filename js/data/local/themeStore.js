@@ -64,9 +64,12 @@ function normalizeTheme(settings = {}) {
   const accent = String(settings?.accentColor || DEFAULT_THEME.accentColor).toLowerCase();
   const storedThemeName = String(settings?.themeName || DEFAULT_THEME.themeName).toUpperCase();
   const themeFromAccent = THEME_BY_ACCENT.get(accent);
+  // A synced theme the TV does not know (phone "SYSTEM", future names) is kept and sent back;
+  // ThemeManager shows it with the default palette. Accent inference stays for known themes.
+  const isUnknownTheme = storedThemeName !== "CUSTOM" && !ACCENT_BY_THEME[storedThemeName];
   const themeName = String(
-    storedThemeName === "CUSTOM"
-      ? "CUSTOM"
+    storedThemeName === "CUSTOM" || isUnknownTheme
+      ? storedThemeName
       : themeFromAccent && themeFromAccent !== storedThemeName
         ? themeFromAccent
         : storedThemeName || themeFromAccent || DEFAULT_THEME.themeName
